@@ -19,7 +19,9 @@ All protocol tests use deterministic fixtures, isolated local mock WebSockets an
 
 ## Browser and Electron verification
 
-The dedicated [Lorca CI run on 4484c6e](https://github.com/charlzyx/bb/actions/runs/37975600609) passed all steps, including real Chromium browser smoke and real Electron main/preload/UI against an authenticated mock daemon. Its eleven synthetic screenshots were downloaded and visually inspected at desktop and mobile widths. Desktop chat, approval, empty state, and Electron bridge views showed no obvious overflow. The first mobile settings capture was premature (drawer handle before content); the smoke now waits for the endpoint input and settled drawer before capturing.
+The dedicated [Lorca CI run on 7eaea19](https://github.com/charlzyx/bb/actions/runs/37977149584) passed all steps, including real Chromium browser smoke and real Electron main/preload/UI against an authenticated mock daemon. Its eleven synthetic screenshots were downloaded and visually inspected at desktop and mobile widths; the run’s `lorca-synthetic-screenshots` artifact contains the original PNGs (requires GitHub sign-in; retained for 7 days). Desktop chat, approval, empty state, and Electron bridge views showed no obvious overflow. The mobile settings capture waits for the endpoint input and settled drawer. Its recaptured image shows the complete settings content. The Electron screenshot confirms named bot headers and a synthetic send/reply through the actual native bridge.
+
+The screenshots cover desktop light/dark chat, empty state, approval, disconnected state, mobile light/dark chat, empty state, chats/settings drawers, and the actual Electron bridge. PNGs are not committed to this repository. To regenerate them, use the smoke commands below in a supported browser environment.
 
 The local build environment still prevents browser socket creation, so runtime verification uses the normal sandboxed CI environment. No security isolation was disabled.
 
