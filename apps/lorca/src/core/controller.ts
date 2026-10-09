@@ -7,6 +7,7 @@ import {
   parseSnapshot,
   type WireEvent,
   type WireMessage,
+  type WireSnapshot,
 } from "./protocol";
 import {
   appendOlder,
@@ -26,7 +27,7 @@ import type {
   LorcaShellActions,
 } from "../ui/types";
 
-function messageView(message: WireMessage): LorcaMessage {
+function messageView(message: WireMessage, authorName?: string): LorcaMessage {
   const body = message.body;
   switch (body.kind) {
     case "text":
@@ -34,6 +35,7 @@ function messageView(message: WireMessage): LorcaMessage {
         kind: "message",
         id: message.id,
         role: message.author.kind === "you" ? "user" : "assistant",
+        authorName,
         text: body.text,
         createdAt: new Date(message.created_at * 1000).toISOString(),
         error: message.error ?? undefined,
@@ -172,6 +174,7 @@ export class LorcaController {
           ? `Lorca ${this.model.version || "connecting"} · ${this.model.relayConnected ? "relay synced" : "relay offline"}`
           : this.status.detail;
     return {
+      draftScope: this.accountEpoch,
       connection: {
         status: this.status.status,
         endpoint: this.status.endpoint,
@@ -201,7 +204,7 @@ export class LorcaController {
         }))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
       activeConversationId: chat?.id ?? null,
-      messages: messages.filter((m) => !m.queued).map(messageView),
+      messages: messages.filter((m) => !m.queued).map((m) => messageView(m, m.author.bot_id ? this.model.bots.get(m.author.bot_id)?.name : undefined)),
       agents: [...this.model.bots.values()].map((b) => ({
         id: b.id,
         label: b.name,
@@ -263,11 +266,19 @@ export class LorcaController {
       this.loading = false;
       this.loadingOlder = false;
     }
-    if (newSession) this.generation = status.generation;
+    if (newSession) {
+      if (this.model.version && !this.model.identityId) {
+        this.accountEpoch++;
+        this.navigation++;
+        this.model = emptyModel();
+        this.activeId = null;
+      }
+      this.generation = status.generation;
+    }
     this.emit();
     if (
       status.status === "connected" &&
-      (newSession || becameConnected || !this.model.version)
+      (newSession || becameConnected || (!this.model.version && !this.loading))
     )
       void this.refresh();
   }
@@ -291,6 +302,7 @@ export class LorcaController {
           );
         return;
       }
+      if (event.event === "snapshot") this.checkIdentity(event.data);
       this.model = applyEvent(this.model, event);
       this.reconcileSelection();
       this.emit();
@@ -302,13 +314,29 @@ export class LorcaController {
       this.fail(error);
     }
   }
+  private checkIdentity(snapshot: WireSnapshot): boolean {
+    if (this.model.version && this.model.identityId !== (snapshot.identity_id ?? null)) {
+      this.accountEpoch++;
+      this.navigation++;
+      this.model = emptyModel();
+      this.activeId = null;
+      this.pendingAttachments = [];
+      return true;
+    }
+    return false;
+  }
   private reconcileSelection(): void {
     if (this.activeId && !this.model.chats.has(this.activeId))
       this.activeId = null;
     if (!this.selectedBot || !this.model.bots.has(this.selectedBot))
       this.selectedBot = this.model.bots.keys().next().value ?? null;
   }
-  async refresh(): Promise<void> {
+  private refreshTask: Promise<void> | null = null;
+  refresh(): Promise<void> {
+    this.refreshTask = this.refreshSnapshot();
+    return this.refreshTask;
+  }
+  private async refreshSnapshot(): Promise<void> {
     const request = ++this.snapshotRequest,
       generation = this.generation;
     this.buffering = [];
@@ -324,8 +352,10 @@ export class LorcaController {
         generation !== this.generation
       )
         return;
-      let next = applySnapshot(this.model, parseSnapshot(raw));
-      for (const event of this.buffering ?? []) next = applyBufferedEvent(next, event);
+      const snapshot = parseSnapshot(raw);
+      const accountChanged = this.checkIdentity(snapshot);
+      let next = applySnapshot(this.model, snapshot);
+      for (const event of accountChanged ? [] : this.buffering ?? []) next = applyBufferedEvent(next, event);
       this.model = next;
       this.synchronized = true;
       this.buffering = null;
@@ -369,15 +399,15 @@ export class LorcaController {
       this.emit();
     }
   }
-  private async send(text: string): Promise<void> {
+  private async send(text: string): Promise<void | { chatId: string }> {
     if (this.sending) return;
+    let sent: { chatId: string } | undefined;
     await this.run(async () => {
       this.requireReady();
       if (!text.trim() && !this.pendingAttachments.length) return;
       this.sending = true;
       this.emit();
       const generation = this.generation,
-        navigation = this.navigation,
         accountEpoch = this.accountEpoch;
       const selected = this.pendingAttachments.slice();
       try {
@@ -409,7 +439,7 @@ export class LorcaController {
               chats: new Map(this.model.chats).set(chat.id, chat),
             };
           chatId = chat.id;
-          if (navigation === this.navigation) this.activeId = chat.id;
+
         }
         const messageId = `msg-${crypto.randomUUID()}`;
         this.pendingAttachments = this.pendingAttachments.filter(
@@ -451,11 +481,13 @@ export class LorcaController {
               messages: upsertMessage(chat.messages, message),
             }),
           };
+        sent = { chatId };
       } finally {
         this.sending = false;
       }
     });
     if (this.error) throw new Error(this.error);
+    return sent;
   }
   private async unique(
     key: string,
@@ -488,7 +520,7 @@ export class LorcaController {
       this.emit();
     },
     onSelectAgent: (id) => {
-      if (this.model.bots.has(id)) {
+      if (!this.sending && this.model.bots.has(id)) {
         this.selectedBot = id;
         this.emit();
       }
@@ -565,14 +597,34 @@ export class LorcaController {
     onLoadOlder: () => {
       void this.loadOlder();
     },
-    onSaveEndpoint: (endpoint) => {
-      this.accountEpoch++;
-      this.navigation++;
-      this.model = emptyModel();
-      this.activeId = null;
-      void this.run(async () => {
-        await this.bridge.connect(endpoint);
-      });
+    onSaveEndpoint: async (endpoint) => {
+      const match = /^ws:\/\/(127\.0\.0\.1|localhost):([0-9]{1,5})\/ws$/.exec(endpoint);
+      if (endpoint.length > 160 || !match || Number(match[2]) < 1 || Number(match[2]) > 65535)
+        throw new Error("Use ws://127.0.0.1:PORT/ws with a port between 1 and 65535.");
+      const canonical = `ws://127.0.0.1:${Number(match[2])}/ws`;
+      const changed = canonical !== this.status.endpoint.replace("localhost", "127.0.0.1");
+      if (changed) {
+        this.snapshotRequest++;
+        this.buffering = null;
+        this.loading = false;
+        this.accountEpoch++;
+        this.navigation++;
+        this.model = emptyModel();
+        this.activeId = null;
+        this.pendingAttachments = [];
+        this.synchronized = false;
+        this.emit();
+      }
+      try {
+        const status = await this.bridge.connect(canonical);
+        this.receiveStatus(status);
+        if (status.status !== "connected") throw new Error(status.detail || "Lorca did not connect. Check the endpoint and authentication.");
+        await (this.loading && this.refreshTask ? this.refreshTask : this.refresh());
+        if (!this.synchronized) throw new Error(this.error || "Lorca synchronization failed.");
+      } catch (error) {
+        this.fail(error);
+        throw error;
+      }
     },
     onReconnect: () => {
       this.pendingAttachments = [];

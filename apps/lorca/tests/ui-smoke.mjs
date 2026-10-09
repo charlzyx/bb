@@ -85,7 +85,7 @@ try {
     .click();
   await desktop
     .getByText(
-      "Use the local Lorca service on localhost or a loopback address.",
+      "Use ws://127.0.0.1:<port>/ws or ws://localhost:<port>/ws with a port from 1 to 65535.",
       { exact: true },
     )
     .waitFor();
@@ -149,9 +149,20 @@ try {
   assert.equal(await mobile.locator("#root").getAttribute("inert"), null);
   await mobile.locator(".lorca-header-status").click();
   await mobile
-    .getByRole("heading", { name: "Settings", exact: true })
-    .last()
+    .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
     .waitFor();
+  await mobile.waitForFunction(() => {
+    const drawer = document.querySelector(".lorca-settings-drawer");
+    const input = document.querySelector("#lorca-endpoint");
+    if (!drawer || !input) return false;
+    const bounds = input.getBoundingClientRect();
+    return (
+      bounds.top >= 0 &&
+      bounds.bottom <= innerHeight &&
+      Math.abs(new DOMMatrixReadOnly(getComputedStyle(drawer).transform).m42) <
+        0.5
+    );
+  });
   await screenshot(mobile, "mobile-settings-light");
   await mobile.getByRole("button", { name: "Dark", exact: true }).click();
   await mobile.getByRole("button", { name: "Close settings" }).click();
@@ -204,6 +215,7 @@ try {
     });
     const snapshot = {
       version: "synthetic-test",
+      identity_id: "fixture-identity-one",
       has_identity: true,
       relay_connected: false,
       bots: [
@@ -218,9 +230,30 @@ try {
     };
     const ledger = [];
     const sends = [];
+    const eventListeners = new Set();
+    const statusListeners = new Set();
     window.__lorcaUiTest = {
       ledger,
       sends,
+      reconnect: () => {
+        for (const status of ["connecting", "connected"]) {
+          for (const listener of statusListeners)
+            listener({
+              status,
+              endpoint: "ws://127.0.0.1:4862/ws",
+              generation: 2,
+              authMode: "token",
+            });
+        }
+      },
+      changeIdentity: () => {
+        snapshot.identity_id = "fixture-identity-two";
+        for (const listener of eventListeners)
+          listener({ event: "identity.changed", data: { has_identity: true } });
+      },
+      rejectSend: () => {
+        sends.shift().reject(new Error("Synthetic send failure"));
+      },
       complete: () => {
         const item = sends.shift();
         item.resolve({
@@ -249,14 +282,28 @@ try {
       request: async (method, params) => {
         ledger.push({ method, params });
         if (method === "bootstrap") return structuredClone(snapshot);
+        if (method === "chats.create") {
+          const chat = {
+            ...createChat(params.id, "Created fixture chat"),
+            messages: [],
+          };
+          snapshot.chats.push(chat);
+          return { chat };
+        }
         if (method === "chats.send")
           return new Promise((resolve, reject) =>
             sends.push({ params, resolve, reject }),
           );
         throw new Error(`Unexpected synthetic request: ${method}`);
       },
-      onEvent: () => () => {},
-      onStatus: () => () => {},
+      onEvent: (listener) => {
+        eventListeners.add(listener);
+        return () => eventListeners.delete(listener);
+      },
+      onStatus: (listener) => {
+        statusListeners.add(listener);
+        return () => statusListeners.delete(listener);
+      },
     };
   });
   await controlled.goto(base, { waitUntil: "networkidle" });
@@ -307,6 +354,124 @@ try {
   await controlled
     .getByText("First synthetic submission", { exact: true })
     .waitFor();
+  await controlled.keyboard.press("Control+n");
+  await controlled
+    .getByRole("textbox", { name: "Message Lorca" })
+    .fill("Preserve a failed first message");
+  await controlled
+    .getByRole("button", { name: "Send message", exact: true })
+    .click();
+  await controlled.waitForFunction(
+    () => window.__lorcaUiTest.sends.length === 1,
+  );
+  assert.equal(
+    await controlled.locator(".lorca-header-title").innerText(),
+    "New chat",
+    "Created chat stays unselected until send succeeds",
+  );
+  await controlled.evaluate(() => window.__lorcaUiTest.rejectSend());
+  await controlled
+    .getByText("Synthetic send failure", { exact: true })
+    .waitFor();
+  assert.equal(
+    await controlled
+      .getByRole("textbox", { name: "Message Lorca" })
+      .inputValue(),
+    "Preserve a failed first message",
+    "Failed first message remains visibly in the new-chat composer",
+  );
+  assert.equal(
+    await controlled.locator(".lorca-header-title").innerText(),
+    "New chat",
+  );
+  await controlled
+    .getByRole("textbox", { name: "Message Lorca" })
+    .fill("Successful first message");
+  await controlled
+    .getByRole("button", { name: "Send message", exact: true })
+    .click();
+  await controlled.waitForFunction(
+    () => window.__lorcaUiTest.sends.length === 1,
+  );
+  await controlled
+    .getByRole("textbox", { name: "Message Lorca" })
+    .fill("Edited new-chat follow-up");
+  await controlled.evaluate(() => window.__lorcaUiTest.complete());
+  await controlled
+    .getByText("Successful first message", { exact: true })
+    .waitFor();
+  assert.equal(
+    await controlled.locator(".lorca-header-title").innerText(),
+    "Created fixture chat",
+  );
+  assert.equal(
+    await controlled
+      .getByRole("textbox", { name: "Message Lorca" })
+      .inputValue(),
+    "Edited new-chat follow-up",
+    "New draft edits migrate into the successfully created chat",
+  );
+  await controlled.keyboard.press("Control+n");
+  await controlled
+    .getByRole("textbox", { name: "Message Lorca" })
+    .fill("Create without stealing navigation");
+  await controlled
+    .getByRole("button", { name: "Send message", exact: true })
+    .click();
+  await controlled.waitForFunction(
+    () => window.__lorcaUiTest.sends.length === 1,
+  );
+  await chooseChat(controlled, "Fixture Two");
+  await controlled.evaluate(() => window.__lorcaUiTest.complete());
+  await controlled.waitForFunction(
+    () => document.querySelector(".lorca-send-button")?.disabled === false,
+  );
+  assert.equal(
+    await controlled.locator(".lorca-header-title").innerText(),
+    "Fixture Two",
+    "Late first-send acknowledgement does not steal explicit navigation",
+  );
+  await controlled.locator(".lorca-header-status").click();
+  await controlled
+    .getByRole("button", { name: "Save endpoint", exact: true })
+    .click();
+  await controlled.locator(".lorca-settings .lorca-field-error").waitFor();
+  assert.equal(
+    await controlled
+      .locator(".lorca-settings")
+      .getByText("Saved", { exact: true })
+      .count(),
+    0,
+    "Rejected endpoint connection never reports Saved",
+  );
+  await controlled.getByRole("button", { name: "Close settings" }).click();
+  await controlled.keyboard.press("Control+n");
+  await controlled
+    .getByRole("textbox", { name: "Message Lorca" })
+    .fill("Private account draft");
+  await controlled.evaluate(() => window.__lorcaUiTest.reconnect());
+  await controlled.waitForFunction(
+    () => document.querySelector(".lorca-send-button")?.disabled === false,
+  );
+  assert.equal(
+    await controlled
+      .getByRole("textbox", { name: "Message Lorca" })
+      .inputValue(),
+    "Private account draft",
+    "Ordinary reconnect preserves drafts",
+  );
+  await controlled.evaluate(() => window.__lorcaUiTest.changeIdentity());
+  await controlled.waitForFunction(
+    () => document.querySelector("#lorca-composer")?.value === "",
+  );
+  await chooseChat(controlled, "Fixture Two");
+  assert.equal(
+    await controlled
+      .getByRole("textbox", { name: "Message Lorca" })
+      .inputValue(),
+    "",
+    "Account switch clears drafts across all conversations",
+  );
   assert.deepEqual(
     failures,
     [],
@@ -329,6 +494,12 @@ try {
           "Offline disables sending",
           "Repeated send deduplication",
           "Late acknowledgement preserves edited and switched-chat drafts",
+          "First-send failure preserves the visible new draft",
+          "First-send success migrates edited draft without stealing navigation",
+          "Rejected endpoint save never reports success",
+          "Settings screenshot waits for realized content",
+          "Ordinary reconnect preserves drafts",
+          "Account switch clears all drafts",
           "No console errors",
         ],
       },

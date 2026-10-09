@@ -233,11 +233,11 @@ export function TranscriptItem({
   return (
     <article
       className={`lorca-assistant-message${message.streaming ? " lorca-message-streaming" : ""}`}
-      aria-label="Lorca response"
+      aria-label={`${message.authorName || "Lorca"} response`}
     >
       <div className="lorca-message-author">
         <AssistantMark />
-        <span>Lorca</span>
+        <span>{message.authorName || "Lorca"}</span>
         {message.streaming && (
           <span className="lorca-streaming-label">
             Writing

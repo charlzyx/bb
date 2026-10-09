@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Markdown, safeMarkdownUrl } from "./markdown";
@@ -14,7 +15,7 @@ const actions: LorcaShellActions = {
   onSendNow() {},
   onLoadOlder() {},
   onSelectAgent() {},
-  onSaveEndpoint() {},
+  async onSaveEndpoint() {},
   onReconnect() {},
   onApproval() {},
 };
@@ -132,10 +133,18 @@ test("Endpoint configuration allows loopback WebSockets only, without secrets", 
   for (const value of [
     "ws://127.0.0.1:9476/ws",
     "ws://localhost:9476/ws",
-    "wss://[::1]:9476/ws",
+    "ws://localhost:00080/ws",
   ])
     assert.equal(validateEndpoint(value), null);
   for (const value of [
+    "wss://[::1]:9476/ws",
+    "ws://[::1]:9476/ws",
+    "wss://localhost:9476/ws",
+    "ws://localhost/ws",
+    "ws://localhost:0/ws",
+    "ws://localhost:65536/ws",
+    "ws://127.1:9476/ws",
+    "ws://LOCALHOST:9476/ws",
     "https://localhost:9476/ws",
     "ws://remote.example/ws",
     "ws://localhost/",
@@ -159,5 +168,64 @@ test("Failed text messages preserve partial content and show their error", () =>
     assert.match(html, /Partial response/);
     assert.match(html, /role="alert"/);
     assert.match(html, /Runner disconnected/);
+  }
+});
+
+test("Named assistant identities are preserved in headers and accessible labels", () => {
+  const html = renderMessage({
+    kind: "message",
+    id: "named-1",
+    role: "assistant",
+    authorName: "Fixture Bot",
+    text: "Named bot response",
+  });
+  assert.match(html, /aria-label="Fixture Bot response"/);
+  assert.match(html, /<span>Fixture Bot<\/span>/);
+  assert.doesNotMatch(html, /<span>Lorca<\/span>/);
+});
+
+test("Renderer endpoint validation stays aligned with the native boundary", () => {
+  const { validateEndpoint: validateNativeEndpoint } = createRequire(
+    import.meta.url,
+  )("../../native/bridge.cjs");
+  const candidates = [
+    "",
+    " ws://localhost:4862/ws",
+    "ws://localhost:4862/ws ",
+    "ws://user:pass@localhost:4862/ws",
+    "ws://localhost:4862/ws?token=test",
+    "ws://localhost:4862/ws#hash",
+  ];
+  for (const scheme of ["ws", "wss", "http"]) {
+    for (const host of [
+      "localhost",
+      "LOCALHOST",
+      "127.0.0.1",
+      "127.1",
+      "[::1]",
+      "remote.invalid",
+    ]) {
+      for (const port of [
+        "",
+        "0",
+        "1",
+        "80",
+        "00080",
+        "000080",
+        "65535",
+        "65536",
+        "-1",
+      ])
+        candidates.push(`${scheme}://${host}:${port}/ws`);
+    }
+  }
+  for (const value of candidates) {
+    let nativeAccepted = true;
+    try {
+      validateNativeEndpoint(value);
+    } catch {
+      nativeAccepted = false;
+    }
+    assert.equal(validateEndpoint(value) === null, nativeAccepted, value);
   }
 });

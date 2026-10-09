@@ -13,6 +13,7 @@ const text = (id: string, role: string, body: string, offset: number) => ({
 export const demoSnapshot = {
   version: "synthetic-preview",
   has_identity: true,
+  identity_id: "synthetic-account",
   relay_connected: false,
   relay_update_required: false,
   bots: [{ id: "bot-demo", name: "Lorca", runner_id: "runner-demo" }],

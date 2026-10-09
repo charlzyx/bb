@@ -9,44 +9,62 @@ import {
 import type { LorcaConnection, LorcaShellActions } from "./types";
 
 export function validateEndpoint(value: string): string | null {
-  try {
-    const url = new URL(value);
-    if (!["ws:", "wss:"].includes(url.protocol))
-      return "Use a WebSocket URL beginning with ws:// or wss://.";
-    if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))
-      return "Use the local Lorca service on localhost or a loopback address.";
-    if (url.username || url.password || url.search || url.hash)
-      return "The endpoint must not contain credentials, query parameters, or a fragment.";
-    if (url.pathname !== "/ws") return "The Lorca WebSocket path must be /ws.";
-    return null;
-  } catch {
-    return "Enter a valid local WebSocket URL.";
+  const match = /^ws:\/\/(127\.0\.0\.1|localhost):([0-9]{1,5})\/ws$/.exec(
+    value,
+  );
+  if (
+    !match ||
+    value.length > 160 ||
+    Number(match[2]) < 1 ||
+    Number(match[2]) > 65535
+  ) {
+    return "Use ws://127.0.0.1:<port>/ws or ws://localhost:<port>/ws with a port from 1 to 65535.";
   }
+  return null;
 }
 
 function EndpointForm({
   initialEndpoint,
   onSaveEndpoint,
+  connecting,
 }: {
   initialEndpoint: string;
+  connecting: boolean;
   onSaveEndpoint: LorcaShellActions["onSaveEndpoint"];
 }) {
   const [endpoint, setEndpoint] = useState(initialEndpoint);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function saveEndpoint() {
+    if (saving || connecting) return;
+    const value = endpoint.trim();
+    const problem = validateEndpoint(value);
+    setError(problem);
+    setSaved(false);
+    if (problem) return;
+    setSaving(true);
+    try {
+      await onSaveEndpoint(value);
+      setSaved(true);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "The endpoint could not be saved. Check your local Lorca runtime and try again.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
   return (
     <>
       <label htmlFor="lorca-endpoint">Lorca WebSocket endpoint</label>
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          const value = endpoint.trim();
-          const problem = validateEndpoint(value);
-          setError(problem);
-          if (!problem) {
-            onSaveEndpoint(value);
-            setSaved(true);
-          }
+          void saveEndpoint();
         }}
       >
         <Input
@@ -54,6 +72,7 @@ function EndpointForm({
           value={endpoint}
           placeholder="ws://127.0.0.1:PORT/ws"
           spellCheck={false}
+          disabled={saving || connecting}
           aria-invalid={Boolean(error)}
           aria-describedby="lorca-endpoint-help"
           onChange={(event) => {
@@ -72,8 +91,8 @@ function EndpointForm({
           </p>
         )}
         <div className="lorca-settings-form-actions">
-          <Button size="sm" type="submit">
-            Save endpoint
+          <Button size="sm" type="submit" disabled={saving || connecting}>
+            {saving || connecting ? "Connecting…" : "Save endpoint"}
           </Button>
           {saved && (
             <span role="status">
@@ -146,6 +165,7 @@ export function Settings({
             <EndpointForm
               key={`${connection.endpoint}:${open}`}
               initialEndpoint={connection.endpoint}
+              connecting={connection.status === "connecting"}
               onSaveEndpoint={actions.onSaveEndpoint}
             />
             <div className="lorca-connection-detail">

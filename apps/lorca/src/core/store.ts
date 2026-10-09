@@ -10,6 +10,7 @@ import type {
 export interface Model {
   version: string;
   hasIdentity: boolean;
+  identityId: string | null;
   relayConnected: boolean;
   updateRequired: boolean;
   bots: Map<string, WireBot>;
@@ -21,6 +22,7 @@ export function emptyModel(): Model {
   return {
     version: "",
     hasIdentity: false,
+    identityId: null,
     relayConnected: false,
     updateRequired: false,
     bots: new Map(),
@@ -40,7 +42,9 @@ export function upsertMessage(
 export function applySnapshot(model: Model, snapshot: WireSnapshot): Model {
   const chats = new Map<string, WireChat>();
   for (const incoming of snapshot.chats) {
-    const previous = model.chats.get(incoming.id);
+    const previous = model.identityId === (snapshot.identity_id ?? null)
+      ? model.chats.get(incoming.id)
+      : undefined;
     const oldest = incoming.messages[0];
     const firstIndex =
       previous && oldest
@@ -59,6 +63,7 @@ export function applySnapshot(model: Model, snapshot: WireSnapshot): Model {
   return {
     version: snapshot.version,
     hasIdentity: snapshot.has_identity,
+    identityId: snapshot.identity_id ?? null,
     relayConnected: snapshot.relay_connected,
     updateRequired: snapshot.relay_update_required,
     bots: new Map(snapshot.bots.map((b) => [b.id, b])),
@@ -165,6 +170,7 @@ export function isRunning(model: Model, chatId: string): boolean {
 }
 
 export function applyBufferedEvent(model: Model, event: WireEvent): Model {
+  if (event.event === "snapshot" && model.identityId !== (event.data.identity_id ?? null)) return model;
   if(event.event==="message.added"||event.event==="message.updated"){
     const incoming=event.data.message;
     const existing=model.chats.get(event.data.chat_id)?.messages.find(m=>m.id===incoming.id);

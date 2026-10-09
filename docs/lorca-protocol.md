@@ -192,3 +192,9 @@ Verified source URLs:
 ## Snapshot ordering limit
 
 Lorca has no event sequence, message revision, or snapshot barrier. Events buffered while `bootstrap` is running can precede or follow the point at which its snapshot was built. The adapter follows the native client's buffer-and-merge approach, guards stale connection/account generations, and prevents known terminal message/permission states and prefix-stream text from regressing during replay. It cannot prove a total order for arbitrary conflicting updates or a job-start event versus a snapshot that no longer lists that job. Reconnect/Refresh obtains another read-only snapshot. Rust remains the authority for whether a permission is pending and whether a queued message can be sent now. A future wire-level revision/barrier is needed for strict monotonic reconciliation; this integration does not claim that guarantee.
+
+### Account-scoped drafts
+
+Both pinned daemons expose `bootstrap.identity_id`. The controller tracks it to invalidate draft scope, attachment selections and cached history if the account changes, including a change discovered after reconnect. The explicit `identity.changed` event invalidates immediately. Same-account reconnects preserve text drafts. A daemon omitting the identity ID cannot establish continuity, so a new connection conservatively resets the account scope. Endpoint changes also reset the scope; equivalent loopback endpoint spellings do not.
+
+Native attachment-send errors require selecting files again; unknown mutation outcomes never replay files or text automatically.

@@ -256,7 +256,11 @@ function EmptyState({
   );
 }
 
-export function LorcaShell({ state, actions }: LorcaShellProps) {
+export function LorcaShell(props: LorcaShellProps) {
+  return <LorcaShellSession key={props.state.draftScope ?? 0} {...props} />;
+}
+
+function LorcaShellSession({ state, actions }: LorcaShellProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -272,6 +276,9 @@ export function LorcaShell({ state, actions }: LorcaShellProps) {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
+  const navigationRevision = useRef(0);
+  const mounted = useRef(true);
+  const currentConversation = useRef(state.activeConversationId);
   const previousLayout = useRef({
     conversation: state.activeConversationId,
     firstId: state.messages[0]?.id,
@@ -288,6 +295,13 @@ export function LorcaShell({ state, actions }: LorcaShellProps) {
     setDrafts((current) => ({ ...current, [draftKey]: text }));
 
   useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
@@ -302,6 +316,7 @@ export function LorcaShell({ state, actions }: LorcaShellProps) {
       }
       if (event.key.toLowerCase() === "n") {
         event.preventDefault();
+        navigationRevision.current += 1;
         actions.onNewConversation();
         setSidebarOpen(false);
         composerRef.current?.focus();
@@ -310,6 +325,10 @@ export function LorcaShell({ state, actions }: LorcaShellProps) {
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [actions, compact]);
+
+  useLayoutEffect(() => {
+    currentConversation.current = state.activeConversationId;
+  }, [state.activeConversationId]);
 
   useLayoutEffect(() => {
     const input = composerRef.current;
@@ -354,25 +373,39 @@ export function LorcaShell({ state, actions }: LorcaShellProps) {
       !state.selectedAgentId
     )
       return;
+    const submittedNavigation = navigationRevision.current;
     setSending(true);
     setSendError(null);
     try {
-      await actions.onSend(text);
-      setDrafts((current) => ({
-        ...current,
-        [draftKey]:
-          current[draftKey] === draft ? "" : (current[draftKey] ?? ""),
-      }));
+      const result = await actions.onSend(text);
+      if (!mounted.current) return;
+      const createdChatId =
+        draftKey === "__new__" && result ? result.chatId : null;
+      const selectCreatedChat =
+        createdChatId !== null &&
+        submittedNavigation === navigationRevision.current &&
+        currentConversation.current === null;
+      setDrafts((current) => {
+        const nextDraft =
+          current[draftKey] === draft ? "" : (current[draftKey] ?? "");
+        if (selectCreatedChat)
+          return { ...current, __new__: "", [createdChatId]: nextDraft };
+        return { ...current, [draftKey]: nextDraft };
+      });
+      if (selectCreatedChat) actions.onSelectConversation(createdChatId);
       followLatest.current = true;
     } catch (error) {
+      if (!mounted.current) return;
       setSendError(
         error instanceof Error
           ? error.message
           : "The message could not be sent. Your draft is still here.",
       );
     } finally {
-      setSending(false);
-      composerRef.current?.focus();
+      if (mounted.current) {
+        setSending(false);
+        composerRef.current?.focus();
+      }
     }
   }
 
@@ -393,7 +426,10 @@ export function LorcaShell({ state, actions }: LorcaShellProps) {
             actions={actions}
             searchRef={searchRef}
             onSettings={() => setSettingsOpen(true)}
-            onNavigate={() => composerRef.current?.focus()}
+            onNavigate={() => {
+              navigationRevision.current += 1;
+              composerRef.current?.focus();
+            }}
           />
         </aside>
       )}
@@ -413,7 +449,10 @@ export function LorcaShell({ state, actions }: LorcaShellProps) {
                 setSidebarOpen(false);
                 setSettingsOpen(true);
               }}
-              onNavigate={() => setSidebarOpen(false)}
+              onNavigate={() => {
+                navigationRevision.current += 1;
+                setSidebarOpen(false);
+              }}
             />
           )}
         </PersistentResponsiveDrawerShell>
@@ -512,7 +551,7 @@ export function LorcaShell({ state, actions }: LorcaShellProps) {
                 ) && (
                   <div className="lorca-thinking" role="status">
                     <AssistantMark />
-                    <span>Lorca is working</span>
+                    <span>Working on your message</span>
                     <span className="lorca-thinking-dots">
                       <i />
                       <i />
@@ -669,10 +708,13 @@ export function LorcaShell({ state, actions }: LorcaShellProps) {
                     <select
                       aria-label="Select Lorca bot"
                       value={state.selectedAgentId ?? ""}
-                      onChange={(event) =>
-                        actions.onSelectAgent(event.target.value)
-                      }
+                      onChange={(event) => {
+                        navigationRevision.current += 1;
+                        actions.onSelectAgent(event.target.value);
+                      }}
                       disabled={
+                        sending ||
+                        state.loading ||
                         state.busy ||
                         Boolean(state.activeConversationId) ||
                         !state.agents.length

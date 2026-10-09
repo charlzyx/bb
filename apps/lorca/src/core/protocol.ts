@@ -65,6 +65,7 @@ export interface WireTurn {
 export interface WireSnapshot {
   version: string;
   has_identity: boolean;
+  identity_id?: string | null;
   relay_connected: boolean;
   relay_update_required: boolean;
   bots: WireBot[];
@@ -252,6 +253,7 @@ export function parseSnapshot(value: unknown): WireSnapshot {
   return {
     version: string(v.version, "version"),
     has_identity: boolean(v.has_identity, "has_identity"),
+    identity_id: v.identity_id == null ? null : string(v.identity_id, "identity_id"),
     relay_connected: boolean(v.relay_connected, "relay_connected"),
     relay_update_required: boolean(
       v.relay_update_required,

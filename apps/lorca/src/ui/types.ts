@@ -27,6 +27,7 @@ export type LorcaMessage =
       kind: "message";
       id: string;
       role: "user" | "assistant";
+      authorName?: string;
       text: string;
       createdAt?: string;
       streaming?: boolean;
@@ -71,6 +72,7 @@ export interface LorcaShellState {
   error: string | null;
   queue: { id: string; text: string; canSendNow?: boolean }[];
   demo: boolean;
+  draftScope?: number;
   pendingAttachments?: { id: string; name: string }[];
   attachmentsEnabled?: boolean;
 }
@@ -78,12 +80,14 @@ export interface LorcaShellState {
 export interface LorcaShellActions {
   onSelectConversation: (id: string) => void;
   onNewConversation: () => void;
-  onSend: (text: string) => void | Promise<void>;
+  onSend: (
+    text: string,
+  ) => void | { chatId: string } | Promise<void | { chatId: string }>;
   onStop: () => void;
   onSendNow: (id: string) => void;
   onLoadOlder: () => void;
   onSelectAgent: (id: string) => void;
-  onSaveEndpoint: (url: string) => void;
+  onSaveEndpoint: (url: string) => Promise<void>;
   onReconnect: () => void;
   onPickAttachments?: () => void;
   onRemoveAttachment?: (id: string) => void;
