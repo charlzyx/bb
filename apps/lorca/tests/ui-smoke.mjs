@@ -48,6 +48,23 @@ async function screenshot(page, name) {
   assert.equal(overflow.page, false, `${name}: horizontal page overflow`);
   assert.equal(overflow.composer, false, `${name}: composer overflow`);
 }
+async function chooseSettingsPage(page, label) {
+  await page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("button", { name: label, exact: true })
+    .click();
+}
+async function waitForSettings(page) {
+  await page
+    .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
+    .waitFor();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector(".lorca-settings-runtime-toolbar")
+        ?.getAttribute("aria-busy") === "false",
+  );
+}
 async function chooseChat(page, text) {
   await page
     .locator(".lorca-chat-item")
@@ -81,7 +98,7 @@ try {
     .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
     .fill("ws://remote.invalid/ws");
   await desktop
-    .getByRole("button", { name: "Save endpoint", exact: true })
+    .getByRole("button", { name: "Connect for this session", exact: true })
     .click();
   await desktop
     .getByText(
@@ -99,10 +116,12 @@ try {
     "Closing settings discards unsaved endpoint edits and validation errors",
   );
   assert.equal(await desktop.locator(".lorca-field-error").count(), 0);
+  await chooseSettingsPage(desktop, "Preferences");
   await desktop.getByRole("button", { name: "Dark", exact: true }).click();
   await desktop.getByRole("button", { name: "Close settings" }).click();
   await screenshot(desktop, "desktop-conversation-dark");
   await desktop.locator(".lorca-header-status").click();
+  await chooseSettingsPage(desktop, "Preferences");
   await desktop.getByRole("button", { name: "Light", exact: true }).click();
   await desktop.getByRole("button", { name: "Close settings" }).click();
   const preview = desktop
@@ -151,6 +170,9 @@ try {
   await mobile
     .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
     .waitFor();
+  await mobile
+    .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
+    .scrollIntoViewIfNeeded();
   await mobile.waitForFunction(() => {
     const drawer = document.querySelector(".lorca-settings-drawer");
     const input = document.querySelector("#lorca-endpoint");
@@ -164,10 +186,85 @@ try {
     );
   });
   await screenshot(mobile, "mobile-settings-light");
+  await chooseSettingsPage(mobile, "Preferences");
   await mobile.getByRole("button", { name: "Dark", exact: true }).click();
   await mobile.getByRole("button", { name: "Close settings" }).click();
   await screenshot(mobile, "mobile-conversation-dark");
 
+  const settingsDesktop = await browser.newPage({
+    viewport: { width: 1240, height: 820 },
+    deviceScaleFactor: 1,
+  });
+  captureErrors(settingsDesktop);
+  await settingsDesktop.goto(`${base}/?demo=1`, { waitUntil: "networkidle" });
+  await settingsDesktop.locator(".lorca-header-status").click();
+  await waitForSettings(settingsDesktop);
+  await screenshot(settingsDesktop, "desktop-settings-connection");
+  await chooseSettingsPage(settingsDesktop, "Preferences");
+  await screenshot(settingsDesktop, "desktop-settings-preferences");
+  await settingsDesktop
+    .getByRole("button", { name: "Dark", exact: true })
+    .click();
+  await settingsDesktop.reload({ waitUntil: "networkidle" });
+  assert.equal(
+    await settingsDesktop.locator("html").getAttribute("class"),
+    "dark",
+    "Appearance restores on reload within this session",
+  );
+  await settingsDesktop.locator(".lorca-header-status").click();
+  await waitForSettings(settingsDesktop);
+  await chooseSettingsPage(settingsDesktop, "Preferences");
+  await screenshot(settingsDesktop, "desktop-settings-preferences-dark");
+  await settingsDesktop
+    .getByRole("button", { name: "Light", exact: true })
+    .click();
+  await chooseSettingsPage(settingsDesktop, "Runners");
+  await settingsDesktop
+    .getByText("Demo desktop", { exact: true })
+    .first()
+    .waitFor();
+  await screenshot(settingsDesktop, "desktop-settings-runners");
+  await settingsDesktop
+    .locator(".lorca-runtime-disclosure summary")
+    .first()
+    .click();
+  await settingsDesktop
+    .getByText("Tool count not reported", { exact: true })
+    .waitFor();
+  await screenshot(settingsDesktop, "desktop-settings-runner-details");
+  await chooseSettingsPage(settingsDesktop, "MCP");
+  await settingsDesktop
+    .getByRole("combobox", { name: "Runner", exact: true })
+    .waitFor();
+  await screenshot(settingsDesktop, "desktop-settings-mcp");
+  await settingsDesktop
+    .getByRole("combobox", { name: "Runner", exact: true })
+    .selectOption("runner-second");
+  await settingsDesktop
+    .getByText("MCP inventory unavailable", { exact: true })
+    .waitFor();
+  await screenshot(settingsDesktop, "desktop-settings-mcp-unavailable");
+  assert.equal(
+    await settingsDesktop.locator(".lorca-agent-picker select").inputValue(),
+    "bot-demo",
+    "Inspecting a runner never reassigns the chat bot",
+  );
+  assert.equal(
+    await settingsDesktop.locator("#root").getAttribute("inert"),
+    null,
+  );
+  assert.equal(
+    await settingsDesktop.locator("#root").getAttribute("aria-hidden"),
+    null,
+  );
+  await settingsDesktop.keyboard.press("Escape");
+  assert.equal(
+    await settingsDesktop
+      .getByRole("dialog", { name: "Settings", exact: true })
+      .count(),
+    0,
+    "Escape closes desktop settings",
+  );
   const offline = await browser.newPage({
     viewport: { width: 1200, height: 850 },
   });
@@ -433,16 +530,15 @@ try {
   );
   await controlled.locator(".lorca-header-status").click();
   await controlled
-    .getByRole("button", { name: "Save endpoint", exact: true })
+    .getByRole("button", { name: "Connect for this session", exact: true })
     .click();
   await controlled.locator(".lorca-settings .lorca-field-error").waitFor();
   assert.equal(
     await controlled
-      .locator(".lorca-settings")
-      .getByText("Saved", { exact: true })
+      .locator(".lorca-settings-form-actions [role=status]")
       .count(),
     0,
-    "Rejected endpoint connection never reports Saved",
+    "Rejected endpoint connection never reports success",
   );
   await controlled.getByRole("button", { name: "Close settings" }).click();
   await controlled.keyboard.press("Control+n");
@@ -500,6 +596,9 @@ try {
           "Settings screenshot waits for realized content",
           "Ordinary reconnect preserves drafts",
           "Account switch clears all drafts",
+          "Desktop settings panes and read-only runner inspection",
+          "Appearance survives view reload within the session",
+          "Desktop settings Escape and app-root focus behavior",
           "No console errors",
         ],
       },

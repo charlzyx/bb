@@ -3,6 +3,7 @@ const path = require('node:path');
 const { pathToFileURL, fileURLToPath } = require('node:url');
 const { LorcaBridge, isTrustedSender, validateCopyText } = require('./bridge.cjs');
 const { AttachmentSelections } = require('./attachments.cjs');
+const { SettingsInventory, sanitizeRendererEvent, sanitizeRendererResult, safeRendererError } = require('./settings.cjs');
 
 const distDirectory = path.resolve(__dirname, '../dist');
 const indexPath = path.join(distDirectory, 'index.html');
@@ -11,6 +12,7 @@ if (devURL && !/^http:\/\/127\.0\.0\.1:5178\/$/.test(devURL)) throw new Error('L
 const trustedURL = devURL || pathToFileURL(indexPath).href;
 const bridge = new LorcaBridge({ endpoint: process.env.LORCA_ENDPOINT ?? `ws://127.0.0.1:${process.env.LORCA_PORT ?? '4862'}/ws` });
 const selections = new AttachmentSelections();
+const settings = new SettingsInventory(bridge);
 let window = null;
 let choosing = false;
 function ensureSender(event) {
@@ -21,7 +23,13 @@ function send(channel, value) {
 }
 bridge.on('event', value => {
   if (value.event === 'identity.changed') selections.clear();
-  send('lorca:event', value);
+  try {
+    const projected = sanitizeRendererEvent(value);
+    if (projected) send('lorca:event', projected);
+  } catch {
+    bridge.close();
+    send('lorca:status-update', { ...bridge.getStatus(), status: 'error', detail: 'Incompatible Lorca response. Reconnect and try again.' });
+  }
 });
 bridge.on('status', value => {
   if (value.status !== 'connected') selections.clear();
@@ -30,7 +38,23 @@ bridge.on('status', value => {
 ipcMain.handle('lorca:connect', async (event, endpoint) => { ensureSender(event); selections.clear(); return bridge.connect(endpoint); });
 ipcMain.handle('lorca:copy-text', (event, text) => { ensureSender(event); clipboard.writeText(validateCopyText(text)); return null; });
 ipcMain.handle('lorca:status', event => { ensureSender(event); return bridge.getStatus(); });
-ipcMain.handle('lorca:request', (event, method, params) => { ensureSender(event); return bridge.request(method, params); });
+ipcMain.handle('lorca:get-settings', async (event, params = {}) => {
+  ensureSender(event);
+  const fence = settings.capture();
+  const result = await settings.get(params);
+  ensureSender(event);
+  settings.check(fence);
+  return result;
+});
+ipcMain.handle('lorca:request', async (event, method, params) => {
+  ensureSender(event);
+  const fence = settings.capture();
+  try {
+    const result = await bridge.request(method, params);
+    ensureSender(event);
+    return settings.projectResult(method, result, fence);
+  } catch (error) { throw safeRendererError(error); }
+});
 ipcMain.handle('lorca:pick-attachments', async event => {
   ensureSender(event);
   if (choosing) throw new Error('A file picker is already open');
@@ -42,9 +66,18 @@ ipcMain.handle('lorca:pick-attachments', async event => {
     ensureSender(event);
     if (bridge.getStatus().generation !== generation || selections.epoch !== selectionEpoch) throw new Error('The Lorca connection changed. Choose your files again.');
     return result.canceled ? [] : await selections.add(result.filePaths);
-  } finally { choosing = false; }
+  } catch (error) { throw safeRendererError(error); } finally { choosing = false; }
 });
-ipcMain.handle('lorca:send-attachments', (event, params) => { ensureSender(event); return selections.send(bridge, params); });
+ipcMain.handle('lorca:send-attachments', async (event, params) => {
+  ensureSender(event);
+  const fence = settings.capture();
+  try {
+    const result = await selections.send(bridge, params);
+    ensureSender(event);
+    settings.check(fence);
+    return sanitizeRendererResult('chats.send', result);
+  } catch (error) { throw safeRendererError(error); }
+});
 
 function createWindow() {
   window = new BrowserWindow({

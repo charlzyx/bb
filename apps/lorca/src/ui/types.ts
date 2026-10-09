@@ -58,6 +58,50 @@ export type LorcaMessage =
       tone: "info" | "error";
     };
 
+export interface RuntimeSettings {
+  version: string;
+  hasIdentity: boolean;
+  relayConnected: boolean;
+  updateRequired: boolean;
+  authMode: "token" | "legacy";
+  devices: {
+    id: string;
+    name: string;
+    os: string;
+    version: string;
+    online: boolean;
+    isThisDevice: boolean;
+    plugins: {
+      id: string;
+      name: string;
+      state: string;
+      toolCount: number | null;
+    }[];
+  }[];
+  providers: { id: string; name: string; connected: boolean }[];
+  bots: {
+    id: string;
+    name: string;
+    runnerId: string;
+    provider: string | null;
+    model: string | null;
+  }[];
+  mcp: {
+    status: "ready" | "unavailable";
+    runnerId: string | null;
+    hasConfigError: boolean;
+    servers: {
+      name: string;
+      transport: "stdio" | "http" | "unknown";
+      enabled: boolean;
+      state: string;
+      toolCount: number | null;
+      hiddenToolCount: number | null;
+      hasError: boolean;
+    }[];
+  };
+}
+
 export interface LorcaShellState {
   connection: LorcaConnection;
   conversations: LorcaConversation[];
@@ -75,6 +119,9 @@ export interface LorcaShellState {
   draftScope?: number;
   pendingAttachments?: { id: string; name: string }[];
   attachmentsEnabled?: boolean;
+  runtimeSettings?: RuntimeSettings;
+  settingsLoading?: boolean;
+  settingsError?: string | null;
 }
 
 export interface LorcaShellActions {
@@ -89,6 +136,7 @@ export interface LorcaShellActions {
   onSelectAgent: (id: string) => void;
   onSaveEndpoint: (url: string) => Promise<void>;
   onReconnect: () => void;
+  onRefreshSettings: (runnerId?: string) => void;
   onPickAttachments?: () => void;
   onRemoveAttachment?: (id: string) => void;
   onApproval: (id: string, decision: "allow" | "always" | "deny") => void;

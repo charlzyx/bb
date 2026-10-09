@@ -3,10 +3,23 @@ import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { Input } from "@bb/shared-ui/input";
 import {
-  PersistentResponsiveDrawerShell,
-  useResponsiveDrawerRealization,
-} from "@bb/shared-ui/responsive-overlay";
-import type { LorcaConnection, LorcaShellActions } from "./types";
+  SettingsBadge,
+  SettingsDetailRow,
+  SettingsRowList,
+  SettingsSection,
+  SettingsWithControl,
+} from "../../../app/src/components/ui/settings-section";
+import { SettingsFrame, type SettingsPage } from "./settings/SettingsFrame";
+import {
+  InventoryEmpty,
+  McpPanel,
+  RunnersPanel,
+} from "./settings/RuntimePanels";
+import type {
+  LorcaConnection,
+  LorcaShellActions,
+  RuntimeSettings,
+} from "./types";
 
 export function validateEndpoint(value: string): string | null {
   const match = /^ws:\/\/(127\.0\.0\.1|localhost):([0-9]{1,5})\/ws$/.exec(
@@ -82,8 +95,8 @@ function EndpointForm({
           }}
         />
         <p className="lorca-input-help" id="lorca-endpoint-help">
-          Keep credentials in the native bridge. This field accepts only a local
-          service address.
+          Used for this desktop session. Credentials stay in the native bridge;
+          only a canonical local service address is accepted here.
         </p>
         {error && (
           <p className="lorca-field-error" role="alert">
@@ -92,11 +105,11 @@ function EndpointForm({
         )}
         <div className="lorca-settings-form-actions">
           <Button size="sm" type="submit" disabled={saving || connecting}>
-            {saving || connecting ? "Connecting…" : "Save endpoint"}
+            {saving || connecting ? "Connecting…" : "Connect for this session"}
           </Button>
           {saved && (
             <span role="status">
-              <Icon name="Check" /> Saved
+              <Icon name="Check" /> Connected
             </span>
           )}
         </div>
@@ -108,129 +121,248 @@ function EndpointForm({
 export function Settings({
   open,
   onOpenChange,
+  page,
+  onPageChange,
   connection,
   demo,
   actions,
   theme,
   onThemeChange,
+  themePersistent,
+  runtime,
+  loading = false,
+  error,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  page: SettingsPage;
+  onPageChange: (page: SettingsPage) => void;
   connection: LorcaConnection;
   demo: boolean;
   actions: LorcaShellActions;
   theme: "light" | "dark";
   onThemeChange: (theme: "light" | "dark") => void;
+  themePersistent: boolean;
+  runtime?: RuntimeSettings;
+  loading?: boolean;
+  error?: string | null;
 }) {
-  const { isContentRealized } = useResponsiveDrawerRealization({ open });
-
+  const connected = demo || connection.status === "connected";
+  const refresh = () =>
+    actions.onRefreshSettings(
+      page === "mcp" ? (runtime?.mcp.runnerId ?? undefined) : undefined,
+    );
   return (
-    <PersistentResponsiveDrawerShell
+    <SettingsFrame
       open={open}
       onOpenChange={onOpenChange}
-      srLabel="Settings"
-      contentClassName="lorca-settings-drawer"
+      page={page}
+      onPageChange={onPageChange}
+      demo={demo}
     >
-      {isContentRealized && (
-        <div className="lorca-settings">
-          <header>
-            <div>
-              <span className="lorca-field-caption">Make yourself at home</span>
-              <h2>Settings</h2>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Close settings"
-              onClick={() => onOpenChange(false)}
-            >
-              <Icon name="X" />
-            </Button>
-          </header>
-          <section>
-            <h3>Connection</h3>
-            <p>
-              The desktop bridge connects this interface to your local Lorca
-              runtime.
-            </p>
-            {demo && (
-              <div className="lorca-settings-demo">
-                <Icon name="Info" />
+      {page !== "preferences" && (
+        <div className="lorca-settings-runtime-toolbar" aria-busy={loading}>
+          <span>
+            {loading
+              ? "Refreshing runtime details…"
+              : runtime
+                ? "Configuration reported by Lorca"
+                : "Runtime details"}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={refresh}
+            disabled={loading || !connected}
+          >
+            <Icon name={loading ? "Loading" : "FolderSync"} />
+            {loading ? "Refreshing…" : "Refresh"}
+          </Button>
+        </div>
+      )}
+      {error && page !== "preferences" && (
+        <div className="lorca-settings-warning" role="alert">
+          <Icon name="AlertCircle" />
+          <div>
+            <p>{error}</p>
+            {runtime && <p>Showing the last loaded snapshot.</p>}
+          </div>
+        </div>
+      )}
+      {page === "connection" && (
+        <>
+          <SettingsSection
+            title="Local runtime"
+            description="Connection and identity information reported by your Lorca daemon."
+            action={
+              <SettingsBadge>
+                {demo
+                  ? "Synthetic preview"
+                  : connection.status === "connected"
+                    ? "Connected"
+                    : connection.status === "connecting"
+                      ? "Connecting"
+                      : "Offline"}
+              </SettingsBadge>
+            }
+          >
+            <SettingsRowList>
+              <SettingsDetailRow label="Runtime version">
+                {runtime?.version || "Not reported"}
+              </SettingsDetailRow>
+              <SettingsDetailRow label="Identity">
+                {runtime
+                  ? runtime.hasIdentity
+                    ? "Available on this device"
+                    : "Not set up"
+                  : "Not reported"}
+              </SettingsDetailRow>
+              <SettingsDetailRow label="Relay">
+                {runtime
+                  ? runtime.relayConnected
+                    ? "Connected (reported)"
+                    : "Offline (reported)"
+                  : "Not reported"}
+              </SettingsDetailRow>
+              <SettingsDetailRow label="Authentication">
+                {runtime
+                  ? runtime.authMode === "legacy"
+                    ? "Unauthenticated legacy mode"
+                    : "Authenticated local bridge"
+                  : "Not reported"}
+              </SettingsDetailRow>
+            </SettingsRowList>
+            {connection.detail && (
+              <p className="lorca-connection-explanation">
+                {connection.detail}
+              </p>
+            )}
+            {runtime?.updateRequired && (
+              <div className="lorca-settings-warning">
+                <Icon name="AlertCircle" />
                 <span>
-                  You’re viewing a synthetic demo. No Lorca service is
-                  connected.
+                  Lorca reports that a CLI update is required before the relay
+                  can sync.
                 </span>
               </div>
             )}
+            {runtime?.authMode === "legacy" && (
+              <div className="lorca-settings-warning">
+                <Icon name="AlertCircle" />
+                <span>
+                  This session uses explicit legacy mode without token
+                  authentication. Use only a trusted local daemon.
+                </span>
+              </div>
+            )}
+          </SettingsSection>
+          <SettingsSection
+            title="Connection endpoint"
+            description="Connect this interface to the local Lorca CLI. The endpoint is session-only."
+          >
             <EndpointForm
               key={`${connection.endpoint}:${open}`}
               initialEndpoint={connection.endpoint}
               connecting={connection.status === "connecting"}
               onSaveEndpoint={actions.onSaveEndpoint}
             />
-            <div className="lorca-connection-detail">
-              <span
-                className={`lorca-status-dot lorca-status-${connection.status}`}
-              />
-              <span>
-                {demo
-                  ? "Demo mode"
-                  : connection.status === "connected"
-                    ? "Connected to Lorca"
-                    : connection.status === "connecting"
-                      ? "Connecting to Lorca…"
-                      : "Not connected"}
-              </span>
-              {!demo && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={actions.onReconnect}
-                  disabled={connection.status === "connecting"}
-                >
-                  Reconnect
-                </Button>
-              )}
-            </div>
-            {connection.detail && (
-              <p className="lorca-connection-explanation">
-                {connection.detail}
-              </p>
-            )}
-          </section>
-          <section className="lorca-appearance-setting">
-            <div>
-              <h3>Appearance</h3>
-              <p>A quiet space, in your preferred light.</p>
-            </div>
-            <div
-              className="lorca-theme-switch"
-              role="group"
-              aria-label="Appearance"
-            >
-              <button
-                type="button"
-                aria-pressed={theme === "light"}
-                onClick={() => onThemeChange("light")}
-              >
-                Light
-              </button>
-              <button
-                type="button"
-                aria-pressed={theme === "dark"}
-                onClick={() => onThemeChange("dark")}
-              >
-                Dark
-              </button>
-            </div>
-          </section>
-          <footer>
-            <span>BB interface</span>
-            <span>·</span>
-            <span>Lorca runtime</span>
-          </footer>
-        </div>
+          </SettingsSection>
+          <div className="lorca-settings-boundary-note">
+            <Icon name="Info" />
+            <p>
+              Account sign-in, credentials, and access grants are managed in
+              Lorca. Credentials never appear in these settings.
+            </p>
+          </div>
+        </>
       )}
-    </PersistentResponsiveDrawerShell>
+      {page === "preferences" && (
+        <>
+          <SettingsSection
+            title="Appearance"
+            description="A local preference for the BB interface. It does not change your Lorca runtime."
+          >
+            <SettingsWithControl
+              label="Color theme"
+              description="Choose a light or dark interface."
+              controlPlacement="trailing"
+            >
+              <div
+                className="lorca-theme-switch"
+                role="group"
+                aria-label="Appearance"
+              >
+                <button
+                  type="button"
+                  aria-pressed={theme === "light"}
+                  onClick={() => onThemeChange("light")}
+                >
+                  Light
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={theme === "dark"}
+                  onClick={() => onThemeChange("dark")}
+                >
+                  Dark
+                </button>
+              </div>
+            </SettingsWithControl>
+          </SettingsSection>
+          <div className="lorca-settings-boundary-note">
+            <Icon name={themePersistent ? "Info" : "AlertCircle"} />
+            <p>
+              {themePersistent
+                ? "For this app session. Appearance is remembered when the view reloads; the desktop app uses an isolated, temporary session. Other runtime preferences and automatic approval rules are managed in Lorca."
+                : "Local preference storage is unavailable. Appearance works for this window, but may reset when you reopen it."}
+            </p>
+          </div>
+        </>
+      )}
+      {(page === "runners" || page === "mcp") &&
+        (runtime ? (
+          page === "runners" ? (
+            <RunnersPanel runtime={runtime} />
+          ) : (
+            <McpPanel
+              runtime={runtime}
+              loading={loading}
+              onRefresh={actions.onRefreshSettings}
+            />
+          )
+        ) : (
+          <SettingsSection
+            title={page === "runners" ? "Runner inventory" : "MCP inventory"}
+            action={<SettingsBadge>Read only</SettingsBadge>}
+          >
+            <InventoryEmpty
+              icon={loading ? "Loading" : "Info"}
+              title={
+                loading
+                  ? "Loading runtime details…"
+                  : connected
+                    ? "No runtime details available"
+                    : "Connect your local runtime"
+              }
+              detail={
+                loading
+                  ? "Waiting for the Lorca daemon’s reported configuration."
+                  : connected
+                    ? "Refresh to request the current inventory. No status is inferred from missing data."
+                    : "Connect to Lorca to inspect runners, providers, and MCP configuration."
+              }
+            />
+            {!connected && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPageChange("connection")}
+              >
+                Open connection settings
+              </Button>
+            )}
+          </SettingsSection>
+        ))}
+    </SettingsFrame>
   );
 }

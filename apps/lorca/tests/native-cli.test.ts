@@ -29,12 +29,12 @@ test('CLI runs exactly one explicit command, outputs safe JSON, and closes', asy
   const f = noIO(); const calls: unknown[] = []; let closed = false;
   const makeBridge = () => ({
     connect: async (endpoint: string) => { calls.push(['connect', endpoint]); return { status: 'connected', authMode: 'token' }; },
-    request: async (method: string, params: unknown) => { calls.push([method, params]); return { answer: true, token: 'secret', nested: { path: '/native/private', workdir: '/native/work' } }; },
+    request: async (method: string, params: unknown) => { calls.push([method, params]); return { version: 'test', has_identity: true, is_identity_device: true, device_id: 'runner', relay_connected: false, relay_update_required: false, relay_url: 'private-url', token: 'secret', nested: { path: '/native/private', workdir: '/native/work' } }; },
     close: () => { closed = true; },
   });
   assert.equal(await runCli(['hello'], { ...f.options, makeBridge }), 0);
   assert.deepEqual(calls, [['connect', 'ws://127.0.0.1:4862/ws'], ['hello', {}]]); assert.equal(closed, true);
-  assert.deepEqual(JSON.parse(f.output.join('')), { answer: true, token: '[redacted]', nested: { path: '[redacted]', workdir: '[redacted]' } });
+  assert.deepEqual(JSON.parse(f.output.join('')), { version: 'test', has_identity: true, is_identity_device: true, device_id: 'runner', relay_connected: false, relay_update_required: false });
   assert.equal(f.errors.length, 0);
 });
 

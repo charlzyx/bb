@@ -20,6 +20,12 @@ import { BbLogo } from "../../../app/src/components/ui/bb-logo";
 import { ConversationTimeline } from "../../../app/src/components/ui/conversation";
 import { AssistantMark, TranscriptItem } from "./Transcript";
 import { Settings } from "./Settings";
+import type { SettingsPage } from "./settings/SettingsFrame";
+import {
+  readAppearancePreference,
+  writeAppearancePreference,
+  type Appearance,
+} from "./settings/appearance";
 import type {
   LorcaConversation,
   LorcaShellProps,
@@ -263,7 +269,17 @@ export function LorcaShell(props: LorcaShellProps) {
 function LorcaShellSession({ state, actions }: LorcaShellProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [{ theme, persistent: themePersistent }, setAppearance] = useState(
+    readAppearancePreference,
+  );
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>("connection");
+  const setTheme = (theme: Appearance) =>
+    setAppearance({ theme, persistent: writeAppearancePreference(theme) });
+  const openSettings = (page: SettingsPage = "connection") => {
+    setSettingsPage(page);
+    setSettingsOpen(true);
+    actions.onRefreshSettings();
+  };
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -307,6 +323,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
+      if (settingsOpen) return;
       if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey)
         return;
       if (event.key.toLowerCase() === "k") {
@@ -324,7 +341,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [actions, compact]);
+  }, [actions, compact, settingsOpen]);
 
   useLayoutEffect(() => {
     currentConversation.current = state.activeConversationId;
@@ -425,7 +442,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
             state={state}
             actions={actions}
             searchRef={searchRef}
-            onSettings={() => setSettingsOpen(true)}
+            onSettings={() => openSettings()}
             onNavigate={() => {
               navigationRevision.current += 1;
               composerRef.current?.focus();
@@ -447,7 +464,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
               searchRef={searchRef}
               onSettings={() => {
                 setSidebarOpen(false);
-                setSettingsOpen(true);
+                openSettings();
               }}
               onNavigate={() => {
                 navigationRevision.current += 1;
@@ -486,7 +503,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
             )}
             <button
               className="lorca-header-status"
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => openSettings()}
               aria-label="Open connection settings"
             >
               <ConnectionLabel state={state} />
@@ -596,7 +613,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                     ? "Connecting to your Lorca runtime…"
                     : "Connect your local Lorca runtime to send a message."}
                 </span>
-                <button onClick={() => setSettingsOpen(true)}>
+                <button onClick={() => openSettings()}>
                   Connection settings
                   <Icon name="ChevronRight" />
                 </button>
@@ -794,11 +811,17 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
       <Settings
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
+        page={settingsPage}
+        onPageChange={setSettingsPage}
         connection={state.connection}
         demo={state.demo}
         actions={actions}
         theme={theme}
         onThemeChange={setTheme}
+        themePersistent={themePersistent}
+        runtime={state.runtimeSettings}
+        loading={state.settingsLoading}
+        error={state.settingsError}
       />
     </div>
   );

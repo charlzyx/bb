@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('lorca', Object.freeze({
   request: (method, params) => ipcRenderer.invoke('lorca:request', method, params),
   copyText: text => ipcRenderer.invoke('lorca:copy-text', text),
   getStatus: () => ipcRenderer.invoke('lorca:status'),
+  getSettings: (params = {}) => ipcRenderer.invoke('lorca:get-settings', params),
   onEvent: listener => subscribe('lorca:event', listener),
   onStatus: listener => subscribe('lorca:status-update', listener),
   pickAttachments: () => ipcRenderer.invoke('lorca:pick-attachments'),

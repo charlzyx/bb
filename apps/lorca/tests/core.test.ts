@@ -10,8 +10,9 @@ import {
   isRunning,
   upsertMessage,
 } from "../src/core/store";
-import { demoSnapshot } from "../src/core/demo";
+import { demoRuntimeSettings, demoSnapshot } from "../src/core/demo";
 import { LorcaController } from "../src/core/controller";
+import { parseRuntimeSettings } from "../src/core/settings";
 import type { BridgeStatus, LorcaBridge } from "../src/core/bridge";
 
 const snapshot = () => parseSnapshot(structuredClone(demoSnapshot));
@@ -44,6 +45,7 @@ class FakeBridge implements LorcaBridge {
   };
   getStatus = async () => this.status;
   connect = async () => this.status;
+  getSettings?: LorcaBridge["getSettings"];
   request = async (method: string, params: Record<string, unknown>) => {
     this.calls.push({ method, params });
     return this.handler(method, params);
@@ -671,4 +673,308 @@ test("bootstrap identity changes isolate draft scope and discard another account
   } finally {
     controller.dispose();
   }
+});
+
+test("runtime inventory loads through the read-only bridge without issuing mutation RPCs", async () => {
+  const bridge = new FakeBridge(),
+    controller = new LorcaController(bridge);
+  const options: { runnerId?: string }[] = [];
+  let resolve!: (value: unknown) => void;
+  bridge.getSettings = async (value) => {
+    options.push(value);
+    return new Promise((done) => (resolve = done));
+  };
+  try {
+    await controller.start();
+    await tick();
+    controller.actions.onSelectConversation("chat-demo");
+    const before = controller.getSnapshot();
+    const refresh = controller.actions.onRefreshSettings;
+    assert.ok(refresh);
+
+    refresh();
+    assert.equal(controller.getSnapshot().settingsLoading, true);
+    assert.equal(controller.getSnapshot().runtimeSettings, undefined);
+    assert.equal(controller.getSnapshot().settingsError, undefined);
+    assert.deepEqual(options, [{}]);
+    resolve(structuredClone(demoRuntimeSettings));
+    await tick();
+
+    const after = controller.getSnapshot();
+    assert.equal(after.settingsLoading, false);
+    assert.equal(after.settingsError, undefined);
+    assert.deepEqual(after.runtimeSettings, parseRuntimeSettings(demoRuntimeSettings));
+    assert.deepEqual(after.messages, before.messages);
+    assert.equal(after.activeConversationId, before.activeConversationId);
+    assert.deepEqual(bridge.calls.map((call) => call.method), ["bootstrap"]);
+  } finally {
+    controller.dispose();
+  }
+});
+
+for (const staleOutcome of ["success", "rejection", "malformed response"] as const) {
+  test(`runtime inventory keeps the latest runner after a stale ${staleOutcome}`, async () => {
+    const bridge = new FakeBridge(),
+      controller = new LorcaController(bridge);
+    const pending: {
+      options: { runnerId?: string };
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+    }[] = [];
+    bridge.getSettings = (options) => new Promise((resolve, reject) => pending.push({ options, resolve, reject }));
+    try {
+      await controller.start();
+      await tick();
+      const refresh = controller.actions.onRefreshSettings;
+      assert.ok(refresh);
+      refresh("runner-demo");
+      refresh("runner-second");
+      assert.deepEqual(pending.map((item) => item.options), [
+        { runnerId: "runner-demo" },
+        { runnerId: "runner-second" },
+      ]);
+
+      const latest = structuredClone(demoRuntimeSettings);
+      latest.mcp = { status: "unavailable", runnerId: "runner-second", hasConfigError: false, servers: [] };
+      pending[1].resolve(latest);
+      await tick();
+      assert.equal(controller.getSnapshot().runtimeSettings?.mcp.runnerId, "runner-second");
+      if (staleOutcome === "rejection") pending[0].reject(new Error("Older runner is unavailable"));
+      else pending[0].resolve(staleOutcome === "malformed response" ? { mcp: null } : structuredClone(demoRuntimeSettings));
+      await tick();
+
+      assert.deepEqual(controller.getSnapshot().runtimeSettings, parseRuntimeSettings(latest));
+      assert.equal(controller.getSnapshot().settingsLoading, false);
+      assert.equal(controller.getSnapshot().settingsError, undefined);
+      assert.ok(bridge.calls.every((call) => call.method === "bootstrap"));
+    } finally {
+      controller.dispose();
+    }
+  });
+}
+
+test("an older runner response cannot stop a newer inventory request's loading state", async () => {
+  const bridge = new FakeBridge(),
+    controller = new LorcaController(bridge);
+  const resolves: ((value: unknown) => void)[] = [];
+  bridge.getSettings = () => new Promise((resolve) => resolves.push(resolve));
+  try {
+    await controller.start();
+    await tick();
+    const refresh = controller.actions.onRefreshSettings;
+    assert.ok(refresh);
+    refresh("runner-demo");
+    refresh("runner-second");
+    resolves[0](structuredClone(demoRuntimeSettings));
+    await tick();
+    assert.equal(controller.getSnapshot().settingsLoading, true);
+    assert.equal(controller.getSnapshot().runtimeSettings, undefined);
+    assert.equal(controller.getSnapshot().settingsError, undefined);
+
+    const latest = structuredClone(demoRuntimeSettings);
+    latest.mcp = { status: "unavailable", runnerId: "runner-second", hasConfigError: false, servers: [] };
+    resolves[1](latest);
+    await tick();
+    assert.equal(controller.getSnapshot().settingsLoading, false);
+    assert.equal(controller.getSnapshot().runtimeSettings?.mcp.runnerId, "runner-second");
+  } finally {
+    controller.dispose();
+  }
+});
+
+for (const boundary of ["identity event", "bootstrap identity", "endpoint", "reconnect"] as const) {
+  test(`runtime inventory ignores a response preceding ${boundary} changes`, async () => {
+    const bridge = new FakeBridge(),
+      controller = new LorcaController(bridge);
+    bridge.handler = async () => ({ ...structuredClone(demoSnapshot), identity_id: "account-one" });
+    let resolve!: (value: unknown) => void;
+    bridge.getSettings = () => new Promise((done) => (resolve = done));
+    try {
+      await controller.start();
+      await tick();
+      const refresh = controller.actions.onRefreshSettings;
+      assert.ok(refresh);
+      refresh("runner-demo");
+      assert.equal(controller.getSnapshot().settingsLoading, true);
+
+      if (boundary === "identity event") {
+        bridge.event({ event: "identity.changed", data: { has_identity: true } });
+      } else if (boundary === "bootstrap identity") {
+        bridge.handler = async () => ({ ...structuredClone(demoSnapshot), identity_id: "account-two" });
+        await controller.refresh();
+      } else if (boundary === "endpoint") {
+        const endpoint = "ws://127.0.0.1:4863/ws";
+        bridge.connect = async () => {
+          bridge.status = { ...bridge.status, endpoint };
+          bridge.change(2, "connecting");
+          bridge.change(2, "connected");
+          return bridge.status;
+        };
+        await controller.actions.onSaveEndpoint(endpoint);
+      } else {
+        bridge.change(2, "connecting");
+        bridge.change(2, "connected");
+      }
+      await tick();
+      assert.equal(controller.getSnapshot().settingsLoading, false);
+      assert.equal(controller.getSnapshot().runtimeSettings, undefined);
+      resolve(structuredClone(demoRuntimeSettings));
+      await tick();
+
+      assert.equal(controller.getSnapshot().runtimeSettings, undefined);
+      assert.equal(controller.getSnapshot().settingsLoading, false);
+      assert.equal(controller.getSnapshot().settingsError, undefined);
+      bridge.getSettings = async () => structuredClone(demoRuntimeSettings);
+      refresh("runner-demo");
+      await tick();
+      assert.deepEqual(controller.getSnapshot().runtimeSettings, parseRuntimeSettings(demoRuntimeSettings));
+      assert.ok(bridge.calls.every((call) => call.method === "bootstrap"));
+    } finally {
+      controller.dispose();
+    }
+  });
+}
+
+test("malformed runtime inventory clears stale results, reports a settings error, and permits a clean retry", async () => {
+  const bridge = new FakeBridge(),
+    controller = new LorcaController(bridge);
+  bridge.getSettings = async () => structuredClone(demoRuntimeSettings);
+  try {
+    await controller.start();
+    await tick();
+    const refresh = controller.actions.onRefreshSettings;
+    assert.ok(refresh);
+    refresh();
+    await tick();
+    assert.ok(controller.getSnapshot().runtimeSettings);
+
+    bridge.getSettings = async () => ({ ...structuredClone(demoRuntimeSettings), devices: "not a device list" });
+    refresh();
+    assert.equal(controller.getSnapshot().runtimeSettings, undefined);
+    await tick();
+    assert.equal(controller.getSnapshot().settingsLoading, false);
+    assert.match(controller.getSnapshot().settingsError ?? "", /Incompatible settings/);
+    assert.equal(controller.getSnapshot().runtimeSettings, undefined);
+    assert.equal(controller.getSnapshot().error, null);
+
+    bridge.getSettings = async () => structuredClone(demoRuntimeSettings);
+    refresh();
+    assert.equal(controller.getSnapshot().settingsError, undefined);
+    await tick();
+    assert.deepEqual(controller.getSnapshot().runtimeSettings, parseRuntimeSettings(demoRuntimeSettings));
+    assert.equal(controller.getSnapshot().settingsLoading, false);
+    assert.equal(controller.getSnapshot().settingsError, undefined);
+    assert.ok(bridge.calls.every((call) => call.method === "bootstrap"));
+  } finally {
+    controller.dispose();
+  }
+});
+
+test("runtime inspection on an unsupported desktop bridge fails without a fallback mutation", async () => {
+  const bridge = new FakeBridge(),
+    controller = new LorcaController(bridge);
+  try {
+    await controller.start();
+    await tick();
+    controller.actions.onSelectConversation("chat-demo");
+    const before = controller.getSnapshot();
+    const refresh = controller.actions.onRefreshSettings;
+    assert.ok(refresh);
+    refresh();
+    await tick();
+
+    const after = controller.getSnapshot();
+    assert.match(after.settingsError ?? "", /updated desktop bridge/);
+    assert.equal(after.settingsLoading, false);
+    assert.equal(after.runtimeSettings, undefined);
+    assert.equal(after.error, null);
+    assert.deepEqual(after.messages, before.messages);
+    assert.equal(after.activeConversationId, before.activeConversationId);
+    assert.deepEqual(bridge.calls.map((call) => call.method), ["bootstrap"]);
+  } finally {
+    controller.dispose();
+  }
+});
+
+test("offline runtime inspection does not invoke the settings bridge", async () => {
+  const bridge = new FakeBridge(),
+    controller = new LorcaController(bridge);
+  let calls = 0;
+  bridge.getSettings = async () => {
+    calls++;
+    return structuredClone(demoRuntimeSettings);
+  };
+  try {
+    await controller.start();
+    await tick();
+    bridge.change(2, "disconnected");
+    const refresh = controller.actions.onRefreshSettings;
+    assert.ok(refresh);
+    refresh();
+    await tick();
+    assert.equal(calls, 0);
+    assert.match(controller.getSnapshot().settingsError ?? "", /Connect to Lorca/);
+    assert.equal(controller.getSnapshot().settingsLoading, false);
+    assert.equal(controller.getSnapshot().runtimeSettings, undefined);
+  } finally {
+    controller.dispose();
+  }
+});
+
+test("runtime settings parser accepts ready and unavailable inventories with detached typed values", () => {
+  const source = structuredClone(demoRuntimeSettings);
+  const parsed = parseRuntimeSettings(source);
+  assert.deepEqual(structuredClone(parsed), source);
+  source.devices[0].plugins[0].name = "Changed source plugin";
+  assert.equal(parsed.devices[0].plugins[0].name, "Demo notes");
+  assert.deepEqual(
+    parseRuntimeSettings({
+      ...demoRuntimeSettings,
+      authMode: "legacy",
+      devices: [],
+      providers: [],
+      bots: [],
+      mcp: { status: "unavailable", runnerId: null, hasConfigError: true, servers: [] },
+    }).mcp,
+    { status: "unavailable", runnerId: null, hasConfigError: true, servers: [] },
+  );
+  const unknownConfiguration = parseRuntimeSettings({
+    ...demoRuntimeSettings,
+    bots: [{ ...demoRuntimeSettings.bots[0], provider: null, model: null }],
+    mcp: {
+      ...demoRuntimeSettings.mcp,
+      servers: [{ ...demoRuntimeSettings.mcp.servers[0], toolCount: null, hiddenToolCount: null }],
+    },
+  });
+  assert.equal(unknownConfiguration.bots[0].provider, null);
+  assert.equal(unknownConfiguration.bots[0].model, null);
+  assert.equal(unknownConfiguration.mcp.servers[0].toolCount, null);
+  assert.equal(unknownConfiguration.mcp.servers[0].hiddenToolCount, null);
+});
+
+test("runtime settings parser rejects malformed inventory fields and bounded collections", () => {
+  const device = demoRuntimeSettings.devices[0];
+  const server = demoRuntimeSettings.mcp.servers[0];
+  const malformed: unknown[] = [
+    null,
+    [],
+    { ...demoRuntimeSettings, version: "x".repeat(501) },
+    { ...demoRuntimeSettings, hasIdentity: "true" },
+    { ...demoRuntimeSettings, authMode: "none" },
+    { ...demoRuntimeSettings, devices: "wrong" },
+    { ...demoRuntimeSettings, devices: Array.from({ length: 1001 }, () => device) },
+    { ...demoRuntimeSettings, devices: [{ ...device, online: 1 }] },
+    { ...demoRuntimeSettings, devices: [{ ...device, plugins: [{ ...device.plugins[0], toolCount: -1 }] }] },
+    { ...demoRuntimeSettings, providers: [{ ...demoRuntimeSettings.providers[0], connected: null }] },
+    { ...demoRuntimeSettings, bots: [{ ...demoRuntimeSettings.bots[0], runnerId: null }] },
+    { ...demoRuntimeSettings, mcp: { ...demoRuntimeSettings.mcp, status: "loading" } },
+    { ...demoRuntimeSettings, mcp: { ...demoRuntimeSettings.mcp, runnerId: 4 } },
+    { ...demoRuntimeSettings, mcp: { ...demoRuntimeSettings.mcp, servers: [{ ...server, transport: "socket" }] } },
+    { ...demoRuntimeSettings, mcp: { ...demoRuntimeSettings.mcp, servers: [{ ...server, transport: ["stdio"] }] } },
+    { ...demoRuntimeSettings, mcp: { ...demoRuntimeSettings.mcp, servers: [{ ...server, toolCount: 0.5 }] } },
+    { ...demoRuntimeSettings, mcp: { ...demoRuntimeSettings.mcp, servers: [{ ...server, hiddenToolCount: Number.MAX_SAFE_INTEGER + 1 }] } },
+    { ...demoRuntimeSettings, mcp: { ...demoRuntimeSettings.mcp, servers: [{ ...server, hasError: "false" }] } },
+  ];
+  for (const [index, value] of malformed.entries())
+    assert.throws(() => parseRuntimeSettings(value), Error, `Malformed fixture ${index} must be rejected`);
 });

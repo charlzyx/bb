@@ -5,6 +5,7 @@ const os = require('node:os');
 const WebSocket = require('ws');
 
 const RPC_METHODS = Object.freeze(['hello', 'bootstrap', 'chats.create', 'chats.send', 'chats.stop', 'chats.send_now', 'chats.messages', 'chats.search', 'chats.permission']);
+const RENDERER_EVENTS = new Set(['snapshot', 'roster.changed', 'identity.changed', 'relay.status', 'job.started', 'job.finished', 'message.added', 'message.updated', 'message.removed', 'chat.removed']);
 const READ_METHODS = new Set(['hello', 'bootstrap', 'chats.messages', 'chats.search']);
 const MAX_TEXT = 200_000;
 
@@ -177,6 +178,7 @@ class LorcaBridge extends EventEmitter {
       if (Object.hasOwn(frame, 'event')) {
         string(frame.event, 'event name', 100);
         if (!Object.hasOwn(frame, 'data') || Object.hasOwn(frame, 'id') || Object.hasOwn(frame, 'result') || Object.hasOwn(frame, 'error')) throw new Error('event envelope');
+        if (!RENDERER_EVENTS.has(frame.event)) return;
         object(frame.data, 'event data'); this.emit('event', { event: frame.event, data: frame.data }); return;
       }
       if (!Number.isSafeInteger(frame.id) || frame.id < 1 || Object.hasOwn(frame, 'result') === Object.hasOwn(frame, 'error')) throw new Error('response envelope');
@@ -187,7 +189,7 @@ class LorcaBridge extends EventEmitter {
     const pending = this.pending.get(frame.id);
     if (!pending) return;
     this.pending.delete(frame.id); clearTimeout(pending.timer);
-    if (frame.error) pending.reject(new Error(frame.error.message)); else pending.resolve(frame.result);
+    if (frame.error) { const error = new Error(frame.error.message); error.code = 'LORCA_REMOTE_ERROR'; pending.reject(error); } else pending.resolve(frame.result);
   }
   request(method, input = {}) {
     let params;

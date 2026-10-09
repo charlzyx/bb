@@ -25,7 +25,10 @@ import type {
   LorcaConversation,
   LorcaMessage,
   LorcaShellActions,
+  RuntimeSettings,
 } from "../ui/types";
+
+import { parseRuntimeSettings } from "./settings";
 
 function messageView(message: WireMessage, authorName?: string): LorcaMessage {
   const body = message.body;
@@ -122,6 +125,10 @@ function messageView(message: WireMessage, authorName?: string): LorcaMessage {
 }
 export class LorcaController {
   private model: Model = emptyModel();
+  private runtimeSettings: RuntimeSettings | null = null;
+  private settingsLoading = false;
+  private settingsError: string | null = null;
+  private settingsRequest = 0;
   private status: BridgeStatus = {
     status: "disconnected",
     endpoint: "ws://127.0.0.1:4862/ws",
@@ -175,6 +182,9 @@ export class LorcaController {
           : this.status.detail;
     return {
       draftScope: this.accountEpoch,
+      runtimeSettings: this.runtimeSettings ?? undefined,
+      settingsLoading: this.settingsLoading,
+      settingsError: this.settingsError ?? undefined,
       connection: {
         status: this.status.status,
         endpoint: this.status.endpoint,
@@ -247,6 +257,7 @@ export class LorcaController {
   }
   dispose(): void {
     this.disposed = true;
+    this.clearSettings();
     for (const unsubscribe of this.unsubscribers) unsubscribe();
     this.unsubscribers = [];
     this.listeners.clear();
@@ -259,6 +270,7 @@ export class LorcaController {
       status.status === "connected" && this.status.status !== "connected";
     this.status = status;
     if (newSession || status.status !== "connected") {
+      this.clearSettings();
       this.snapshotRequest++;
       this.synchronized = false;
       this.pendingAttachments = [];
@@ -268,6 +280,7 @@ export class LorcaController {
     }
     if (newSession) {
       if (this.model.version && !this.model.identityId) {
+        this.clearSettings();
         this.accountEpoch++;
         this.navigation++;
         this.model = emptyModel();
@@ -286,6 +299,7 @@ export class LorcaController {
     try {
       const event = parseEvent(value);
       if (event.event === "identity.changed") {
+        this.clearSettings();
         this.accountEpoch++;
         this.navigation++;
         this.model = emptyModel();
@@ -316,6 +330,7 @@ export class LorcaController {
   }
   private checkIdentity(snapshot: WireSnapshot): boolean {
     if (this.model.version && this.model.identityId !== (snapshot.identity_id ?? null)) {
+      this.clearSettings();
       this.accountEpoch++;
       this.navigation++;
       this.model = emptyModel();
@@ -501,7 +516,36 @@ export class LorcaController {
       this.pendingActions.delete(key);
     }
   }
+  private clearSettings(): void {
+    this.settingsRequest++;
+    this.runtimeSettings = null;
+    this.settingsLoading = false;
+    this.settingsError = null;
+  }
+  private async refreshSettings(runnerId?: string): Promise<void> {
+    const request = ++this.settingsRequest;
+    const generation = this.generation, accountEpoch = this.accountEpoch;
+    this.settingsLoading = true;
+    this.settingsError = null;
+    this.runtimeSettings = null;
+    this.emit();
+    try {
+      if (this.status.status !== "connected") throw new Error("Connect to Lorca before loading runtime settings.");
+      if (!this.bridge.getSettings) throw new Error("Runtime inspection needs the updated desktop bridge.");
+      const settings = parseRuntimeSettings(await this.bridge.getSettings(runnerId ? { runnerId } : {}));
+      if (request !== this.settingsRequest || generation !== this.generation || accountEpoch !== this.accountEpoch) return;
+      this.runtimeSettings = settings;
+    } catch (error) {
+      if (request === this.settingsRequest) this.settingsError = error instanceof Error ? error.message : "Could not load runtime settings.";
+    } finally {
+      if (request === this.settingsRequest) {
+        this.settingsLoading = false;
+        this.emit();
+      }
+    }
+  }
   actions: LorcaShellActions = {
+    onRefreshSettings: (runnerId) => { void this.refreshSettings(runnerId); },
     onSelectConversation: (id) => {
       if (this.model.chats.has(id)) {
         this.navigation++;
@@ -607,6 +651,7 @@ export class LorcaController {
         this.snapshotRequest++;
         this.buffering = null;
         this.loading = false;
+        this.clearSettings();
         this.accountEpoch++;
         this.navigation++;
         this.model = emptyModel();

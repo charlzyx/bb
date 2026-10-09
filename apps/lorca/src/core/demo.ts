@@ -140,6 +140,24 @@ export const activitySnapshot = {
   ],
   running_chat_ids: ["chat-demo-activity"],
 };
+export const demoRuntimeSettings = {
+  version: "synthetic-preview", hasIdentity: true, relayConnected: false,
+  updateRequired: false, authMode: "token",
+  devices: [
+    { id: "runner-demo", name: "Demo desktop", os: "macos", version: "synthetic-preview", online: true, isThisDevice: true,
+      plugins: [{ id: "notes", name: "Demo notes", state: "ready", toolCount: null }] },
+    { id: "runner-second", name: "Demo workstation", os: "linux", version: "synthetic-preview", online: false, isThisDevice: false, plugins: [] },
+  ],
+  providers: [{ id: "demo-provider", name: "Demo provider", connected: true }, { id: "demo-unconfigured", name: "Unconfigured provider", connected: false }],
+  bots: [{ id: "bot-demo", name: "Lorca", runnerId: "runner-demo", provider: "demo-provider", model: "synthetic-model" }],
+  mcp: { status: "ready", runnerId: "runner-demo", hasConfigError: false,
+    servers: [
+      { name: "Demo notes", transport: "stdio", enabled: true, state: "ready", toolCount: 3, hiddenToolCount: null, hasError: false },
+      { name: "Demo calendar", transport: "http", enabled: true, state: "needs_auth", toolCount: 0, hiddenToolCount: null, hasError: false },
+      { name: "Paused demo", transport: "stdio", enabled: false, state: "disabled", toolCount: 0, hiddenToolCount: null, hasError: false },
+    ],
+  },
+};
 export function createDemoBridge(): LorcaBridge {
   let status: BridgeStatus = {
     status: "disconnected",
@@ -150,6 +168,13 @@ export function createDemoBridge(): LorcaBridge {
   const statusListeners = new Set<(status: BridgeStatus) => void>();
   return {
     getStatus: async () => status,
+    getSettings: async ({ runnerId }) => {
+      const settings = structuredClone(demoRuntimeSettings);
+      if (runnerId && runnerId !== "runner-demo") {
+        settings.mcp = { status: "unavailable", runnerId, hasConfigError: false, servers: [] };
+      }
+      return settings;
+    },
     connect: async () => {
       status = {
         ...status,

@@ -62,6 +62,8 @@ The preload exposes a small allowlisted chat API. Identity secrets, provider cre
 
 Read [Protocol and compatibility](../../docs/lorca-protocol.md) for exact RPC mappings, snapshot/event semantics, pinned source versions, and security assumptions.
 
+Read [Settings and runtime inventory](../../docs/lorca-settings.md) for the current/legacy capability matrix, native redaction contract, and which preferences are editable. Connection and appearance are local session preferences; provider, bot, Runner and MCP details are read-only daemon reports, not live credential or execution tests.
+
 ## Scope
 
 | Feature | Status |
@@ -81,7 +83,8 @@ Read [Protocol and compatibility](../../docs/lorca-protocol.md) for exact RPC ma
 | Access-management and OAuth permission cards | Displayed; complete in Lorca |
 | Download/open attachment bytes | Metadata displayed; use Lorca |
 | Interactive terminals/browser sessions | Activity displayed; controls remain in Lorca |
-| Reviews, tasks, budgets, routines, MCP settings | Remain owned by Lorca; dedicated UI not included |
+| Connection, appearance, Runner and MCP settings pages | Session endpoint/theme controls and sanitized read-only inventory |
+| Reviews, tasks, budgets, routines, provider/MCP edits and access management | Remain owned by Lorca; dedicated editors not included |
 | Bundled CLI, signed installer, automatic updates | Not packaged in this experimental integration |
 
 The renderer controller is the programmatic surface for the same operations used by UI. The existing Lorca CLI is the command-line surface for account/runtime operations. This integration does not add a second implementation of those operations to BB's server or host daemon.
@@ -93,10 +96,12 @@ The same `LorcaBridge` exported by `native/bridge.cjs` is used by the desktop an
 ```sh
 node apps/lorca/scripts/focused.mjs cli --help
 node apps/lorca/scripts/focused.mjs cli hello
+node apps/lorca/scripts/focused.mjs cli settings
+node apps/lorca/scripts/focused.mjs cli settings '{"runnerId":"YOUR_RUNNER_ID"}'
 node apps/lorca/scripts/focused.mjs cli chats.messages '{"chat_id":"YOUR_CHAT_ID","limit":60}'
 ```
 
-A CLI command performs only the explicitly named request. Chat mutation commands can start real work and should be run deliberately; help does not connect. The ordinary BB CLI/server remains unchanged.
+A CLI command performs only the explicitly selected operation. `settings` assembles the same sanitized inventory as the desktop from `bootstrap` and `mcp.list`; it does not reconnect MCP servers or call tools. Native SDK consumers use `SettingsInventory` from `native/settings.cjs`, call `get({runnerId?})` with the same `LorcaBridge`, and dispose the inventory when done. Chat mutation commands can start real work and should be run deliberately; help does not connect. The ordinary BB CLI/server remains unchanged.
 
 ## Verification
 
@@ -112,6 +117,9 @@ These are direct imports from the preserved upstream source:
 
 - [Theme, color and typography tokens](../app/src/components/ui/theme.css)
 - [Buttons, icons, pills, inputs and responsive drawer](../../packages/shared-ui/src/components/ui)
+- [Settings sections, rows and badges](../app/src/components/ui/settings-section.tsx)
+- [Sidebar navigation row styling](../app/src/components/sidebar/sidebarRowClasses.ts)
+- [Responsive overlay focus and drawer behavior](../../packages/shared-ui/src/components/ui/responsive-overlay.tsx)
 - [Conversation timeline](../app/src/components/ui/conversation.tsx)
 - [BB logo component](../app/src/components/ui/bb-logo.tsx)
 

@@ -4,8 +4,14 @@ import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Markdown, safeMarkdownUrl } from "./markdown";
 import { TranscriptItem } from "./Transcript";
-import { validateEndpoint } from "./Settings";
-import type { LorcaShellActions, LorcaMessage } from "./types";
+import { Settings, validateEndpoint } from "./Settings";
+import { McpPanel, RunnersPanel } from "./settings/RuntimePanels";
+import {
+  APPEARANCE_STORAGE_KEY,
+  readAppearancePreference,
+  writeAppearancePreference,
+} from "./settings/appearance";
+import type { LorcaShellActions, LorcaMessage, RuntimeSettings } from "./types";
 
 const actions: LorcaShellActions = {
   onSelectConversation() {},
@@ -17,6 +23,7 @@ const actions: LorcaShellActions = {
   onSelectAgent() {},
   async onSaveEndpoint() {},
   onReconnect() {},
+  onRefreshSettings() {},
   onApproval() {},
 };
 
@@ -228,4 +235,165 @@ test("Renderer endpoint validation stays aligned with the native boundary", () =
     }
     assert.equal(validateEndpoint(value) === null, nativeAccepted, value);
   }
+});
+
+function runtimeFixture(): RuntimeSettings {
+  return {
+    version: "fixture-version",
+    hasIdentity: true,
+    relayConnected: false,
+    updateRequired: false,
+    authMode: "token",
+    devices: [
+      {
+        id: "phone",
+        name: "Paired phone",
+        os: "ios",
+        version: "fixture-version",
+        online: true,
+        isThisDevice: true,
+        plugins: [],
+      },
+      {
+        id: "runner",
+        name: "Known runner",
+        os: "macos",
+        version: "fixture-version",
+        online: true,
+        isThisDevice: false,
+        plugins: [
+          { id: "notes", name: "Notes", state: "ready", toolCount: null },
+        ],
+      },
+    ],
+    providers: [{ id: "provider", name: "Fixture provider", connected: true }],
+    bots: [
+      {
+        id: "bot",
+        name: "Fixture bot",
+        runnerId: "runner",
+        provider: "provider",
+        model: null,
+      },
+    ],
+    mcp: {
+      status: "ready",
+      runnerId: "runner",
+      hasConfigError: false,
+      servers: [
+        {
+          name: "Fixture MCP",
+          transport: "stdio",
+          enabled: true,
+          state: "ready",
+          toolCount: null,
+          hiddenToolCount: null,
+          hasError: false,
+        },
+      ],
+    },
+  };
+}
+
+test("Runner inventory excludes paired phones and preserves unknown counts/models", () => {
+  const html = renderToStaticMarkup(
+    <RunnersPanel runtime={runtimeFixture()} />,
+  );
+  assert.match(html, /Known runner/);
+  assert.doesNotMatch(html, /Paired phone/);
+  assert.match(html, /other paired.*device is.*not a runner/);
+  assert.match(html, /Tool count not reported/);
+  assert.match(html, /Model not reported/);
+  assert.match(html, /No provider request or credential check/);
+  assert.doesNotMatch(html, />0 tools</);
+});
+
+test("MCP inspection is read-only, excludes phones, and never invents hidden counts", () => {
+  const runtime = runtimeFixture();
+  runtime.mcp.runnerId = null;
+  const html = renderToStaticMarkup(
+    <McpPanel runtime={runtime} loading={false} onRefresh={() => {}} />,
+  );
+  assert.match(html, /Inspect runner/);
+  assert.match(html, /value="runner" selected=""/);
+  assert.doesNotMatch(html, /Paired phone|value="phone"|>0 hidden</);
+  assert.match(html, /This does not change any bot or chat assignment/);
+  assert.doesNotMatch(
+    html,
+    /type="checkbox"|Save server|Add server|Remove server/,
+  );
+});
+
+test("MCP status is explicitly reported configuration with unknown counts intact", () => {
+  const html = renderToStaticMarkup(
+    <McpPanel
+      runtime={runtimeFixture()}
+      loading={false}
+      onRefresh={() => {}}
+    />,
+  );
+  assert.match(html, /not connection-test results/);
+  assert.match(html, /Tool count not reported/);
+  assert.doesNotMatch(html, /0 hidden|>0 tools</);
+});
+
+test("Appearance storage restores known values and handles blocked or malformed storage", () => {
+  assert.deepEqual(readAppearancePreference({ getItem: () => "dark" }), {
+    theme: "dark",
+    persistent: true,
+  });
+  assert.deepEqual(readAppearancePreference({ getItem: () => "not-a-theme" }), {
+    theme: "light",
+    persistent: true,
+  });
+  assert.deepEqual(
+    readAppearancePreference({
+      getItem: () => {
+        throw new Error("blocked");
+      },
+    }),
+    { theme: "light", persistent: false },
+  );
+  const writes: string[][] = [];
+  assert.equal(
+    writeAppearancePreference("dark", {
+      setItem: (key, value) => {
+        writes.push([key, value]);
+      },
+    }),
+    true,
+  );
+  assert.deepEqual(writes, [[APPEARANCE_STORAGE_KEY, "dark"]]);
+  assert.equal(
+    writeAppearancePreference("light", {
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    }),
+    false,
+  );
+});
+
+test("Preferences expose appearance only and disclose its session scope", () => {
+  const html = renderToStaticMarkup(
+    <Settings
+      open
+      onOpenChange={() => {}}
+      page="preferences"
+      onPageChange={() => {}}
+      connection={{ status: "connected", endpoint: "ws://127.0.0.1:4862/ws" }}
+      demo
+      actions={actions}
+      theme="light"
+      onThemeChange={() => {}}
+      themePersistent
+      runtime={runtimeFixture()}
+    />,
+  );
+  assert.match(html, /For this app session/);
+  assert.match(html, /Color theme/);
+  assert.doesNotMatch(
+    html,
+    /type="checkbox"|API key|password|Save endpoint|Always approve/,
+  );
 });

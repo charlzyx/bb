@@ -15,6 +15,7 @@ export interface LorcaBridge {
   onEvent(callback: (event: unknown) => void): () => void;
   onStatus(callback: (status: BridgeStatus) => void): () => void;
   getStatus(): Promise<BridgeStatus>;
+  getSettings?(options: { runnerId?: string }): Promise<unknown>;
   copyText?(text: string): Promise<void>;
   pickAttachments?(): Promise<PickedAttachment[]>;
   sendAttachments?(params: {

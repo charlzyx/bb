@@ -44,7 +44,7 @@ Device wire fields: `{id,name,model,os,os_version,machine_key,is_this_device,sta
 
 Bot: `{id,name,description,symbol_name,accent,runner_id,provider,model?:string,thinking?:string,avatar?:Attachment,workdir?:string,permissions?:unknown,instructions:string,created_at:number}`. `instructions` is compatibility data, usually empty; description is the current behavioral field. Do not infer credentials from provider selection. Source model.rs:114–149.
 
-Provider statuses carry `{kind,is_connected,detail,base_url?,name?,api?,models?}` with masked detail. Catalog Model = `{provider,id,name,levels:string[],decides:boolean}`; preserve model order and use supported levels. AutoReview = `{is_enabled,rules:[{id,text,behavior:"allow"|"ask",tool?}],provider?,models?:Record<string,string>}`.
+Provider statuses carry `{kind,is_connected,detail,base_url?,name?,api?,models?,review_model?}`. **Detail is not a safe redacted field:** it may contain masked key fragments, account email and an unredacted base URL. Strip `detail` and `base_url` at the native boundary. See [settings inventory and redaction](lorca-settings.md#redaction-requirements). Catalog Model = `{provider,id,name,levels:string[],decides:boolean}`; preserve model order and use supported levels. AutoReview = `{is_enabled,rules:[{id,text,behavior:"allow"|"ask",tool?}],provider?,models?:Record<string,string>}`.
 
 ## Chat and bot RPCs
 
@@ -166,7 +166,7 @@ OutgoingFile = `{path:string,id?:string,name?:string,mime?:string,width?:number,
 - `identity.forget {}` unpairs this device/clears local identity; `identity.delete {}` deletes relay identity first, then clears local data. Exclude from narrow initial UI bridge.
 - `sync.account {}` waits up to30s for account sync → `{providers}`. `sync.wake {}` wakes reconnect now → null.
 - `config.set {relay_url:string|null}` → `{relay_url}`. If present any non-string clears saved URL. LORCA_RELAY_URL env overrides saved setting. Prefer showing config from bootstrap; do not silently configure a production relay.
-- `providers.api_key` deliberately reveals credentials for settings editing; **exclude from bridge allowlist**. Bootstrap only carries masked statuses. Same exclusion for identity key/restore/provider connect methods unless separately implemented with secure UX.
+- `providers.api_key` deliberately reveals credentials for settings editing; **exclude from bridge allowlist**. Bootstrap provider statuses also require native projection: their `detail` and `base_url` can contain sensitive configuration. Same exclusion for identity key/restore/provider connect methods unless separately implemented with secure UX.
 Sources api.rs:107–225,804–821; identity.rs:28–105; config.rs:111–119.
 
 ## Errors and implementation tests
