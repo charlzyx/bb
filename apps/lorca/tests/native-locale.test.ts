@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const { applicationMenuTemplate } = require('../native/menu.cjs');
 const { helpText } = require('../native/cli.cjs');
 const { RPC_METHODS } = require('../native/bridge.cjs');
-const { APP_NAME, ICON_PATH, configureApplicationName, configureApplicationBranding } = require('../native/branding.cjs');
+const { APP_NAME, APP_VERSION, ICON_PATH, configureApplicationName, configureApplicationBranding } = require('../native/branding.cjs');
 const { renderIcon } = require('../scripts/render-icon.cjs');
 
 test('Chinese native menus preserve standard editing roles without debug or external actions', () => {
@@ -81,16 +81,20 @@ test('dots icon is a reproducible nonempty PNG derived from the owned vector mar
   assert.throws(() => renderIcon('<svg/>'));
 });
 
-test('dots About retains BB MIT attribution and only macOS receives the nonempty Dock icon', () => {
+test('dots About uses the product version, retains attribution and follows platform icon support', () => {
   assert.equal(APP_NAME, 'dots');
+  assert.equal(APP_VERSION, require('../package.json').version);
   for (const platform of ['darwin', 'linux', 'win32']) for (const empty of [false, true]) {
-    let about: { applicationName: string; copyright: string; iconPath: string } | undefined;
+    let about: { applicationName: string; applicationVersion: string; version?: string; copyright: string; iconPath?: string } | undefined;
     let dockIcon: unknown;
     const icon = { isEmpty: () => empty };
-    const app = { setAboutPanelOptions: (value: typeof about) => { about = value; }, dock: { setIcon: (value: unknown) => { dockIcon = value; } } };
+    const app = { getVersion: () => '41.10.7', setAboutPanelOptions: (value: typeof about) => { about = value; }, dock: { setIcon: (value: unknown) => { dockIcon = value; } } };
     const nativeImage = { createFromPath: (value: string) => { assert.equal(value, ICON_PATH); return icon; } };
     assert.equal(configureApplicationBranding(app, nativeImage, platform), icon);
-    assert.ok(about); assert.equal(about.applicationName, 'dots'); assert.equal(about.iconPath, ICON_PATH);
+    assert.ok(about); assert.equal(about.applicationName, 'dots');
+    assert.equal(about.applicationVersion, APP_VERSION); assert.notEqual(about.applicationVersion, app.getVersion());
+    assert.equal(about.version, platform === 'darwin' ? APP_VERSION : undefined);
+    assert.equal(about.iconPath, platform === 'darwin' ? undefined : ICON_PATH);
     assert.match(about.copyright, /BB.*MIT.*2026 Michael Yong/);
     assert.equal(dockIcon, platform === 'darwin' && !empty ? icon : undefined);
   }

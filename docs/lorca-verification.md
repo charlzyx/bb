@@ -47,7 +47,8 @@ The [settings contract](lorca-settings.md) compares the pinned current and legac
 ## Remaining runtime limits
 
 - Cloud development and CI exercised no real Lorca identity, relay, model provider, native file transfer, or production service. A separate authorized macOS source-run check connected to an existing daemon and verified read-only chat/history/settings access; no new agent message was sent.
-- macOS packaging/signing remains unverified. Source-mode Electron can retain its operating-system bundle/process name until packaging; the window, application menu, owned four-dot icon and About panel use dots. Branding preserves the existing app-data paths and does not change Lorca data/token lookup.
+- macOS source-run verification found that the system application menu and About icon still belong to the Electron host bundle. The app window, sidebar and explicit About product name use dots. The native About product version is now explicitly 0.1.0. A new isolated local packaging script supplies dots bundle metadata and an ICNS icon; its real macOS signing, launch and native appearance are not yet verified. It uses local ad-hoc signing only, with no Developer ID or notarization, and does not change Lorca data/token lookup. See [local macOS packaging instructions](../apps/lorca/README.zh-CN.md#macos-独立本地开发包).
+- The macOS packaging follow-up passed 105 local tests, TypeScript, production build and lint. Its two new packaging tests verify ICNS format, runtime-only file selection, no-overwrite behavior and command isolation using a synthetic Electron bundle; they do not execute Apple tools on Linux.
 - Browser and Electron checks use synthetic fixtures; passing them does not prove compatibility with every live daemon version.
 
 ## Protocol limitation
