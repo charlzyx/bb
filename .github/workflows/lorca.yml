@@ -23,6 +23,15 @@ jobs:
           package-manager-cache: false
       - run: node apps/lorca/scripts/focused.mjs install
       - run: node apps/lorca/scripts/focused.mjs check
+      - name: Chinese system font coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$(fc-list :lang=zh family)" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fi
+          test -n "$(fc-list :lang=zh family)"
       - name: Synthetic browser smoke
         shell: bash
         run: |

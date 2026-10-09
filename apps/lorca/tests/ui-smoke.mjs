@@ -50,14 +50,12 @@ async function screenshot(page, name) {
 }
 async function chooseSettingsPage(page, label) {
   await page
-    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("navigation", { name: "设置分类" })
     .getByRole("button", { name: label, exact: true })
     .click();
 }
 async function waitForSettings(page) {
-  await page
-    .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
-    .waitFor();
+  await page.getByRole("textbox", { name: "WebSocket 连接地址" }).waitFor();
   await page.waitForFunction(
     () =>
       document
@@ -81,10 +79,23 @@ try {
   captureErrors(desktop);
   await desktop.goto(`${base}/?demo=1`, { waitUntil: "networkidle" });
   await desktop
-    .getByRole("heading", { name: "Where should we begin?" })
+    .getByRole("heading", { name: "想和 dots 聊些什么？" })
     .waitFor();
+  assert.equal(await desktop.locator("html").getAttribute("lang"), "zh-CN");
+  assert.equal(await desktop.title(), "dots");
+  assert.equal(await desktop.locator(".lorca-brand").innerText(), "dots");
+  assert.equal(await desktop.locator(".lorca-brand svg circle").count(), 4);
+  assert.equal(
+    await desktop.locator('link[rel="icon"]').getAttribute("href"),
+    "/dots.svg",
+  );
+  await desktop.getByRole("searchbox", { name: "搜索对话" }).waitFor();
+  await desktop
+    .getByRole("button", { name: "发送消息", exact: true })
+    .waitFor();
+  await desktop.getByRole("textbox", { name: "给 dots 发消息" }).waitFor();
   await screenshot(desktop, "desktop-empty-light");
-  await chooseChat(desktop, /^Lorca$/);
+  await chooseChat(desktop, /^示例助手$/);
   await desktop.locator(".lorca-assistant-message").first().waitFor();
   await desktop.locator(".lorca-scroll").evaluate((element) => {
     element.scrollTop = 0;
@@ -92,60 +103,60 @@ try {
   await screenshot(desktop, "desktop-conversation-light");
   await desktop.locator(".lorca-header-status").click();
   const savedEndpoint = await desktop
-    .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
+    .getByRole("textbox", { name: "WebSocket 连接地址" })
     .inputValue();
   await desktop
-    .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
+    .getByRole("textbox", { name: "WebSocket 连接地址" })
     .fill("ws://remote.invalid/ws");
   await desktop
-    .getByRole("button", { name: "Connect for this session", exact: true })
+    .getByRole("button", { name: "连接本次会话", exact: true })
     .click();
   await desktop
     .getByText(
-      "Use ws://127.0.0.1:<port>/ws or ws://localhost:<port>/ws with a port from 1 to 65535.",
+      "请使用 ws://127.0.0.1:<port>/ws 或 ws://localhost:<port>/ws，端口范围为 1 至 65535。",
       { exact: true },
     )
     .waitFor();
-  await desktop.getByRole("button", { name: "Close settings" }).click();
+  await desktop.getByRole("button", { name: "关闭设置" }).click();
   await desktop.locator(".lorca-header-status").click();
   assert.equal(
     await desktop
-      .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
+      .getByRole("textbox", { name: "WebSocket 连接地址" })
       .inputValue(),
     savedEndpoint,
     "Closing settings discards unsaved endpoint edits and validation errors",
   );
   assert.equal(await desktop.locator(".lorca-field-error").count(), 0);
-  await chooseSettingsPage(desktop, "Preferences");
-  await desktop.getByRole("button", { name: "Dark", exact: true }).click();
-  await desktop.getByRole("button", { name: "Close settings" }).click();
+  await chooseSettingsPage(desktop, "偏好设置");
+  await desktop.getByRole("button", { name: "深色", exact: true }).click();
+  await desktop.getByRole("button", { name: "关闭设置" }).click();
   await screenshot(desktop, "desktop-conversation-dark");
   await desktop.locator(".lorca-header-status").click();
-  await chooseSettingsPage(desktop, "Preferences");
-  await desktop.getByRole("button", { name: "Light", exact: true }).click();
-  await desktop.getByRole("button", { name: "Close settings" }).click();
+  await chooseSettingsPage(desktop, "偏好设置");
+  await desktop.getByRole("button", { name: "浅色", exact: true }).click();
+  await desktop.getByRole("button", { name: "关闭设置" }).click();
   const preview = desktop
     .locator(".lorca-chat-item")
     .filter({ hasText: "Approval and activity preview" });
   if (await preview.count()) {
     await preview.click();
-    await desktop.getByRole("button", { name: "Allow once" }).waitFor();
+    await desktop.getByRole("button", { name: "仅允许一次" }).waitFor();
     await screenshot(desktop, "desktop-approval-light");
   }
   await desktop.keyboard.press("Control+k");
   await desktop
-    .getByRole("searchbox", { name: "Search chats" })
+    .getByRole("searchbox", { name: "搜索对话" })
     .fill("nonexistent fixture title");
-  await desktop.getByText("No matching chats", { exact: true }).waitFor();
-  await desktop.getByRole("searchbox", { name: "Search chats" }).fill("");
+  await desktop.getByText("没有匹配的对话", { exact: true }).waitFor();
+  await desktop.getByRole("searchbox", { name: "搜索对话" }).fill("");
   await desktop.keyboard.press("Control+n");
   await desktop
-    .getByRole("textbox", { name: "Message Lorca" })
+    .getByRole("textbox", { name: "给 dots 发消息" })
     .fill("Keep my synthetic draft");
   await desktop.keyboard.press("Enter");
   await desktop.getByRole("alert").first().waitFor();
   assert.equal(
-    await desktop.getByRole("textbox", { name: "Message Lorca" }).inputValue(),
+    await desktop.getByRole("textbox", { name: "给 dots 发消息" }).inputValue(),
     "Keep my synthetic draft",
   );
 
@@ -158,20 +169,18 @@ try {
   captureErrors(mobile);
   await mobile.goto(`${base}/?demo=1`, { waitUntil: "networkidle" });
   await screenshot(mobile, "mobile-empty-light");
-  await mobile.getByRole("button", { name: "Open chats" }).click();
+  await mobile.getByRole("button", { name: "打开对话列表" }).click();
   await mobile.locator(".lorca-chat-item").first().waitFor();
   await screenshot(mobile, "mobile-chats-light");
-  await chooseChat(mobile, /^Lorca$/);
+  await chooseChat(mobile, /^示例助手$/);
   await mobile.locator(".lorca-assistant-message").first().waitFor();
   await screenshot(mobile, "mobile-conversation-light");
   assert.equal(await mobile.locator("#root").getAttribute("aria-hidden"), null);
   assert.equal(await mobile.locator("#root").getAttribute("inert"), null);
   await mobile.locator(".lorca-header-status").click();
+  await mobile.getByRole("textbox", { name: "WebSocket 连接地址" }).waitFor();
   await mobile
-    .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
-    .waitFor();
-  await mobile
-    .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
+    .getByRole("textbox", { name: "WebSocket 连接地址" })
     .scrollIntoViewIfNeeded();
   await mobile.waitForFunction(() => {
     const drawer = document.querySelector(".lorca-settings-drawer");
@@ -186,9 +195,9 @@ try {
     );
   });
   await screenshot(mobile, "mobile-settings-light");
-  await chooseSettingsPage(mobile, "Preferences");
-  await mobile.getByRole("button", { name: "Dark", exact: true }).click();
-  await mobile.getByRole("button", { name: "Close settings" }).click();
+  await chooseSettingsPage(mobile, "偏好设置");
+  await mobile.getByRole("button", { name: "深色", exact: true }).click();
+  await mobile.getByRole("button", { name: "关闭设置" }).click();
   await screenshot(mobile, "mobile-conversation-dark");
 
   const settingsDesktop = await browser.newPage({
@@ -200,10 +209,10 @@ try {
   await settingsDesktop.locator(".lorca-header-status").click();
   await waitForSettings(settingsDesktop);
   await screenshot(settingsDesktop, "desktop-settings-connection");
-  await chooseSettingsPage(settingsDesktop, "Preferences");
+  await chooseSettingsPage(settingsDesktop, "偏好设置");
   await screenshot(settingsDesktop, "desktop-settings-preferences");
   await settingsDesktop
-    .getByRole("button", { name: "Dark", exact: true })
+    .getByRole("button", { name: "深色", exact: true })
     .click();
   await settingsDesktop.reload({ waitUntil: "networkidle" });
   assert.equal(
@@ -213,12 +222,12 @@ try {
   );
   await settingsDesktop.locator(".lorca-header-status").click();
   await waitForSettings(settingsDesktop);
-  await chooseSettingsPage(settingsDesktop, "Preferences");
+  await chooseSettingsPage(settingsDesktop, "偏好设置");
   await screenshot(settingsDesktop, "desktop-settings-preferences-dark");
   await settingsDesktop
-    .getByRole("button", { name: "Light", exact: true })
+    .getByRole("button", { name: "浅色", exact: true })
     .click();
-  await chooseSettingsPage(settingsDesktop, "Runners");
+  await chooseSettingsPage(settingsDesktop, "执行器");
   await settingsDesktop
     .getByText("Demo desktop", { exact: true })
     .first()
@@ -228,21 +237,17 @@ try {
     .locator(".lorca-runtime-disclosure summary")
     .first()
     .click();
-  await settingsDesktop
-    .getByText("Tool count not reported", { exact: true })
-    .waitFor();
+  await settingsDesktop.getByText("未报告工具数量", { exact: true }).waitFor();
   await screenshot(settingsDesktop, "desktop-settings-runner-details");
   await chooseSettingsPage(settingsDesktop, "MCP");
   await settingsDesktop
-    .getByRole("combobox", { name: "Runner", exact: true })
+    .getByRole("combobox", { name: "执行器", exact: true })
     .waitFor();
   await screenshot(settingsDesktop, "desktop-settings-mcp");
   await settingsDesktop
-    .getByRole("combobox", { name: "Runner", exact: true })
+    .getByRole("combobox", { name: "执行器", exact: true })
     .selectOption("runner-second");
-  await settingsDesktop
-    .getByText("MCP inventory unavailable", { exact: true })
-    .waitFor();
+  await settingsDesktop.getByText("MCP 清单不可用", { exact: true }).waitFor();
   await screenshot(settingsDesktop, "desktop-settings-mcp-unavailable");
   assert.equal(
     await settingsDesktop.locator(".lorca-agent-picker select").inputValue(),
@@ -260,7 +265,7 @@ try {
   await settingsDesktop.keyboard.press("Escape");
   assert.equal(
     await settingsDesktop
-      .getByRole("dialog", { name: "Settings", exact: true })
+      .getByRole("dialog", { name: "设置", exact: true })
       .count(),
     0,
     "Escape closes desktop settings",
@@ -271,19 +276,19 @@ try {
   captureErrors(offline);
   await offline.goto(base, { waitUntil: "networkidle" });
   await offline
-    .getByText("Connect your local Lorca runtime to send a message.", {
+    .getByText("连接本地服务后即可发送消息。", {
       exact: true,
     })
     .waitFor();
   assert.equal(
     await offline
-      .getByRole("button", { name: "Send message", exact: true })
+      .getByRole("button", { name: "发送消息", exact: true })
       .isDisabled(),
     true,
   );
   assert.equal(
     await offline.locator(".lorca-header-status").innerText(),
-    "Offline",
+    "未连接",
   );
   await screenshot(offline, "desktop-disconnected-light");
   const controlled = await browser.newPage({
@@ -406,13 +411,25 @@ try {
   await controlled.goto(base, { waitUntil: "networkidle" });
   await chooseChat(controlled, "Fixture One");
   await controlled
-    .getByRole("textbox", { name: "Message Lorca" })
-    .fill("First synthetic submission");
+    .getByRole("textbox", { name: "给 dots 发消息" })
+    .fill("第一条合成测试消息");
   await controlled
-    .getByRole("button", { name: "Send message", exact: true })
+    .getByRole("textbox", { name: "给 dots 发消息" })
+    .dispatchEvent("keydown", {
+      key: "Enter",
+      code: "Enter",
+      isComposing: true,
+    });
+  assert.equal(
+    await controlled.evaluate(() => window.__lorcaUiTest.sends.length),
+    0,
+    "Chinese IME confirmation does not submit the draft",
+  );
+  await controlled
+    .getByRole("button", { name: "发送消息", exact: true })
     .click();
   await controlled
-    .getByRole("textbox", { name: "Message Lorca" })
+    .getByRole("textbox", { name: "给 dots 发消息" })
     .fill("New edits while sending");
   await controlled.keyboard.press("Enter");
   assert.equal(
@@ -427,7 +444,7 @@ try {
   );
   await chooseChat(controlled, "Fixture Two");
   await controlled
-    .getByRole("textbox", { name: "Message Lorca" })
+    .getByRole("textbox", { name: "给 dots 发消息" })
     .fill("Second chat draft");
   await controlled.evaluate(() => window.__lorcaUiTest.complete());
   await controlled.waitForFunction(
@@ -435,7 +452,7 @@ try {
   );
   assert.equal(
     await controlled
-      .getByRole("textbox", { name: "Message Lorca" })
+      .getByRole("textbox", { name: "给 dots 发消息" })
       .inputValue(),
     "Second chat draft",
     "Late acknowledgement preserves another chat's draft",
@@ -443,27 +460,25 @@ try {
   await chooseChat(controlled, "Fixture One");
   assert.equal(
     await controlled
-      .getByRole("textbox", { name: "Message Lorca" })
+      .getByRole("textbox", { name: "给 dots 发消息" })
       .inputValue(),
     "New edits while sending",
     "Late acknowledgement preserves new edits in the original chat",
   );
-  await controlled
-    .getByText("First synthetic submission", { exact: true })
-    .waitFor();
+  await controlled.getByText("第一条合成测试消息", { exact: true }).waitFor();
   await controlled.keyboard.press("Control+n");
   await controlled
-    .getByRole("textbox", { name: "Message Lorca" })
+    .getByRole("textbox", { name: "给 dots 发消息" })
     .fill("Preserve a failed first message");
   await controlled
-    .getByRole("button", { name: "Send message", exact: true })
+    .getByRole("button", { name: "发送消息", exact: true })
     .click();
   await controlled.waitForFunction(
     () => window.__lorcaUiTest.sends.length === 1,
   );
   assert.equal(
     await controlled.locator(".lorca-header-title").innerText(),
-    "New chat",
+    "新对话",
     "Created chat stays unselected until send succeeds",
   );
   await controlled.evaluate(() => window.__lorcaUiTest.rejectSend());
@@ -472,26 +487,26 @@ try {
     .waitFor();
   assert.equal(
     await controlled
-      .getByRole("textbox", { name: "Message Lorca" })
+      .getByRole("textbox", { name: "给 dots 发消息" })
       .inputValue(),
     "Preserve a failed first message",
     "Failed first message remains visibly in the new-chat composer",
   );
   assert.equal(
     await controlled.locator(".lorca-header-title").innerText(),
-    "New chat",
+    "新对话",
   );
   await controlled
-    .getByRole("textbox", { name: "Message Lorca" })
+    .getByRole("textbox", { name: "给 dots 发消息" })
     .fill("Successful first message");
   await controlled
-    .getByRole("button", { name: "Send message", exact: true })
+    .getByRole("button", { name: "发送消息", exact: true })
     .click();
   await controlled.waitForFunction(
     () => window.__lorcaUiTest.sends.length === 1,
   );
   await controlled
-    .getByRole("textbox", { name: "Message Lorca" })
+    .getByRole("textbox", { name: "给 dots 发消息" })
     .fill("Edited new-chat follow-up");
   await controlled.evaluate(() => window.__lorcaUiTest.complete());
   await controlled
@@ -503,17 +518,17 @@ try {
   );
   assert.equal(
     await controlled
-      .getByRole("textbox", { name: "Message Lorca" })
+      .getByRole("textbox", { name: "给 dots 发消息" })
       .inputValue(),
     "Edited new-chat follow-up",
     "New draft edits migrate into the successfully created chat",
   );
   await controlled.keyboard.press("Control+n");
   await controlled
-    .getByRole("textbox", { name: "Message Lorca" })
+    .getByRole("textbox", { name: "给 dots 发消息" })
     .fill("Create without stealing navigation");
   await controlled
-    .getByRole("button", { name: "Send message", exact: true })
+    .getByRole("button", { name: "发送消息", exact: true })
     .click();
   await controlled.waitForFunction(
     () => window.__lorcaUiTest.sends.length === 1,
@@ -530,7 +545,7 @@ try {
   );
   await controlled.locator(".lorca-header-status").click();
   await controlled
-    .getByRole("button", { name: "Connect for this session", exact: true })
+    .getByRole("button", { name: "连接本次会话", exact: true })
     .click();
   await controlled.locator(".lorca-settings .lorca-field-error").waitFor();
   assert.equal(
@@ -540,10 +555,10 @@ try {
     0,
     "Rejected endpoint connection never reports success",
   );
-  await controlled.getByRole("button", { name: "Close settings" }).click();
+  await controlled.getByRole("button", { name: "关闭设置" }).click();
   await controlled.keyboard.press("Control+n");
   await controlled
-    .getByRole("textbox", { name: "Message Lorca" })
+    .getByRole("textbox", { name: "给 dots 发消息" })
     .fill("Private account draft");
   await controlled.evaluate(() => window.__lorcaUiTest.reconnect());
   await controlled.waitForFunction(
@@ -551,7 +566,7 @@ try {
   );
   assert.equal(
     await controlled
-      .getByRole("textbox", { name: "Message Lorca" })
+      .getByRole("textbox", { name: "给 dots 发消息" })
       .inputValue(),
     "Private account draft",
     "Ordinary reconnect preserves drafts",
@@ -563,7 +578,7 @@ try {
   await chooseChat(controlled, "Fixture Two");
   assert.equal(
     await controlled
-      .getByRole("textbox", { name: "Message Lorca" })
+      .getByRole("textbox", { name: "给 dots 发消息" })
       .inputValue(),
     "",
     "Account switch clears drafts across all conversations",
@@ -581,6 +596,7 @@ try {
         browser: "Chromium desktop and mobile emulation",
         checks: [
           "Synthetic labels",
+          "Simplified Chinese UI and input composition",
           "Desktop and mobile light/dark",
           "No horizontal overflow",
           "Search keyboard shortcut",

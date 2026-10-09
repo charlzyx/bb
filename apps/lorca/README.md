@@ -1,4 +1,6 @@
-# BB for Lorca
+# dots — a Lorca protocol client
+
+[简体中文说明](README.zh-CN.md) · The interface defaults to Simplified Chinese; user/tool content and protocol identifiers retain their original text.
 
 An additive, chat-first desktop surface in the BB fork. It uses BB's existing shared components and theme, with the local Lorca CLI as the backend.
 

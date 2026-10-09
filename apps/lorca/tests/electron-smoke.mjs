@@ -109,7 +109,7 @@ async function main() {
     application = await _electron.launch({ executablePath, args, cwd: appDirectory, env, timeout: 30_000 });
     const page = await application.firstWindow();
     page.setDefaultTimeout(15_000);
-    await page.getByText('Connected', { exact: true }).first().waitFor();
+    await page.getByText('已连接', { exact: true }).first().waitFor();
     await page.locator('.lorca-chat-item').filter({ hasText: 'Fixture Bot' }).click();
     await page.getByText('Synthetic Electron smoke fixture. No account or model is connected.', { exact: true }).waitFor();
     const renderer = await page.evaluate(async () => ({
@@ -138,19 +138,29 @@ async function main() {
     assert.equal(JSON.stringify(inventory).includes(secretMarker), false);
     assert.equal(inventory.events.some(event => event.event === 'provider.auth'), false);
     assert.ok(inventory.events.some(event => event.event === 'roster.changed'));
-    assert.match(inventory.remoteError, /nothing was replayed/);
+    assert.match(inventory.remoteError, /未被自动重发/);
     const preferences = await application.evaluate(({ BrowserWindow }) => {
       const prefs = BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();
       return { contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration, sandbox: prefs.sandbox };
     });
     assert.deepEqual(preferences, { contextIsolation: true, nodeIntegration: false, sandbox: true });
+    const menus = await application.evaluate(({ Menu }) => Menu.getApplicationMenu().items.map(item => ({ label: item.label, roles: item.submenu?.items.map(child => child.role) ?? [] })));
+    assert.deepEqual(menus.map(item => item.label), ['应用', '编辑', '窗口']);
+    assert.ok(menus[1].roles.includes('copy'));
+    assert.ok(menus[1].roles.includes('paste'));
+    const brand = await application.evaluate(({ app, BrowserWindow, nativeImage }, iconPath) => {
+      const icon = nativeImage.createFromPath(iconPath);
+      return { name: app.getName(), title: BrowserWindow.getAllWindows()[0].getTitle(), iconEmpty: icon.isEmpty(), iconSize: icon.getSize() };
+    }, path.join(appDirectory, 'public/dots.png'));
+    assert.equal(brand.name, 'dots'); assert.equal(brand.title, 'dots');
+    assert.equal(brand.iconEmpty, false); assert.deepEqual(brand.iconSize, { width: 256, height: 256 });
     const blocked = await page.evaluate(async () => {
       try { await window.lorca.request('providers.api_key', { kind: 'deepseek' }); return false; } catch { return true; }
     });
     assert.equal(blocked, true);
     assert.equal(await page.evaluate(async () => { try { await window.lorca.request('mcp.list', {}); return false; } catch { return true; } }), true);
-    await page.getByRole('textbox', { name: 'Message Lorca', exact: true }).fill('Synthetic smoke message');
-    await page.getByRole('button', { name: 'Send message', exact: true }).click();
+    await page.getByRole('textbox', { name: '给 dots 发消息', exact: true }).fill('Synthetic smoke message');
+    await page.getByRole('button', { name: '发送消息', exact: true }).click();
     await page.getByText('Synthetic native bridge reply received.', { exact: true }).waitFor();
     assert.equal(requests.filter(request => request.method === 'chats.send').length, 1);
     assert.ok(authenticated.length > 0 && authenticated.every(Boolean));
@@ -166,7 +176,7 @@ async function main() {
       assert.equal((await page.content()).includes(secretMarker), false);
       await page.screenshot({ path: destination.replace(/\.png$/i, '') + '-settings.png', fullPage: true });
     }
-    process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
+    process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, menusLocalized: true, dotsBranding: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
   } finally {
     let shutdownFailure;
     if (application) {

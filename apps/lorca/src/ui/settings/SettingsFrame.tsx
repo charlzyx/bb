@@ -1,4 +1,5 @@
 import { useCallback, useRef, type ReactNode } from "react";
+import { settingsZh } from "../../locale/settings.zh-CN";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
@@ -19,27 +20,27 @@ const pages: {
 }[] = [
   {
     id: "connection",
-    label: "Connection",
+    label: settingsZh.connection,
     icon: "ComputerTerminal01",
-    description: "Your interface, connected to your local Lorca runtime.",
+    description: settingsZh.connectionDescription,
   },
   {
     id: "preferences",
-    label: "Preferences",
+    label: settingsZh.preferences,
     icon: "SlidersHorizontal",
-    description: "A few familiar defaults for the way you work.",
+    description: settingsZh.preferencesDescription,
   },
   {
     id: "runners",
-    label: "Runners",
+    label: settingsZh.runners,
     icon: "Workflow",
-    description: "See the runtimes available to your Lorca bots.",
+    description: settingsZh.runnersDescription,
   },
   {
     id: "mcp",
-    label: "MCP",
+    label: settingsZh.mcp,
     icon: "Toolbox",
-    description: "Inspect the tools and integrations exposed by your runtime.",
+    description: settingsZh.mcpDescription,
   },
 ];
 
@@ -72,7 +73,10 @@ export function SettingsFrame({
   });
   const current = pages.find((candidate) => candidate.id === page) ?? pages[0];
   const navigation = (
-    <nav className="lorca-settings-navigation" aria-label="Settings sections">
+    <nav
+      className="lorca-settings-navigation"
+      aria-label={settingsZh.settingsSections}
+    >
       {pages.map((item) => (
         <Button
           key={item.id}
@@ -91,14 +95,14 @@ export function SettingsFrame({
   const heading = (
     <header className="lorca-settings-page-header">
       <div>
-        <span className="lorca-field-caption">Settings</span>
+        <span className="lorca-field-caption">{settingsZh.settings}</span>
         <h1 id="lorca-settings-page-title">{current.label}</h1>
         <p>{current.description}</p>
       </div>
       <Button
         variant="ghost"
         size="icon"
-        aria-label="Close settings"
+        aria-label={settingsZh.closeSettings}
         onClick={close}
       >
         <Icon name="X" />
@@ -108,7 +112,7 @@ export function SettingsFrame({
   const notice = demo && (
     <div className="lorca-settings-preview-label">
       <Icon name="Info" />
-      <span>Synthetic preview · no live services or account settings</span>
+      <span>{settingsZh.previewNotice}</span>
     </div>
   );
 
@@ -117,7 +121,7 @@ export function SettingsFrame({
       <PersistentResponsiveDrawerShell
         open={open}
         onOpenChange={onOpenChange}
-        srLabel="Settings"
+        srLabel={settingsZh.settings}
         contentClassName="lorca-settings-drawer lorca-settings-compact"
       >
         {isContentRealized && (
@@ -137,7 +141,7 @@ export function SettingsFrame({
       className="lorca-settings-desktop lorca-settings"
       data-open={open}
       role="dialog"
-      aria-label="Settings"
+      aria-label={settingsZh.settings}
       aria-modal={open || undefined}
       aria-hidden={!open}
       inert={!open}
@@ -146,13 +150,12 @@ export function SettingsFrame({
       <aside className="lorca-settings-sidebar">
         <Button variant="ghost" className="lorca-settings-back" onClick={close}>
           <Icon name="ChevronLeft" />
-          <span>Back to chat</span>
+          <span>{settingsZh.backToChat}</span>
         </Button>
-        <h2>Settings</h2>
+        <h2>{settingsZh.settings}</h2>
         {navigation}
         <footer>
-          <span>BB interface</span>
-          <span>Lorca runtime</span>
+          <span>{settingsZh.appName}</span>
         </footer>
       </aside>
       <div className="lorca-settings-desktop-main">

@@ -87,21 +87,21 @@ test('account and connection changes fence every settings await and prevent foll
     const result = settings.get();
     if (change === 'generation') bridge.status.generation++;
     else bridge.emit('event', { event: 'identity.changed', data: { has_identity: true } });
-    pending.resolve(bootstrap()); await assert.rejects(result, /account or connection changed/);
+    pending.resolve(bootstrap()); await assert.rejects(result, /账号或连接已变化/);
     assert.equal(bridge.calls.length, 1); settings.dispose();
   }
   const bridge = new FakeBridge(); const settings = new SettingsInventory(bridge); const pending = deferred();
   bridge.handler = async method => method === 'bootstrap' ? bootstrap() : pending.promise;
   const result = settings.get(); await tick();
   bridge.emit('event', { event: 'snapshot', data: { ...bootstrap(), identity_id: 'account-two' } });
-  pending.resolve(mcp()); await assert.rejects(result, /account or connection changed/); settings.dispose();
+  pending.resolve(mcp()); await assert.rejects(result, /账号或连接已变化/); settings.dispose();
 });
 
 test('bootstrap identity changes fence inventory without relying on a separate identity event', async () => {
   const bridge = new FakeBridge(); const settings = new SettingsInventory(bridge);
   await settings.get(); bridge.calls = [];
   bridge.handler = async method => method === 'bootstrap' ? { ...bootstrap(), identity_id: 'account-two' } : mcp();
-  await assert.rejects(settings.get(), /account or connection changed/); assert.equal(bridge.calls.length, 1);
+  await assert.rejects(settings.get(), /账号或连接已变化/); assert.equal(bridge.calls.length, 1);
   assert.equal((await settings.get()).hasIdentity, true); settings.dispose();
 });
 
@@ -132,7 +132,7 @@ test('IPC distinguishes remote error text from helpful local bridge guidance', (
   assert.equal(safeRendererError(local), local);
   const remote = Object.assign(new Error(secret), { code: 'LORCA_REMOTE_ERROR' });
   assert.equal(safeRendererError(remote).message.includes(secret), false);
-  assert.match(safeRendererError(remote).message, /nothing was replayed/);
+  assert.match(safeRendererError(remote).message, /未被自动重发/);
 });
 
 test('settings CLI uses the same projection, bounded params and read-only requests', async () => {
@@ -152,7 +152,7 @@ test('an authoritative bootstrap after an offline account swap is returned and i
   const fence = settings.capture();
   const result = settings.projectResult('bootstrap', { ...bootstrap(), identity_id: 'account-two' }, fence);
   assert.equal(parseSnapshot(result).identity_id, 'account-two');
-  assert.throws(() => settings.check(fence), /account or connection changed/);
+  assert.throws(() => settings.check(fence), /账号或连接已变化/);
   assert.equal(settings.projectResult('bootstrap', { ...bootstrap(), identity_id: 'account-two' }, settings.capture()).identity_id, 'account-two');
   settings.dispose();
 });
@@ -229,5 +229,5 @@ test('failed messages retain failure status while native projection removes raw 
   ]) assert.equal(JSON.stringify(value).includes(secret), false);
   const parsed = parseMessage(sanitizeRendererResult('chats.send', { message }).message);
   assert.equal(parsed.state, 'failed');
-  assert.equal(parsed.error, 'Lorca could not complete this message. Check the local runtime.');
+  assert.equal(parsed.error, 'Lorca 未能完成这条消息，请检查本地运行服务');
 });

@@ -1,38 +1,16 @@
+import { zhCN } from "../locale/zh-CN";
 import { useEffect, useState } from "react";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { Pill } from "@bb/shared-ui/pill";
 import { CONTEXT_CARD_CLASS } from "@bb/shared-ui/chrome-style-tokens";
 import { Markdown } from "./markdown";
+import { DotsMark } from "./DotsMark";
 import { copyText } from "./clipboard";
 import type { LorcaMessage, LorcaShellActions } from "./types";
 
 type ApprovalMessage = Extract<LorcaMessage, { kind: "approval" }>;
 type ToolMessage = Extract<LorcaMessage, { kind: "tool" }>;
-
-export function AssistantMark({ large = false }: { large?: boolean }) {
-  return (
-    <span
-      className={`lorca-assistant-mark${large ? " lorca-assistant-mark-large" : ""}`}
-      aria-hidden="true"
-    >
-      <svg viewBox="0 0 32 32" fill="none">
-        <path
-          d="M16 5v22M5 16h22M8.2 8.2l15.6 15.6M8.2 23.8 23.8 8.2"
-          stroke="currentColor"
-          strokeWidth="2.8"
-          strokeLinecap="round"
-        />
-        <path
-          d="m12.1 6.5 7.8 19M6.5 19.9l19-7.8M6.5 12.1l19 7.8M12.1 25.5l7.8-19"
-          stroke="currentColor"
-          strokeWidth="2.1"
-          strokeLinecap="round"
-        />
-      </svg>
-    </span>
-  );
-}
 
 function CopyMessage({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -51,7 +29,11 @@ function CopyMessage({ text }: { text: string }) {
       variant="ghost"
       size="icon"
       aria-label={
-        copied ? "Message copied" : failed ? "Copy failed" : "Copy message"
+        copied
+          ? zhCN.transcript.messageCopied
+          : failed
+            ? zhCN.transcript.copyFailed
+            : zhCN.transcript.copyMessage
       }
       onClick={() => {
         void copyText(text).then(
@@ -83,28 +65,30 @@ function ToolCard({ message }: { message: ToolMessage }) {
         <span className="lorca-tool-name">{message.name}</span>
         <span className="lorca-tool-status">
           {message.status === "running"
-            ? "Working"
+            ? zhCN.transcript.working
             : message.status === "error"
-              ? "Failed"
-              : "Complete"}
+              ? zhCN.transcript.failed
+              : zhCN.transcript.complete}
         </span>
         <Icon className="lorca-disclosure-chevron" name="ChevronRight" />
       </summary>
       <div className="lorca-tool-body">
         {message.input && (
           <>
-            <span className="lorca-field-caption">Input</span>
+            <span className="lorca-field-caption">{zhCN.transcript.input}</span>
             <pre>{message.input}</pre>
           </>
         )}
         {message.output && (
           <>
-            <span className="lorca-field-caption">Result</span>
+            <span className="lorca-field-caption">
+              {zhCN.transcript.result}
+            </span>
             <pre>{message.output}</pre>
           </>
         )}
         {!message.input && !message.output && (
-          <p>No additional details were provided.</p>
+          <p>{zhCN.transcript.noDetails}</p>
         )}
       </div>
     </details>
@@ -121,22 +105,27 @@ function ApprovalCard({
   disabled: boolean;
 }) {
   return (
-    <section className="lorca-approval-card" aria-label="Approval request">
+    <section
+      className="lorca-approval-card"
+      aria-label={zhCN.transcript.approvalRequest}
+    >
       <div className="lorca-approval-heading">
         <span className="lorca-approval-symbol">
           <Icon name="MessageQuestion" />
         </span>
         <div>
-          <span className="lorca-field-caption">Your permission</span>
+          <span className="lorca-field-caption">
+            {zhCN.transcript.yourPermission}
+          </span>
           <h3>{message.title}</h3>
         </div>
         {message.status !== "pending" && (
           <Pill variant="secondary">
             {message.status === "approved"
-              ? "Approved"
+              ? zhCN.transcript.approved
               : message.status === "expired"
-                ? "Expired"
-                : "Denied"}
+                ? zhCN.transcript.expired
+                : zhCN.transcript.denied}
           </Pill>
         )}
       </div>
@@ -149,7 +138,7 @@ function ApprovalCard({
               disabled={disabled}
               onClick={() => onApproval(message.id, "allow")}
             >
-              Allow once
+              {zhCN.transcript.allowOnce}
             </Button>
           )}
           <Button
@@ -158,7 +147,7 @@ function ApprovalCard({
             disabled={disabled}
             onClick={() => onApproval(message.id, "deny")}
           >
-            Deny
+            {zhCN.transcript.deny}
           </Button>
           {message.canAllow !== false && message.canAlways && (
             <Button
@@ -167,7 +156,7 @@ function ApprovalCard({
               disabled={disabled}
               onClick={() => onApproval(message.id, "always")}
             >
-              Always allow this tool
+              {zhCN.transcript.alwaysAllowTool}
             </Button>
           )}
         </div>
@@ -217,7 +206,10 @@ export function TranscriptItem({
     ) : null;
   if (message.role === "user")
     return (
-      <article className="lorca-user-message" aria-label="Your message">
+      <article
+        className="lorca-user-message"
+        aria-label={zhCN.transcript.yourMessage}
+      >
         <div>
           {message.text}
           {message.error && (
@@ -233,14 +225,16 @@ export function TranscriptItem({
   return (
     <article
       className={`lorca-assistant-message${message.streaming ? " lorca-message-streaming" : ""}`}
-      aria-label={`${message.authorName || "Lorca"} response`}
+      aria-label={zhCN.transcript.assistantResponse(
+        message.authorName || "dots",
+      )}
     >
       <div className="lorca-message-author">
-        <AssistantMark />
-        <span>{message.authorName || "Lorca"}</span>
+        <DotsMark />
+        <span>{message.authorName || "dots"}</span>
         {message.streaming && (
           <span className="lorca-streaming-label">
-            Writing
+            {zhCN.transcript.writing}
             <span className="lorca-pulse-dot" />
           </span>
         )}

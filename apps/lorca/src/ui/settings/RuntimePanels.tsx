@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { settingsZh } from "../../locale/settings.zh-CN";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { Pill } from "@bb/shared-ui/pill";
@@ -11,17 +12,21 @@ import {
 } from "../../../../app/src/components/ui/settings-section";
 import type { RuntimeSettings } from "../types";
 
+const runtimeStateLabels = new Map(Object.entries(settingsZh.runtimeStates));
+
 function stateLabel(value: string): string {
-  const label = value.replaceAll("_", " ").trim();
-  return label ? label[0].toUpperCase() + label.slice(1) : "Not reported";
+  return (
+    runtimeStateLabels.get(value) ??
+    (value.trim() ? value : settingsZh.notReported)
+  );
 }
 
 function ToolsCount({ count }: { count: number | null }) {
   return (
     <span className="lorca-runtime-tool-count">
       {count === null
-        ? "Tool count not reported"
-        : `${count} ${count === 1 ? "tool" : "tools"}`}
+        ? settingsZh.toolCountNotReported
+        : settingsZh.toolCount(count)}
     </span>
   );
 }
@@ -34,9 +39,9 @@ export function RunnersPanel({ runtime }: { runtime: RuntimeSettings }) {
   return (
     <>
       <SettingsSection
-        title="Runners"
-        description="Device and plugin status reported by Lorca. This page does not test connectivity."
-        action={<SettingsBadge>Read only</SettingsBadge>}
+        title={settingsZh.runners}
+        description={settingsZh.runnerStatusDescription}
+        action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}
       >
         {runners.length ? (
           <SettingsRowList>
@@ -55,34 +60,35 @@ export function RunnersPanel({ runtime }: { runtime: RuntimeSettings }) {
                         <Icon name="ComputerTerminal01" />
                       </span>
                       <div>
-                        <h3>{device.name || "Unnamed runner"}</h3>
+                        <h3>{device.name || settingsZh.unnamedRunner}</h3>
                         <p>
-                          {device.os || "Platform not reported"}
-                          {device.version ? ` · Lorca ${device.version}` : ""}
+                          {device.os || settingsZh.platformNotReported}
+                          {device.version ? ` · ${device.version}` : ""}
                         </p>
                       </div>
                       {device.isThisDevice && (
-                        <SettingsBadge>This device</SettingsBadge>
+                        <SettingsBadge>{settingsZh.thisDevice}</SettingsBadge>
                       )}
                       <span className="lorca-runtime-reported-status">
                         <span
                           className={`lorca-status-dot ${device.online ? "lorca-status-connected" : "lorca-status-disconnected"}`}
                         />
-                        {device.online ? "Online" : "Offline"}
+                        {device.online ? settingsZh.online : settingsZh.offline}
                       </span>
                     </div>
                     <details className="lorca-runtime-disclosure">
                       <summary>
                         <Icon name="ChevronRight" />
                         <span>
-                          {device.plugins.length}{" "}
-                          {device.plugins.length === 1 ? "plugin" : "plugins"} ·{" "}
-                          {bots.length} {bots.length === 1 ? "bot" : "bots"}
+                          {settingsZh.pluginAndBotCount(
+                            device.plugins.length,
+                            bots.length,
+                          )}
                         </span>
                       </summary>
                       <div className="lorca-runtime-disclosure-body">
                         <div className="lorca-runtime-id">
-                          <span>Runner ID</span>
+                          <span>{settingsZh.runnerId}</span>
                           <code>{device.id}</code>
                         </div>
                         {device.plugins.length ? (
@@ -99,13 +105,13 @@ export function RunnersPanel({ runtime }: { runtime: RuntimeSettings }) {
                           </div>
                         ) : (
                           <p className="lorca-runtime-muted">
-                            No plugins reported by this runner.
+                            {settingsZh.noRunnerPlugins}
                           </p>
                         )}
                         <p className="lorca-runtime-muted">
                           {bots.length
-                            ? `Used by ${bots.map((bot) => bot.name).join(", ")}.`
-                            : "No bots in this snapshot use this runner."}
+                            ? settingsZh.usedByBots(bots.map((bot) => bot.name))
+                            : settingsZh.noRunnerBots}
                         </p>
                       </div>
                     </details>
@@ -117,21 +123,20 @@ export function RunnersPanel({ runtime }: { runtime: RuntimeSettings }) {
         ) : (
           <InventoryEmpty
             icon="ComputerTerminal01"
-            title="No runners reported"
-            detail="The current Lorca snapshot contains no runner devices."
+            title={settingsZh.noRunners}
+            detail={settingsZh.noRunnersDescription}
           />
         )}
       </SettingsSection>
       {otherDevices > 0 && (
         <p className="lorca-runtime-muted">
-          {otherDevices} other paired{" "}
-          {otherDevices === 1 ? "device is" : "devices are"} not a runner.
+          {settingsZh.otherPairedDevices(otherDevices)}
         </p>
       )}
       <SettingsSection
-        title="Providers"
-        description="Configuration reported by Lorca. No provider request or credential check is performed here."
-        action={<SettingsBadge>Read only</SettingsBadge>}
+        title={settingsZh.providers}
+        description={settingsZh.providersDescription}
+        action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}
       >
         {runtime.providers.length ? (
           <SettingsRowList>
@@ -142,7 +147,9 @@ export function RunnersPanel({ runtime }: { runtime: RuntimeSettings }) {
               >
                 <span className="lorca-provider-status">
                   <Icon name={provider.connected ? "CircleCheck" : "Circle"} />
-                  {provider.connected ? "Configured" : "Not configured"}
+                  {provider.connected
+                    ? settingsZh.configured
+                    : settingsZh.notConfigured}
                 </span>
               </SettingsDetailRow>
             ))}
@@ -150,22 +157,22 @@ export function RunnersPanel({ runtime }: { runtime: RuntimeSettings }) {
         ) : (
           <InventoryEmpty
             icon="Bot"
-            title="No providers reported"
-            detail="Provider configuration is managed in Lorca."
+            title={settingsZh.noProviders}
+            detail={settingsZh.noProvidersDescription}
           />
         )}
       </SettingsSection>
       <SettingsSection
-        title="Bot configuration"
-        description="Current runner, provider, and model assignments. Change assignments in Lorca."
-        action={<SettingsBadge>Read only</SettingsBadge>}
+        title={settingsZh.botConfiguration}
+        description={settingsZh.botConfigurationDescription}
+        action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}
       >
         {runtime.bots.length ? (
           <SettingsRowList>
             {runtime.bots.map((bot) => (
               <SettingsRow key={bot.id}>
                 <div className="lorca-runtime-bot">
-                  <h3>{bot.name || "Unnamed bot"}</h3>
+                  <h3>{bot.name || settingsZh.unnamedBot}</h3>
                   <div>
                     <span>
                       <Icon name="ComputerTerminal01" />
@@ -173,16 +180,16 @@ export function RunnersPanel({ runtime }: { runtime: RuntimeSettings }) {
                         (device) => device.id === bot.runnerId,
                       )?.name ||
                         bot.runnerId ||
-                        "Runner not reported"}
+                        settingsZh.runnerNotReported}
                     </span>
                     <span>
                       {runtime.providers.find(
                         (provider) => provider.id === bot.provider,
                       )?.name ||
                         bot.provider ||
-                        "Provider not reported"}
+                        settingsZh.providerNotReported}
                     </span>
-                    <span>{bot.model || "Model not reported"}</span>
+                    <span>{bot.model || settingsZh.modelNotReported}</span>
                   </div>
                 </div>
               </SettingsRow>
@@ -191,8 +198,8 @@ export function RunnersPanel({ runtime }: { runtime: RuntimeSettings }) {
         ) : (
           <InventoryEmpty
             icon="Bot"
-            title="No bots reported"
-            detail="Create and configure your bots in Lorca."
+            title={settingsZh.noBots}
+            detail={settingsZh.noBotsDescription}
           />
         )}
       </SettingsSection>
@@ -221,14 +228,14 @@ export function McpPanel({
   return (
     <>
       <SettingsSection
-        title="Inspect runner"
-        description="Choose which runner’s MCP configuration to view. This does not change any bot or chat assignment."
+        title={settingsZh.inspectRunner}
+        description={settingsZh.inspectRunnerDescription}
       >
         <label
           className="lorca-settings-select-label"
           htmlFor="lorca-inspect-runner"
         >
-          Runner
+          {settingsZh.runner}
         </label>
         <div className="lorca-settings-select">
           <select
@@ -241,12 +248,12 @@ export function McpPanel({
             }}
           >
             <option value="" disabled>
-              Select a runner
+              {settingsZh.selectRunner}
             </option>
             {runners.map((device) => (
               <option key={device.id} value={device.id}>
                 {device.name || device.id}
-                {device.isThisDevice ? " · this device" : ""}
+                {device.isThisDevice ? ` · ${settingsZh.thisDevice}` : ""}
               </option>
             ))}
           </select>
@@ -254,39 +261,36 @@ export function McpPanel({
         </div>
       </SettingsSection>
       <SettingsSection
-        title="MCP servers"
-        description="Daemon-reported configuration and tool availability. These statuses are not connection-test results."
-        action={<SettingsBadge>Read only</SettingsBadge>}
+        title={settingsZh.mcpServers}
+        description={settingsZh.mcpServersDescription}
+        action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}
       >
         {!selectedSnapshot ? (
           <InventoryEmpty
             icon={loading ? "Loading" : "Info"}
             title={
               loading
-                ? "Loading this runner…"
-                : "This runner’s inventory is unavailable"
+                ? settingsZh.loadingRunner
+                : settingsZh.runnerInventoryUnavailable
             }
             detail={
               loading
-                ? "Waiting for the local Lorca runtime."
-                : "Refresh to request this runner’s latest reported configuration."
+                ? settingsZh.waitingLocalRuntime
+                : settingsZh.refreshRunnerInventory
             }
           />
         ) : runtime.mcp.status === "unavailable" ? (
           <InventoryEmpty
             icon="Unavailable"
-            title="MCP inventory unavailable"
-            detail="This runner did not provide an MCP inventory. Check its configuration in Lorca."
+            title={settingsZh.mcpInventoryUnavailable}
+            detail={settingsZh.mcpInventoryUnavailableDescription}
           />
         ) : (
           <>
             {runtime.mcp.hasConfigError && (
               <div className="lorca-settings-warning" role="status">
                 <Icon name="AlertCircle" />
-                <span>
-                  Lorca reports an MCP configuration error. Review the
-                  configuration in Lorca.
-                </span>
+                <span>{settingsZh.mcpConfigurationError}</span>
               </div>
             )}
             {runtime.mcp.servers.length ? (
@@ -299,38 +303,39 @@ export function McpPanel({
                           <Icon name="Toolbox" />
                         </span>
                         <div>
-                          <h3>{server.name || "Unnamed server"}</h3>
+                          <h3>{server.name || settingsZh.unnamedServer}</h3>
                           <p>
                             {server.transport === "stdio"
-                              ? "Local process · stdio"
+                              ? settingsZh.localProcessTransport
                               : server.transport === "http"
-                                ? "HTTP transport"
-                                : "Transport not reported"}
+                                ? settingsZh.httpTransport
+                                : settingsZh.transportNotReported}
                           </p>
                         </div>
                         <Pill variant="outline">
                           {!server.enabled
-                            ? "Disabled"
+                            ? settingsZh.disabled
                             : server.hasError
-                              ? "Error reported"
+                              ? settingsZh.errorReported
                               : stateLabel(server.state)}
                         </Pill>
                       </div>
                       <div className="lorca-mcp-server-facts">
                         <ToolsCount count={server.toolCount} />
                         {server.hiddenToolCount !== null && (
-                          <span>{server.hiddenToolCount} hidden</span>
+                          <span>
+                            {settingsZh.hiddenToolCount(server.hiddenToolCount)}
+                          </span>
                         )}
                         <span>
                           {server.enabled
-                            ? "Enabled in configuration"
-                            : "Disabled in configuration"}
+                            ? settingsZh.enabledInConfiguration
+                            : settingsZh.disabledInConfiguration}
                         </span>
                       </div>
                       {server.hasError && (
                         <p className="lorca-runtime-error">
-                          The runner reports an error for this server. Open
-                          Lorca for details.
+                          {settingsZh.serverError}
                         </p>
                       )}
                     </div>
@@ -340,8 +345,8 @@ export function McpPanel({
             ) : (
               <InventoryEmpty
                 icon="Toolbox"
-                title="No MCP servers reported"
-                detail="MCP servers can be configured in Lorca. This interface only displays the reported inventory."
+                title={settingsZh.noMcpServers}
+                detail={settingsZh.noMcpServersDescription}
               />
             )}
           </>
@@ -349,11 +354,7 @@ export function McpPanel({
       </SettingsSection>
       <div className="lorca-settings-boundary-note">
         <Icon name="Info" />
-        <p>
-          Server configuration, credentials, access grants, and automatic
-          approval rules are managed in Lorca. Nothing on this page changes
-          them.
-        </p>
+        <p>{settingsZh.mcpBoundary}</p>
       </div>
       {!selectedSnapshot && !loading && (
         <Button
@@ -361,7 +362,7 @@ export function McpPanel({
           size="sm"
           onClick={() => onRefresh(inspectedRunner || undefined)}
         >
-          Refresh selected runner
+          {settingsZh.refreshSelectedRunner}
         </Button>
       )}
     </>

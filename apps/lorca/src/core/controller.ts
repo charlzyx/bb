@@ -55,8 +55,8 @@ function messageView(message: WireMessage, authorName?: string): LorcaMessage {
         return {
           kind: "approval",
           id: message.id,
-          title: "Run command",
-          detail: [body.run.command, body.run.reason, body.run.rule ? `Always allow rule: ${body.run.rule}` : null]
+          title: "运行命令",
+          detail: [body.run.command, body.run.reason, body.run.rule ? `始终允许规则：${body.run.rule}` : null]
             .filter(Boolean)
             .join("\n\n"),
           status: "pending",
@@ -82,9 +82,9 @@ function messageView(message: WireMessage, authorName?: string): LorcaMessage {
           body.summary,
           body.reason,
           body.command,
-          body.rule ? `Always allow rule: ${body.rule}` : null,
+          body.rule ? `始终允许规则：${body.rule}` : null,
           body.tool === "access" || body.tool === "connect"
-            ? "Manage access or sign-in in the Lorca app."
+            ? "请在 Lorca 客户端中管理访问权限或登录。"
             : null,
         ]
           .filter(Boolean)
@@ -118,7 +118,7 @@ function messageView(message: WireMessage, authorName?: string): LorcaMessage {
       return {
         kind: "notice",
         id: message.id,
-        text: `This message type (${body.originalKind}) needs a newer UI. Open it in Lorca.`,
+        text: `dots 暂不支持此消息类型（${body.originalKind}）。请在 Lorca 客户端中查看。`,
         tone: "info",
       };
   }
@@ -176,9 +176,9 @@ export class LorcaController {
     const messages = chat?.messages ?? [];
     const detail =
       this.status.authMode === "legacy"
-        ? "Legacy loopback mode · unauthenticated local connection"
+        ? "dots · 旧版回环模式 · 本地连接未进行身份验证"
         : this.status.status === "connected"
-          ? `Lorca ${this.model.version || "connecting"} · ${this.model.relayConnected ? "relay synced" : "relay offline"}`
+          ? `dots · 运行环境 ${this.model.version || "连接中"} · ${this.model.relayConnected ? "中继已同步" : "中继离线"}`
           : this.status.detail;
     return {
       draftScope: this.accountEpoch,
@@ -196,9 +196,9 @@ export class LorcaController {
           title:
             c.title ||
             c.bot_ids
-              .map((id) => this.model.bots.get(id)?.name ?? "Bot")
+              .map((id) => this.model.bots.get(id)?.name ?? "机器人")
               .join(", ") ||
-            "Conversation",
+            "对话",
           updatedAt: new Date(
             (c.messages.at(-1)?.created_at ?? c.created_at) * 1000,
           ).toISOString(),
@@ -229,7 +229,7 @@ export class LorcaController {
         .filter((m) => m.queued)
         .map((m) => ({
           id: m.id,
-          text: m.body.kind === "text" ? m.body.text : "Queued message",
+          text: m.body.kind === "text" ? m.body.text : "排队中的消息",
           canSendNow: chat?.kind === "dm",
         })),
       demo: this.demo,
@@ -312,7 +312,7 @@ export class LorcaController {
         this.buffering.push(event);
         if (this.buffering.length > 10000)
           throw new Error(
-            "Too many updates during synchronization. Reconnect to refresh.",
+            "同步期间收到的更新过多。请重新连接以刷新。",
           );
         return;
       }
@@ -377,10 +377,10 @@ export class LorcaController {
       this.reconcileSelection();
       if (!this.model.hasIdentity)
         this.error =
-          "No Lorca identity on this device. Set up or pair the Lorca CLI first.";
+          "此设备尚未设置 Lorca 身份。请先通过 Lorca 命令行工具完成设置或配对。";
       else if (this.model.updateRequired)
         this.error =
-          "The relay requires a newer Lorca CLI. Update Lorca before syncing.";
+          "中继要求更新版本的 Lorca 命令行工具。请更新 Lorca 后再同步。";
     } catch (error) {
       if (request === this.snapshotRequest) {
         this.buffering = null;
@@ -395,14 +395,14 @@ export class LorcaController {
   }
   private fail(error: unknown): void {
     this.error =
-      error instanceof Error ? error.message : "The Lorca request failed.";
+      error instanceof Error ? error.message : "dots 请求失败。";
     this.emit();
   }
   private requireReady(): void {
     if (this.status.status !== "connected" || this.loading || !this.synchronized)
-      throw new Error("Wait for the local Lorca connection to finish syncing.");
+      throw new Error("请等待本地 Lorca 连接完成同步。");
     if (!this.model.hasIdentity)
-      throw new Error("Set up your identity in Lorca first.");
+      throw new Error("请先在 Lorca 运行环境中设置身份。");
   }
   private async run(action: () => Promise<void>): Promise<void> {
     try {
@@ -430,7 +430,7 @@ export class LorcaController {
         if (!chatId) {
           if (!this.selectedBot)
             throw new Error(
-              "Create a bot in Lorca before starting a conversation.",
+              "请先在 Lorca 运行环境中创建机器人，再开始对话。",
             );
           const response = object(
             await this.bridge.request("chats.create", {
@@ -438,14 +438,14 @@ export class LorcaController {
               bot_ids: [this.selectedBot],
               id: `chat-${crypto.randomUUID()}`,
             }),
-            "create response",
+            "创建对话响应",
           );
           if (
             generation !== this.generation ||
             accountEpoch !== this.accountEpoch
           )
             throw new Error(
-              "Account or connection changed while creating the chat. Reconnect before sending.",
+              "创建对话时，账号或连接发生了变化。请重新连接后再发送。",
             );
           const chat = parseChat(response.chat, false);
           if (!this.model.chats.has(chat.id))
@@ -473,19 +473,19 @@ export class LorcaController {
                 text,
                 message_id: messageId,
               }),
-          "send response",
+          "发送消息响应",
         );
         if (
           generation !== this.generation ||
           accountEpoch !== this.accountEpoch
         )
           throw new Error(
-            "Send outcome unknown after reconnect. Check the conversation before sending again.",
+            "重新连接后无法确认消息是否已发送。请先检查对话，再决定是否重新发送。",
           );
         const message = parseMessage(response.message);
         if (message.chat_id !== chatId || message.id !== messageId)
           throw new Error(
-            "Incompatible Lorca send response: message ID or chat mismatch.",
+            "Lorca 的发送响应不兼容：消息 ID 或对话不匹配。",
           );
         const chat = this.model.chats.get(chatId);
         if (chat && !chat.messages.some((m) => m.id === message.id))
@@ -530,13 +530,13 @@ export class LorcaController {
     this.runtimeSettings = null;
     this.emit();
     try {
-      if (this.status.status !== "connected") throw new Error("Connect to Lorca before loading runtime settings.");
-      if (!this.bridge.getSettings) throw new Error("Runtime inspection needs the updated desktop bridge.");
+      if (this.status.status !== "connected") throw new Error("请先连接 Lorca，再加载运行环境设置。");
+      if (!this.bridge.getSettings) throw new Error("查看运行环境需要更新桌面桥接组件。");
       const settings = parseRuntimeSettings(await this.bridge.getSettings(runnerId ? { runnerId } : {}));
       if (request !== this.settingsRequest || generation !== this.generation || accountEpoch !== this.accountEpoch) return;
       this.runtimeSettings = settings;
     } catch (error) {
-      if (request === this.settingsRequest) this.settingsError = error instanceof Error ? error.message : "Could not load runtime settings.";
+      if (request === this.settingsRequest) this.settingsError = error instanceof Error ? error.message : "无法加载运行环境设置。";
     } finally {
       if (request === this.settingsRequest) {
         this.settingsLoading = false;
@@ -586,7 +586,7 @@ export class LorcaController {
         void this.unique(`send-now:${id}`, async () => {
           this.requireReady();
           if (chat.kind !== "dm")
-            throw new Error("Send now is available in direct chats only.");
+            throw new Error("仅可在一对一对话中立即发送。");
           await this.bridge.request("chats.send_now", {
             chat_id: chat.id,
             message_id: id,
@@ -606,13 +606,13 @@ export class LorcaController {
             (body?.kind === "permission" && body.decision === "pending") ||
             (body?.kind === "tool" && body.run?.state === "asking");
           if (!pending)
-            throw new Error("This permission request is no longer pending.");
+            throw new Error("此权限请求已不再等待处理。");
           if (
             body?.kind === "permission" &&
             ["access", "connect"].includes(body.tool) &&
             decision !== "deny"
           )
-            throw new Error("Manage access or sign-in in the Lorca app.");
+            throw new Error("请在 Lorca 客户端中管理访问权限或登录。");
           if (
             decision === "always" &&
             ((body?.kind === "tool" && !body.run?.rule) ||
@@ -620,20 +620,20 @@ export class LorcaController {
                 body.plugin_id === "computer" &&
                 !body.rule))
           )
-            throw new Error("This command cannot be permanently approved.");
+            throw new Error("无法为此命令设置始终允许。");
           const result = object(
             await this.bridge.request("chats.permission", {
               chat_id: chat.id,
               message_id: id,
               decision,
             }),
-            "permission response",
+            "权限响应",
           );
-          if (typeof result.answered !== "boolean") throw new Error("Incompatible Lorca permission response.");
+          if (typeof result.answered !== "boolean") throw new Error("Lorca 的权限响应不兼容。");
           if (result.answered === false) {
             await this.refresh();
             throw new Error(
-              "This request is no longer waiting. The conversation was refreshed.",
+              "此请求已不再等待处理。对话已刷新。",
             );
           }
         });
@@ -644,7 +644,7 @@ export class LorcaController {
     onSaveEndpoint: async (endpoint) => {
       const match = /^ws:\/\/(127\.0\.0\.1|localhost):([0-9]{1,5})\/ws$/.exec(endpoint);
       if (endpoint.length > 160 || !match || Number(match[2]) < 1 || Number(match[2]) > 65535)
-        throw new Error("Use ws://127.0.0.1:PORT/ws with a port between 1 and 65535.");
+        throw new Error("请使用 ws://127.0.0.1:PORT/ws，端口范围为 1 至 65535。");
       const canonical = `ws://127.0.0.1:${Number(match[2])}/ws`;
       const changed = canonical !== this.status.endpoint.replace("localhost", "127.0.0.1");
       if (changed) {
@@ -663,9 +663,9 @@ export class LorcaController {
       try {
         const status = await this.bridge.connect(canonical);
         this.receiveStatus(status);
-        if (status.status !== "connected") throw new Error(status.detail || "Lorca did not connect. Check the endpoint and authentication.");
+        if (status.status !== "connected") throw new Error(status.detail || "未能连接 Lorca。请检查连接地址和身份验证。");
         await (this.loading && this.refreshTask ? this.refreshTask : this.refresh());
-        if (!this.synchronized) throw new Error(this.error || "Lorca synchronization failed.");
+        if (!this.synchronized) throw new Error(this.error || "Lorca 同步失败。");
       } catch (error) {
         this.fail(error);
         throw error;

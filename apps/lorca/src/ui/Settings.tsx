@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { settingsZh } from "../locale/settings.zh-CN";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { Input } from "@bb/shared-ui/input";
@@ -31,7 +32,7 @@ export function validateEndpoint(value: string): string | null {
     Number(match[2]) < 1 ||
     Number(match[2]) > 65535
   ) {
-    return "Use ws://127.0.0.1:<port>/ws or ws://localhost:<port>/ws with a port from 1 to 65535.";
+    return settingsZh.invalidEndpoint;
   }
   return null;
 }
@@ -63,9 +64,7 @@ function EndpointForm({
       setSaved(true);
     } catch (error) {
       setError(
-        error instanceof Error
-          ? error.message
-          : "The endpoint could not be saved. Check your local Lorca runtime and try again.",
+        error instanceof Error ? error.message : settingsZh.endpointSaveError,
       );
     } finally {
       setSaving(false);
@@ -73,7 +72,7 @@ function EndpointForm({
   }
   return (
     <>
-      <label htmlFor="lorca-endpoint">Lorca WebSocket endpoint</label>
+      <label htmlFor="lorca-endpoint">{settingsZh.endpointLabel}</label>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -95,8 +94,7 @@ function EndpointForm({
           }}
         />
         <p className="lorca-input-help" id="lorca-endpoint-help">
-          Used for this desktop session. Credentials stay in the native bridge;
-          only a canonical local service address is accepted here.
+          {settingsZh.endpointHelp}
         </p>
         {error && (
           <p className="lorca-field-error" role="alert">
@@ -105,11 +103,13 @@ function EndpointForm({
         )}
         <div className="lorca-settings-form-actions">
           <Button size="sm" type="submit" disabled={saving || connecting}>
-            {saving || connecting ? "Connecting…" : "Connect for this session"}
+            {saving || connecting
+              ? settingsZh.connectingProgress
+              : settingsZh.connectForSession}
           </Button>
           {saved && (
             <span role="status">
-              <Icon name="Check" /> Connected
+              <Icon name="Check" /> {settingsZh.connected}
             </span>
           )}
         </div>
@@ -164,10 +164,10 @@ export function Settings({
         <div className="lorca-settings-runtime-toolbar" aria-busy={loading}>
           <span>
             {loading
-              ? "Refreshing runtime details…"
+              ? settingsZh.refreshingDetails
               : runtime
-                ? "Configuration reported by Lorca"
-                : "Runtime details"}
+                ? settingsZh.reportedConfiguration
+                : settingsZh.runtimeDetails}
           </span>
           <Button
             variant="outline"
@@ -176,7 +176,7 @@ export function Settings({
             disabled={loading || !connected}
           >
             <Icon name={loading ? "Loading" : "FolderSync"} />
-            {loading ? "Refreshing…" : "Refresh"}
+            {loading ? settingsZh.refreshing : settingsZh.refresh}
           </Button>
         </div>
       )}
@@ -185,51 +185,51 @@ export function Settings({
           <Icon name="AlertCircle" />
           <div>
             <p>{error}</p>
-            {runtime && <p>Showing the last loaded snapshot.</p>}
+            {runtime && <p>{settingsZh.lastSnapshot}</p>}
           </div>
         </div>
       )}
       {page === "connection" && (
         <>
           <SettingsSection
-            title="Local runtime"
-            description="Connection and identity information reported by your Lorca daemon."
+            title={settingsZh.localRuntime}
+            description={settingsZh.localRuntimeDescription}
             action={
               <SettingsBadge>
                 {demo
-                  ? "Synthetic preview"
+                  ? settingsZh.syntheticPreview
                   : connection.status === "connected"
-                    ? "Connected"
+                    ? settingsZh.connected
                     : connection.status === "connecting"
-                      ? "Connecting"
-                      : "Offline"}
+                      ? settingsZh.connecting
+                      : settingsZh.offline}
               </SettingsBadge>
             }
           >
             <SettingsRowList>
-              <SettingsDetailRow label="Runtime version">
-                {runtime?.version || "Not reported"}
+              <SettingsDetailRow label={settingsZh.runtimeVersion}>
+                {runtime?.version || settingsZh.notReported}
               </SettingsDetailRow>
-              <SettingsDetailRow label="Identity">
+              <SettingsDetailRow label={settingsZh.identity}>
                 {runtime
                   ? runtime.hasIdentity
-                    ? "Available on this device"
-                    : "Not set up"
-                  : "Not reported"}
+                    ? settingsZh.identityAvailable
+                    : settingsZh.notSetUp
+                  : settingsZh.notReported}
               </SettingsDetailRow>
-              <SettingsDetailRow label="Relay">
+              <SettingsDetailRow label={settingsZh.relay}>
                 {runtime
                   ? runtime.relayConnected
-                    ? "Connected (reported)"
-                    : "Offline (reported)"
-                  : "Not reported"}
+                    ? settingsZh.relayConnected
+                    : settingsZh.relayOffline
+                  : settingsZh.notReported}
               </SettingsDetailRow>
-              <SettingsDetailRow label="Authentication">
+              <SettingsDetailRow label={settingsZh.authentication}>
                 {runtime
                   ? runtime.authMode === "legacy"
-                    ? "Unauthenticated legacy mode"
-                    : "Authenticated local bridge"
-                  : "Not reported"}
+                    ? settingsZh.legacyAuthentication
+                    : settingsZh.localBridgeAuthentication
+                  : settingsZh.notReported}
               </SettingsDetailRow>
             </SettingsRowList>
             {connection.detail && (
@@ -240,25 +240,19 @@ export function Settings({
             {runtime?.updateRequired && (
               <div className="lorca-settings-warning">
                 <Icon name="AlertCircle" />
-                <span>
-                  Lorca reports that a CLI update is required before the relay
-                  can sync.
-                </span>
+                <span>{settingsZh.updateRequired}</span>
               </div>
             )}
             {runtime?.authMode === "legacy" && (
               <div className="lorca-settings-warning">
                 <Icon name="AlertCircle" />
-                <span>
-                  This session uses explicit legacy mode without token
-                  authentication. Use only a trusted local daemon.
-                </span>
+                <span>{settingsZh.legacyWarning}</span>
               </div>
             )}
           </SettingsSection>
           <SettingsSection
-            title="Connection endpoint"
-            description="Connect this interface to the local Lorca CLI. The endpoint is session-only."
+            title={settingsZh.connectionEndpoint}
+            description={settingsZh.connectionEndpointDescription}
           >
             <EndpointForm
               key={`${connection.endpoint}:${open}`}
@@ -269,42 +263,39 @@ export function Settings({
           </SettingsSection>
           <div className="lorca-settings-boundary-note">
             <Icon name="Info" />
-            <p>
-              Account sign-in, credentials, and access grants are managed in
-              Lorca. Credentials never appear in these settings.
-            </p>
+            <p>{settingsZh.credentialsBoundary}</p>
           </div>
         </>
       )}
       {page === "preferences" && (
         <>
           <SettingsSection
-            title="Appearance"
-            description="A local preference for the BB interface. It does not change your Lorca runtime."
+            title={settingsZh.appearance}
+            description={settingsZh.appearanceDescription}
           >
             <SettingsWithControl
-              label="Color theme"
-              description="Choose a light or dark interface."
+              label={settingsZh.colorTheme}
+              description={settingsZh.colorThemeDescription}
               controlPlacement="trailing"
             >
               <div
                 className="lorca-theme-switch"
                 role="group"
-                aria-label="Appearance"
+                aria-label={settingsZh.appearance}
               >
                 <button
                   type="button"
                   aria-pressed={theme === "light"}
                   onClick={() => onThemeChange("light")}
                 >
-                  Light
+                  {settingsZh.light}
                 </button>
                 <button
                   type="button"
                   aria-pressed={theme === "dark"}
                   onClick={() => onThemeChange("dark")}
                 >
-                  Dark
+                  {settingsZh.dark}
                 </button>
               </div>
             </SettingsWithControl>
@@ -313,8 +304,8 @@ export function Settings({
             <Icon name={themePersistent ? "Info" : "AlertCircle"} />
             <p>
               {themePersistent
-                ? "For this app session. Appearance is remembered when the view reloads; the desktop app uses an isolated, temporary session. Other runtime preferences and automatic approval rules are managed in Lorca."
-                : "Local preference storage is unavailable. Appearance works for this window, but may reset when you reopen it."}
+                ? settingsZh.appearanceSessionHelp
+                : settingsZh.appearanceStorageUnavailable}
             </p>
           </div>
         </>
@@ -332,24 +323,28 @@ export function Settings({
           )
         ) : (
           <SettingsSection
-            title={page === "runners" ? "Runner inventory" : "MCP inventory"}
-            action={<SettingsBadge>Read only</SettingsBadge>}
+            title={
+              page === "runners"
+                ? settingsZh.runnerInventory
+                : settingsZh.mcpInventory
+            }
+            action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}
           >
             <InventoryEmpty
               icon={loading ? "Loading" : "Info"}
               title={
                 loading
-                  ? "Loading runtime details…"
+                  ? settingsZh.loadingDetails
                   : connected
-                    ? "No runtime details available"
-                    : "Connect your local runtime"
+                    ? settingsZh.noRuntimeDetails
+                    : settingsZh.connectLocalRuntime
               }
               detail={
                 loading
-                  ? "Waiting for the Lorca daemon’s reported configuration."
+                  ? settingsZh.waitingConfiguration
                   : connected
-                    ? "Refresh to request the current inventory. No status is inferred from missing data."
-                    : "Connect to Lorca to inspect runners, providers, and MCP configuration."
+                    ? settingsZh.refreshInventory
+                    : settingsZh.connectForInventory
               }
             />
             {!connected && (
@@ -358,7 +353,7 @@ export function Settings({
                 size="sm"
                 onClick={() => onPageChange("connection")}
               >
-                Open connection settings
+                {settingsZh.openConnectionSettings}
               </Button>
             )}
           </SettingsSection>

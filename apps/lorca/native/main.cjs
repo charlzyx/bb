@@ -1,22 +1,26 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Menu, nativeImage } = require('electron');
 const path = require('node:path');
 const { pathToFileURL, fileURLToPath } = require('node:url');
 const { LorcaBridge, isTrustedSender, validateCopyText } = require('./bridge.cjs');
 const { AttachmentSelections } = require('./attachments.cjs');
+const { applicationMenuTemplate } = require('./menu.cjs');
+const { APP_NAME, configureApplicationName, configureApplicationBranding } = require('./branding.cjs');
 const { SettingsInventory, sanitizeRendererEvent, sanitizeRendererResult, safeRendererError } = require('./settings.cjs');
 
+configureApplicationName(app);
 const distDirectory = path.resolve(__dirname, '../dist');
 const indexPath = path.join(distDirectory, 'index.html');
 const devURL = process.env.LORCA_DEV_URL;
-if (devURL && !/^http:\/\/127\.0\.0\.1:5178\/$/.test(devURL)) throw new Error('LORCA_DEV_URL must be http://127.0.0.1:5178/');
+if (devURL && !/^http:\/\/127\.0\.0\.1:5178\/$/.test(devURL)) throw new Error('LORCA_DEV_URL 必须为 http://127.0.0.1:5178/');
 const trustedURL = devURL || pathToFileURL(indexPath).href;
 const bridge = new LorcaBridge({ endpoint: process.env.LORCA_ENDPOINT ?? `ws://127.0.0.1:${process.env.LORCA_PORT ?? '4862'}/ws` });
 const selections = new AttachmentSelections();
 const settings = new SettingsInventory(bridge);
 let window = null;
+let applicationIcon;
 let choosing = false;
 function ensureSender(event) {
-  if (!window || window.isDestroyed() || !isTrustedSender(event, window.webContents, trustedURL)) throw new Error('Untrusted Lorca request');
+  if (!window || window.isDestroyed() || !isTrustedSender(event, window.webContents, trustedURL)) throw new Error('Lorca 请求来源不可信');
 }
 function send(channel, value) {
   if (window && !window.isDestroyed()) window.webContents.send(channel, value);
@@ -28,7 +32,7 @@ bridge.on('event', value => {
     if (projected) send('lorca:event', projected);
   } catch {
     bridge.close();
-    send('lorca:status-update', { ...bridge.getStatus(), status: 'error', detail: 'Incompatible Lorca response. Reconnect and try again.' });
+    send('lorca:status-update', { ...bridge.getStatus(), status: 'error', detail: 'Lorca 响应不兼容，请重新连接后重试' });
   }
 });
 bridge.on('status', value => {
@@ -57,14 +61,14 @@ ipcMain.handle('lorca:request', async (event, method, params) => {
 });
 ipcMain.handle('lorca:pick-attachments', async event => {
   ensureSender(event);
-  if (choosing) throw new Error('A file picker is already open');
+  if (choosing) throw new Error('已有一个文件选择窗口打开');
   choosing = true;
   const generation = bridge.getStatus().generation;
   const selectionEpoch = selections.epoch;
   try {
-    const result = await dialog.showOpenDialog(window, { title: 'Attach files to Lorca', properties: ['openFile', 'multiSelections'] });
+    const result = await dialog.showOpenDialog(window, { title: '向 dots 添加附件', buttonLabel: '添加附件', properties: ['openFile', 'multiSelections'] });
     ensureSender(event);
-    if (bridge.getStatus().generation !== generation || selections.epoch !== selectionEpoch) throw new Error('The Lorca connection changed. Choose your files again.');
+    if (bridge.getStatus().generation !== generation || selections.epoch !== selectionEpoch) throw new Error('Lorca 连接已变化，请重新选择文件');
     return result.canceled ? [] : await selections.add(result.filePaths);
   } catch (error) { throw safeRendererError(error); } finally { choosing = false; }
 });
@@ -81,7 +85,7 @@ ipcMain.handle('lorca:send-attachments', async (event, params) => {
 
 function createWindow() {
   window = new BrowserWindow({
-    width: 1240, height: 820, minWidth: 760, minHeight: 520, title: 'BB · Lorca', backgroundColor: '#faf9f6',
+    width: 1240, height: 820, minWidth: 760, minHeight: 520, title: APP_NAME, icon: applicationIcon, backgroundColor: '#faf9f6',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, webviewTag: false, partition: 'bb-lorca' },
   });
   window.setMenuBarVisibility(false);
@@ -114,7 +118,11 @@ function createWindow() {
   window.on('closed', () => { window = null; selections.clear(); bridge.close(); });
   if (devURL) void window.loadURL(devURL); else void window.loadFile(indexPath);
 }
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  applicationIcon = configureApplicationBranding(app, nativeImage);
+  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate()));
+  createWindow();
+});
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 app.on('before-quit', () => bridge.close());
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

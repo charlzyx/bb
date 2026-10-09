@@ -92,7 +92,7 @@ export type WireEvent =
 
 export class ProtocolError extends Error {
   constructor(field: string) {
-    super(`Incompatible Lorca response: ${field}`);
+    super(`Lorca 返回的数据不兼容：${field}`);
     this.name = "ProtocolError";
   }
 }
@@ -315,7 +315,7 @@ export function parseEvent(value: unknown): WireEvent {
       const message = parseMessage(d.message),
         chat_id = string(d.chat_id, "chat_id");
       if (message.chat_id !== chat_id)
-        throw new ProtocolError("message chat mismatch");
+        throw new ProtocolError("message.chat_id 与 chat_id 不一致");
       return { event: name, data: { chat_id, message } };
     }
     case "message.removed":

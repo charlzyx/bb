@@ -1,3 +1,4 @@
+import { zhCN } from "../locale/zh-CN";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -41,20 +42,20 @@ function CodeBlock({ children }: { children: ReactNode }) {
     <div className="lorca-code-block">
       <div className="lorca-code-heading">
         <span>
-          <Icon name="Code" /> Code
+          <Icon name="Code" /> {zhCN.transcript.code}
         </span>
         <Button
           variant="ghost"
           size="sm"
           onClick={() => void copy()}
-          aria-label="Copy code"
+          aria-label={zhCN.transcript.copyCode}
         >
           <Icon name={copyState === "copied" ? "Check" : "Copy"} />
           {copyState === "copied"
-            ? "Copied"
+            ? zhCN.transcript.copied
             : copyState === "failed"
-              ? "Copy failed"
-              : "Copy"}
+              ? zhCN.transcript.copyFailed
+              : zhCN.transcript.copy}
         </Button>
       </div>
       <pre ref={ref}>{children}</pre>
@@ -81,10 +82,10 @@ export function Markdown({ text }: { text: string }) {
           img: ({ src, alt }) =>
             typeof src === "string" && src ? (
               <span className="lorca-image-reference" title={src}>
-                <Icon name="Folder" /> {alt || "Image reference"}
+                <Icon name="Folder" /> {alt || zhCN.transcript.imageReference}
               </span>
             ) : (
-              <span>{alt || "Image unavailable"}</span>
+              <span>{alt || zhCN.transcript.imageUnavailable}</span>
             ),
           pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
           table: ({ children }) => (

@@ -1,4 +1,5 @@
 import type { BridgeStatus, LorcaBridge } from "./bridge";
+import { appZh } from "../locale/app.zh-CN";
 
 const epoch = 1791561600;
 const text = (id: string, role: string, body: string, offset: number) => ({
@@ -16,7 +17,7 @@ export const demoSnapshot = {
   identity_id: "synthetic-account",
   relay_connected: false,
   relay_update_required: false,
-  bots: [{ id: "bot-demo", name: "Lorca", runner_id: "runner-demo" }],
+  bots: [{ id: "bot-demo", name: "示例助手", runner_id: "runner-demo" }],
   chats: [
     {
       id: "chat-demo",
@@ -149,7 +150,7 @@ export const demoRuntimeSettings = {
     { id: "runner-second", name: "Demo workstation", os: "linux", version: "synthetic-preview", online: false, isThisDevice: false, plugins: [] },
   ],
   providers: [{ id: "demo-provider", name: "Demo provider", connected: true }, { id: "demo-unconfigured", name: "Unconfigured provider", connected: false }],
-  bots: [{ id: "bot-demo", name: "Lorca", runnerId: "runner-demo", provider: "demo-provider", model: "synthetic-model" }],
+  bots: [{ id: "bot-demo", name: "示例助手", runnerId: "runner-demo", provider: "demo-provider", model: "synthetic-model" }],
   mcp: { status: "ready", runnerId: "runner-demo", hasConfigError: false,
     servers: [
       { name: "Demo notes", transport: "stdio", enabled: true, state: "ready", toolCount: 3, hiddenToolCount: null, hasError: false },
@@ -180,7 +181,7 @@ export function createDemoBridge(): LorcaBridge {
         ...status,
         status: "connected",
         generation: status.generation + 1,
-        detail: "Synthetic preview. No CLI connection.",
+        detail: appZh.demoStatus,
       };
       for (const cb of statusListeners) cb(status);
       return status;
@@ -188,7 +189,7 @@ export function createDemoBridge(): LorcaBridge {
     request: async (method) => {
       if (method === "bootstrap") return structuredClone(activitySnapshot);
       throw new Error(
-        "This is a read-only synthetic preview. Launch the desktop app to talk to Lorca.",
+        appZh.demoReadOnly,
       );
     },
     onEvent: () => () => {},

@@ -306,7 +306,7 @@ test("chat mismatch cannot contaminate another transcript", () => {
         event: "message.added",
         data: { chat_id: "wrong", message: demoSnapshot.chats[0].messages[0] },
       }),
-    /mismatch/,
+    /message\.chat_id 与 chat_id 不一致/,
   );
 });
 test("a connecting status followed by connected in the same generation reboots state", async () => {
@@ -346,7 +346,7 @@ test("identity changes during chat creation prevent a second mutation and old ch
       created_at: 1,
     },
   });
-  await assert.rejects(send, /Account or connection changed/);
+  await assert.rejects(send, /账号或连接发生了变化/);
   assert.equal(
     bridge.calls.some((call) => call.method === "chats.send"),
     false,
@@ -357,7 +357,7 @@ test("identity changes during chat creation prevent a second mutation and old ch
 test("failed reconnect snapshot cannot authorize mutations with old identity state",async()=>{
   const bridge=new FakeBridge(),controller=new LorcaController(bridge);await controller.start();await tick();controller.actions.onSelectConversation("chat-demo");
   bridge.handler=async()=>{throw new Error("Invalid snapshot");};bridge.change(2,"connecting");bridge.change(2,"connected");await tick();
-  await assert.rejects(Promise.resolve(controller.actions.onSend("must stay local")),/finish syncing/);
+  await assert.rejects(Promise.resolve(controller.actions.onSend("must stay local")),/完成同步/);
   assert.equal(bridge.calls.some(call=>call.method==="chats.send"),false);controller.dispose();
 });
 test("buffered old stream and permission states cannot regress terminal snapshot rows",()=>{
@@ -853,7 +853,7 @@ test("malformed runtime inventory clears stale results, reports a settings error
     assert.equal(controller.getSnapshot().runtimeSettings, undefined);
     await tick();
     assert.equal(controller.getSnapshot().settingsLoading, false);
-    assert.match(controller.getSnapshot().settingsError ?? "", /Incompatible settings/);
+    assert.match(controller.getSnapshot().settingsError ?? "", /设置数据格式不兼容/);
     assert.equal(controller.getSnapshot().runtimeSettings, undefined);
     assert.equal(controller.getSnapshot().error, null);
 
@@ -884,7 +884,7 @@ test("runtime inspection on an unsupported desktop bridge fails without a fallba
     await tick();
 
     const after = controller.getSnapshot();
-    assert.match(after.settingsError ?? "", /updated desktop bridge/);
+    assert.match(after.settingsError ?? "", /更新桌面桥接组件/);
     assert.equal(after.settingsLoading, false);
     assert.equal(after.runtimeSettings, undefined);
     assert.equal(after.error, null);
@@ -913,7 +913,7 @@ test("offline runtime inspection does not invoke the settings bridge", async () 
     refresh();
     await tick();
     assert.equal(calls, 0);
-    assert.match(controller.getSnapshot().settingsError ?? "", /Connect to Lorca/);
+    assert.match(controller.getSnapshot().settingsError ?? "", /请先连接 Lorca/);
     assert.equal(controller.getSnapshot().settingsLoading, false);
     assert.equal(controller.getSnapshot().runtimeSettings, undefined);
   } finally {
@@ -977,4 +977,138 @@ test("runtime settings parser rejects malformed inventory fields and bounded col
   ];
   for (const [index, value] of malformed.entries())
     assert.throws(() => parseRuntimeSettings(value), Error, `Malformed fixture ${index} must be rejected`);
+});
+
+test("Chinese controller labels preserve original user text, tool content, and bot names", async () => {
+  const bridge = new FakeBridge(),
+    controller = new LorcaController(bridge);
+  const opening = demoSnapshot.chats[0].messages[0];
+  bridge.handler = async () => ({
+    ...structuredClone(demoSnapshot),
+    bots: [{ ...demoSnapshot.bots[0], name: "Original Bot Name" }],
+    chats: [
+      {
+        ...demoSnapshot.chats[0],
+        messages: [
+          { ...opening, id: "original-user", body: { kind: "text", text: "Original user text stays in English." } },
+          {
+            ...opening,
+            id: "command-approval",
+            body: {
+              kind: "tool",
+              name: "Original Tool Name",
+              summary: "Original tool summary",
+              detail: "Original tool detail",
+              is_running: false,
+              run: {
+                state: "asking",
+                command: "printf 'Hello'",
+                reason: "Original command reason",
+                rule: "command.startsWith('printf')",
+              },
+            },
+          },
+          {
+            ...opening,
+            id: "connection-approval",
+            body: {
+              kind: "permission",
+              plugin_id: "original-plugin",
+              plugin_name: "Original Plugin Name",
+              tool: "connect",
+              summary: "Original permission summary",
+              decision: "pending",
+            },
+          },
+          { ...opening, id: "unsupported-message", body: { kind: "future.custom" } },
+          { ...opening, id: "queued-notice", queued: true, body: { kind: "notice", text: "Original queued notice" } },
+        ],
+      },
+      { ...demoSnapshot.chats[0], id: "unnamed-chat", bot_ids: [], messages: [] },
+      { ...demoSnapshot.chats[0], id: "unknown-bot-chat", bot_ids: ["missing-bot"], messages: [] },
+    ],
+  });
+  try {
+    await controller.start();
+    await tick();
+    controller.actions.onSelectConversation("chat-demo");
+    const state = controller.getSnapshot();
+    assert.equal(state.agents[0].label, "Original Bot Name");
+    assert.equal(state.conversations.find((chat) => chat.id === "chat-demo")?.title, "Original Bot Name");
+    assert.equal(state.conversations.find((chat) => chat.id === "unnamed-chat")?.title, "对话");
+    assert.equal(state.conversations.find((chat) => chat.id === "unknown-bot-chat")?.title, "机器人");
+    const user = state.messages.find((item) => item.id === "original-user");
+    assert.ok(user?.kind === "message");
+    assert.equal(user.text, "Original user text stays in English.");
+    const command = state.messages.find((item) => item.id === "command-approval");
+    assert.ok(command?.kind === "approval");
+    assert.equal(command.title, "运行命令");
+    assert.equal(command.detail, "printf 'Hello'\n\nOriginal command reason\n\n始终允许规则：command.startsWith('printf')");
+    const connection = state.messages.find((item) => item.id === "connection-approval");
+    assert.ok(connection?.kind === "approval");
+    assert.equal(connection.title, "Original Plugin Name · connect");
+    assert.equal(connection.detail, "Original permission summary\n\n请在 Lorca 客户端中管理访问权限或登录。");
+    const unsupported = state.messages.find((item) => item.id === "unsupported-message");
+    assert.ok(unsupported?.kind === "notice");
+    assert.equal(unsupported.text, "dots 暂不支持此消息类型（future.custom）。请在 Lorca 客户端中查看。");
+    assert.equal(state.queue[0].text, "排队中的消息");
+    assert.match(state.connection.detail ?? "", /中继离线/);
+    bridge.event({ event: "relay.status", data: { connected: true } });
+    assert.match(controller.getSnapshot().connection.detail ?? "", /中继已同步/);
+    bridge.status = { ...bridge.status, authMode: "legacy" };
+    bridge.change(bridge.status.generation);
+    assert.equal(controller.getSnapshot().connection.detail, "dots · 旧版回环模式 · 本地连接未进行身份验证");
+  } finally {
+    controller.dispose();
+  }
+});
+
+test("dots branding preserves an actual bot, conversation, and provider named Lorca", async () => {
+  const bridge = new FakeBridge(),
+    controller = new LorcaController(bridge);
+  const source = structuredClone(demoSnapshot);
+  source.bots[0].name = "Lorca";
+  bridge.handler = async () => ({
+    ...source,
+    chats: source.chats.map((chat, index) => index === 0 ? { ...chat, title: "Lorca" } : chat),
+  });
+  try {
+    await controller.start();
+    await tick();
+    controller.actions.onSelectConversation("chat-demo");
+    const state = controller.getSnapshot();
+    assert.equal(state.agents[0].label, "Lorca");
+    assert.equal(state.conversations.find((chat) => chat.id === "chat-demo")?.title, "Lorca");
+    const assistant = state.messages.find((item) => item.kind === "message" && item.role === "assistant");
+    assert.ok(assistant?.kind === "message");
+    assert.equal(assistant.authorName, "Lorca");
+    assert.match(state.connection.detail ?? "", /^dots · 运行环境 /);
+    const settings = parseRuntimeSettings({
+      ...demoRuntimeSettings,
+      providers: [{ ...demoRuntimeSettings.providers[0], name: "Lorca" }],
+      bots: [{ ...demoRuntimeSettings.bots[0], name: "Lorca" }],
+    });
+    assert.equal(settings.providers[0].name, "Lorca");
+    assert.equal(settings.bots[0].name, "Lorca");
+  } finally {
+    controller.dispose();
+  }
+});
+
+test("Chinese parser diagnostics retain the offending protocol field identifiers", () => {
+  assert.throws(
+    () => parseSnapshot({ ...demoSnapshot, bots: "malformed" }),
+    /^ProtocolError: Lorca 返回的数据不兼容：bots$/,
+  );
+  assert.throws(
+    () => parseRuntimeSettings({ ...demoRuntimeSettings, authMode: "malformed" }),
+    /^Error: 设置数据格式不兼容：authMode$/,
+  );
+  assert.throws(
+    () => parseRuntimeSettings({
+      ...demoRuntimeSettings,
+      devices: [{ ...demoRuntimeSettings.devices[0], isThisDevice: "malformed" }],
+    }),
+    /^Error: 设置数据格式不兼容：devices\.isThisDevice$/,
+  );
 });

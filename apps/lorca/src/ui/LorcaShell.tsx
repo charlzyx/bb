@@ -1,3 +1,4 @@
+import { zhCN } from "../locale/zh-CN";
 import {
   useEffect,
   useLayoutEffect,
@@ -16,9 +17,9 @@ import {
 } from "@bb/shared-ui/responsive-overlay";
 import { CHROME_SECTION_LABEL_CLASS } from "@bb/shared-ui/chrome-style-tokens";
 import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
-import { BbLogo } from "../../../app/src/components/ui/bb-logo";
 import { ConversationTimeline } from "../../../app/src/components/ui/conversation";
-import { AssistantMark, TranscriptItem } from "./Transcript";
+import { TranscriptItem } from "./Transcript";
+import { DotsMark } from "./DotsMark";
 import { Settings } from "./Settings";
 import type { SettingsPage } from "./settings/SettingsFrame";
 import {
@@ -34,14 +35,14 @@ import type {
 
 function conversationGroup(updatedAt: string): string {
   const updated = new Date(updatedAt);
-  if (!Number.isFinite(updated.getTime())) return "Conversations";
+  if (!Number.isFinite(updated.getTime())) return zhCN.chat.conversations;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const difference = today.getTime() - updated.getTime();
-  if (difference <= 0) return "Today";
-  if (difference < 86400000) return "Yesterday";
-  if (difference < 604800000) return "Previous 7 days";
-  return "Earlier";
+  if (difference <= 0) return zhCN.chat.today;
+  if (difference < 86400000) return zhCN.chat.yesterday;
+  if (difference < 604800000) return zhCN.chat.previousWeek;
+  return zhCN.chat.earlier;
 }
 
 function ConnectionLabel({ state }: { state: LorcaShellState }) {
@@ -49,7 +50,7 @@ function ConnectionLabel({ state }: { state: LorcaShellState }) {
     return (
       <>
         <span className="lorca-demo-dot" />
-        Demo
+        {zhCN.chat.demo}
       </>
     );
   return (
@@ -58,10 +59,10 @@ function ConnectionLabel({ state }: { state: LorcaShellState }) {
         className={`lorca-status-dot lorca-status-${state.connection.status}`}
       />
       {state.connection.status === "connected"
-        ? "Connected"
+        ? zhCN.chat.connected
         : state.connection.status === "connecting"
-          ? "Connecting"
-          : "Offline"}
+          ? zhCN.chat.connecting
+          : zhCN.chat.offline}
     </>
   );
 }
@@ -93,7 +94,7 @@ function Sidebar({
     const result = new Map<string, LorcaConversation[]>();
     for (const conversation of filtered) {
       const label = search
-        ? "Search results"
+        ? zhCN.chat.searchResults
         : conversationGroup(conversation.updatedAt);
       const group = result.get(label) ?? [];
       group.push(conversation);
@@ -106,10 +107,9 @@ function Sidebar({
     <div className="lorca-sidebar-content">
       <div className="lorca-brand">
         <span className="lorca-brand-logo">
-          <BbLogo />
+          <DotsMark />
         </span>
-        <span>Lorca</span>
-        <span className="lorca-brand-edition">with BB</span>
+        <span>dots</span>
       </div>
       <div className="lorca-sidebar-controls">
         <Button
@@ -121,7 +121,7 @@ function Sidebar({
           }}
         >
           <Icon name="MessageCirclePlus" />
-          <span>New chat</span>
+          <span>{zhCN.chat.newChat}</span>
           <kbd>⌘ N</kbd>
         </Button>
         <div className="lorca-search">
@@ -129,15 +129,15 @@ function Sidebar({
           <input
             ref={searchRef}
             type="search"
-            placeholder="Search chats"
-            aria-label="Search chats"
+            placeholder={zhCN.chat.searchChats}
+            aria-label={zhCN.chat.searchChats}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
           <kbd>⌘ K</kbd>
         </div>
       </div>
-      <nav className="lorca-chat-list" aria-label="Chats">
+      <nav className="lorca-chat-list" aria-label={zhCN.chat.chats}>
         {groups.map(([label, conversations]) => (
           <section className="lorca-chat-group" key={label}>
             <h2 className={CHROME_SECTION_LABEL_CLASS}>{label}</h2>
@@ -155,11 +155,13 @@ function Sidebar({
                   onNavigate();
                 }}
               >
-                <span>{conversation.title || "Untitled chat"}</span>
+                <span>{conversation.title || zhCN.chat.untitledChat}</span>
                 {conversation.status !== "idle" && (
                   <span
                     className={`lorca-thread-state lorca-thread-state-${conversation.status}`}
-                    aria-label={conversation.status}
+                    aria-label={
+                      zhCN.chat.conversationStatus[conversation.status]
+                    }
                   >
                     <Icon
                       name={
@@ -180,12 +182,10 @@ function Sidebar({
           <div className="lorca-sidebar-empty">
             <Icon name={search ? "Search" : "MessageSquare"} />
             <p>
-              {search ? "No matching chats" : "Your conversations live here"}
+              {search ? zhCN.chat.noMatchingChats : zhCN.chat.conversationsHome}
             </p>
             <span>
-              {search
-                ? "Try a different search."
-                : "Start a chat to make some room for your ideas."}
+              {search ? zhCN.chat.tryAnotherSearch : zhCN.chat.startChatHint}
             </span>
           </div>
         )}
@@ -196,7 +196,7 @@ function Sidebar({
             <Icon name="ComputerTerminal01" />
           </span>
           <span>
-            <strong>Lorca workspace</strong>
+            <strong>{zhCN.chat.workspace}</strong>
             <small>
               <ConnectionLabel state={state} />
             </small>
@@ -211,18 +211,18 @@ function Sidebar({
 const suggestions = [
   {
     icon: "Edit",
-    label: "Find the right words",
-    text: "Help me turn a rough idea into something clear.",
+    label: zhCN.chat.writingSuggestion,
+    text: zhCN.chat.writingPrompt,
   },
   {
     icon: "Code",
-    label: "Make something useful",
-    text: "I have an idea for a small project. Help me think it through.",
+    label: zhCN.chat.projectSuggestion,
+    text: zhCN.chat.projectPrompt,
   },
   {
     icon: "Search",
-    label: "Follow a question",
-    text: "Help me explore a question and understand it from a few different angles.",
+    label: zhCN.chat.questionSuggestion,
+    text: zhCN.chat.questionPrompt,
   },
 ];
 
@@ -235,15 +235,13 @@ function EmptyState({
 }) {
   return (
     <div className="lorca-empty-state">
-      <AssistantMark large />
-      <span className="lorca-empty-eyebrow">
-        A little room for your next idea
-      </span>
-      <h1>Where should we begin?</h1>
+      <DotsMark large />
+      <span className="lorca-empty-eyebrow">{zhCN.chat.emptyEyebrow}</span>
+      <h1>{zhCN.chat.emptyTitle}</h1>
       <p>
-        Ask a question. Untangle a thought.
+        {zhCN.chat.emptyFirstLine}
         <br />
-        Make something worth making.
+        {zhCN.chat.emptySecondLine}
       </p>
       <div className="lorca-suggestions">
         {suggestions.map((suggestion) => (
@@ -414,9 +412,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
     } catch (error) {
       if (!mounted.current) return;
       setSendError(
-        error instanceof Error
-          ? error.message
-          : "The message could not be sent. Your draft is still here.",
+        error instanceof Error ? error.message : zhCN.chat.sendFailed,
       );
     } finally {
       if (mounted.current) {
@@ -434,7 +430,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
   return (
     <div className="lorca-app">
       <a href="#lorca-composer" className="lorca-skip-link">
-        Skip to message composer
+        {zhCN.chat.skipToComposer}
       </a>
       {!compact && (
         <aside className="lorca-sidebar">
@@ -454,7 +450,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
         <PersistentResponsiveDrawerShell
           open={sidebarOpen}
           onOpenChange={setSidebarOpen}
-          srLabel="Chats"
+          srLabel={zhCN.chat.chats}
           contentClassName="lorca-mobile-sidebar"
         >
           {sidebarRealized && (
@@ -481,30 +477,30 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Open chats"
+                aria-label={zhCN.chat.openChats}
                 onClick={() => setSidebarOpen(true)}
               >
                 <Icon name="PanelLeft" />
               </Button>
             )}
-            <span>{activeConversation?.title || "New chat"}</span>
+            <span>{activeConversation?.title || zhCN.chat.newChat}</span>
             {state.busy && (
               <span className="lorca-header-running">
                 <span className="lorca-pulse-dot" />
-                Working
+                {zhCN.chat.working}
               </span>
             )}
           </div>
           <div className="lorca-header-actions">
             {state.demo && (
               <Pill variant="outline" className="lorca-demo-badge">
-                Synthetic demo
+                {zhCN.chat.syntheticDemo}
               </Pill>
             )}
             <button
               className="lorca-header-status"
               onClick={() => openSettings()}
-              aria-label="Open connection settings"
+              aria-label={zhCN.chat.openConnectionSettings}
             >
               <ConnectionLabel state={state} />
               <Icon name="ChevronDown" />
@@ -513,8 +509,8 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
         </header>
         {state.demo && (
           <div className="lorca-demo-banner">
-            <span>Preview with sample conversations</span>
-            <span>No live agents or backend connection</span>
+            <span>{zhCN.chat.demoPreview}</span>
+            <span>{zhCN.chat.demoDisconnected}</span>
           </div>
         )}
         <div
@@ -531,7 +527,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
           {state.loading && !state.messages.length ? (
             <div className="lorca-loading" role="status">
               <Icon name="Loading" />
-              Loading conversation…
+              {zhCN.chat.loadingConversation}
             </div>
           ) : !state.messages.length ? (
             <EmptyState setDraft={fillSuggestion} disabled={false} />
@@ -547,8 +543,8 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                   >
                     {state.loadingOlder && <Icon name="Loading" />}
                     {state.loadingOlder
-                      ? "Loading earlier messages…"
-                      : "Load earlier messages"}
+                      ? zhCN.chat.loadingEarlier
+                      : zhCN.chat.loadEarlier}
                   </Button>
                 </div>
               )}
@@ -567,8 +563,8 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                   (message) => message.kind === "message" && message.streaming,
                 ) && (
                   <div className="lorca-thinking" role="status">
-                    <AssistantMark />
-                    <span>Working on your message</span>
+                    <DotsMark />
+                    <span>{zhCN.chat.workingOnMessage}</span>
                     <span className="lorca-thinking-dots">
                       <i />
                       <i />
@@ -595,7 +591,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
               }}
             >
               <Icon name="ChevronDown" />
-              Jump to latest
+              {zhCN.chat.jumpToLatest}
             </Button>
           )}
           <div className="lorca-composer-width">
@@ -610,11 +606,11 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                 <Icon name="Info" />
                 <span>
                   {state.connection.status === "connecting"
-                    ? "Connecting to your Lorca runtime…"
-                    : "Connect your local Lorca runtime to send a message."}
+                    ? zhCN.chat.connectingRuntime
+                    : zhCN.chat.connectToSend}
                 </span>
                 <button onClick={() => openSettings()}>
-                  Connection settings
+                  {zhCN.chat.connectionSettings}
                   <Icon name="ChevronRight" />
                 </button>
               </div>
@@ -623,10 +619,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
               <div className="lorca-queue">
                 <div className="lorca-queue-heading">
                   <Icon name="ListTodo" />
-                  <span>
-                    {state.queue.length} message
-                    {state.queue.length === 1 ? "" : "s"} queued
-                  </span>
+                  <span>{zhCN.chat.queuedMessages(state.queue.length)}</span>
                 </div>
                 {state.queue.map((message) => (
                   <div className="lorca-queued-message" key={message.id}>
@@ -638,7 +631,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                         onClick={() => actions.onSendNow(message.id)}
                         disabled={!canInteract}
                       >
-                        Send now
+                        {zhCN.chat.sendNow}
                       </Button>
                     )}
                   </div>
@@ -650,7 +643,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
               onSubmit={(event) => void send(event)}
             >
               <label className="sr-only" htmlFor="lorca-composer">
-                Message Lorca
+                {zhCN.chat.messageDots}
               </label>
               {hasAttachments && (
                 <div className="lorca-pending-attachments">
@@ -661,7 +654,9 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                       {actions.onRemoveAttachment && (
                         <button
                           type="button"
-                          aria-label={`Remove ${attachment.name}`}
+                          aria-label={zhCN.chat.removeAttachment(
+                            attachment.name,
+                          )}
                           onClick={() =>
                             actions.onRemoveAttachment?.(attachment.id)
                           }
@@ -677,7 +672,11 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                 id="lorca-composer"
                 ref={composerRef}
                 rows={2}
-                placeholder={state.busy ? "Add a follow-up…" : "Message Lorca…"}
+                placeholder={
+                  state.busy
+                    ? zhCN.chat.followUpPlaceholder
+                    : zhCN.chat.messagePlaceholder
+                }
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
@@ -700,7 +699,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                       variant="ghost"
                       size="icon"
                       type="button"
-                      aria-label="Attach files"
+                      aria-label={zhCN.chat.attachFiles}
                       onClick={actions.onPickAttachments}
                       disabled={!canInteract || sending}
                     >
@@ -723,7 +722,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                   <div className="lorca-agent-picker">
                     <Icon name="Bot" />
                     <select
-                      aria-label="Select Lorca bot"
+                      aria-label={zhCN.chat.selectBot}
                       value={state.selectedAgentId ?? ""}
                       onChange={(event) => {
                         navigationRevision.current += 1;
@@ -738,7 +737,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                       }
                     >
                       {!state.agents.length && (
-                        <option value="">No bots available</option>
+                        <option value="">{zhCN.chat.noBots}</option>
                       )}
                       {state.agents.map((agent) => (
                         <option key={agent.id} value={agent.id}>
@@ -756,7 +755,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                       className="lorca-stop-button"
                       size="icon"
                       type="button"
-                      aria-label="Stop response"
+                      aria-label={zhCN.chat.stopResponse}
                       onClick={actions.onStop}
                       disabled={!canInteract}
                     >
@@ -767,7 +766,11 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                     className="lorca-send-button"
                     size="icon"
                     type="submit"
-                    aria-label={state.busy ? "Queue message" : "Send message"}
+                    aria-label={
+                      state.busy
+                        ? zhCN.chat.queueMessage
+                        : zhCN.chat.sendMessage
+                    }
                     disabled={
                       (!draft.trim() && !hasAttachments) ||
                       sending ||
@@ -795,14 +798,12 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
             </form>
             <div className="lorca-composer-footnote" id="lorca-composer-help">
               <span>
-                {state.busy
-                  ? "New messages join the queue while Lorca works."
-                  : "Enter to send · Shift + Enter for a new line"}
+                {state.busy ? zhCN.chat.queueHelp : zhCN.chat.keyboardHelp}
               </span>
               <span>
                 {state.demo
-                  ? "Demo data only"
-                  : "Powered by your Lorca runtime"}
+                  ? zhCN.chat.demoDataOnly
+                  : zhCN.chat.poweredByRuntime}
               </span>
             </div>
           </div>

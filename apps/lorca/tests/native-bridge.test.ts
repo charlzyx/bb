@@ -86,18 +86,18 @@ test('authenticated connection omits Origin and maps out-of-order replies and fu
 test('timeout makes mutations unknown without replay, and preserves late reply safety', async t => {
   const f = await fixture(t, { timeoutMs: 25 }); await f.bridge.connect(f.endpoint);
   f.handle(() => {});
-  await assert.rejects(f.bridge.request('chats.send', { chat_id: 'c', text: 'hello', message_id: 'm' }), /result is unknown.*not replayed/);
+  await assert.rejects(f.bridge.request('chats.send', { chat_id: 'c', text: 'hello', message_id: 'm' }), /结果尚不确定.*未被自动重发/);
   assert.equal(f.requests.length, 1);
   f.sockets[0]!.send(JSON.stringify({ id: f.requests[0]!.id, result: { message: {} } }));
   await delay(10); assert.equal(f.bridge.getStatus().status, 'connected'); assert.equal(f.requests.length, 1);
-  await assert.rejects(f.bridge.request('hello', {}), error => error instanceof Error && !error.message.includes('unknown'));
+  await assert.rejects(f.bridge.request('hello', {}), error => error instanceof Error && !error.message.includes('结果尚不确定'));
 });
 
 test('dropped mutation is never replayed, reconnect rereads token, stale socket cannot publish', async t => {
   const f = await fixture(t); await f.bridge.connect(f.endpoint);
   let oldSocket: Socket | null = null;
   f.handle((socket, frame) => { if (frame.method === 'chats.send') { oldSocket = f.bridge.socket; socket.terminate(); } });
-  await assert.rejects(f.bridge.request('chats.send', { chat_id: 'c', text: 'once', message_id: 'm' }), /result is unknown/);
+  await assert.rejects(f.bridge.request('chats.send', { chat_id: 'c', text: 'once', message_id: 'm' }), /结果尚不确定/);
   await until(() => f.sockets.length === 2 && f.bridge.getStatus().status === 'connected');
   assert.equal(f.requests.length, 1); assert.equal(f.headers[1]?.authorization, `Bearer ${f.token}`);
   const events: unknown[] = []; f.bridge.on('event', (event: unknown) => events.push(event));
@@ -118,16 +118,16 @@ test('explicit legacy mode is visible and never reads an account token', async t
   const f = await fixture(t, { legacy: true });
   f.bridge.readToken = () => { throw new Error('must not read'); };
   const status = await f.bridge.connect(f.endpoint);
-  assert.equal(status.status, 'connected'); assert.equal(status.authMode, 'legacy'); assert.match(status.detail, /unauthenticated/);
+  assert.equal(status.status, 'connected'); assert.equal(status.authMode, 'legacy'); assert.match(status.detail, /未启用身份验证/);
   assert.equal(f.headers[0]?.authorization, undefined); assert.equal(f.headers[0]?.origin, undefined);
 });
 
 test('missing token fails closed and malformed protocol stops reconnect until explicit retry', async t => {
   const f = await fixture(t); await rm(path.join(f.home, 'serve-token'));
-  const status = await f.bridge.connect(f.endpoint); assert.equal(status.status, 'error'); assert.match(status.detail, /Cannot read/); assert.equal(f.headers.length, 0);
+  const status = await f.bridge.connect(f.endpoint); assert.equal(status.status, 'error'); assert.match(status.detail, /无法读取/); assert.equal(f.headers.length, 0);
   f.bridge.close(); await writeFile(path.join(f.home, 'serve-token'), f.token); await f.bridge.connect(f.endpoint);
   f.handle(socket => socket.send('{broken json'));
-  await assert.rejects(f.bridge.request('hello', {}), /Incompatible Lorca response/);
+  await assert.rejects(f.bridge.request('hello', {}), /Lorca 响应不兼容/);
   const count = f.headers.length; await delay(80); assert.equal(f.headers.length, count); assert.equal(f.bridge.getStatus().status, 'error');
 });
 
@@ -145,13 +145,13 @@ test('native file selections reveal opaque IDs only, and support attachment-only
   assert.equal(selected[0].name, 'example.txt'); assert.equal(selected[0].size, 4); assert.equal(selected[0].path, undefined);
   assert.ok(!JSON.stringify(selected).includes(f.home));
   f.handle((socket, frame) => socket.send(JSON.stringify({ id: frame.id, result: { message: { id: 'm' } } })));
-  await assert.rejects(registry.send(f.bridge, { chat_id: 'c', text: '', selection_ids: ['/etc/passwd'] }), /unavailable/);
+  await assert.rejects(registry.send(f.bridge, { chat_id: 'c', text: '', selection_ids: ['/etc/passwd'] }), /不可用/);
   assert.deepEqual(await registry.send(f.bridge, { chat_id: 'c', text: '', message_id: 'm', selection_ids: [selected[0].id] }), { message: { id: 'm' } });
   const sent = f.requests[0]!; assert.equal(sent.method, 'chats.send'); assert.equal(sent.params.text, '');
   assert.deepEqual(sent.params.attachments, [{ path: selectedFile, name: 'example.txt', id: `att-${selected[0].id}` }]);
-  await assert.rejects(registry.send(f.bridge, { chat_id: 'c', text: 'again', selection_ids: [selected[0].id] }), /unavailable/);
+  await assert.rejects(registry.send(f.bridge, { chat_id: 'c', text: 'again', selection_ids: [selected[0].id] }), /不可用/);
   const next = await registry.add([selectedFile]); await writeFile(selectedFile, 'changed');
-  await assert.rejects(registry.send(f.bridge, { chat_id: 'c', text: '', selection_ids: [next[0].id] }), /file changed/);
+  await assert.rejects(registry.send(f.bridge, { chat_id: 'c', text: '', selection_ids: [next[0].id] }), /文件已变化/);
 });
 
 test('Electron preload has no raw IPC or filesystem export and main keeps security isolation', async () => {
@@ -168,7 +168,7 @@ test('connection replacement fences an in-progress native file send', async t =>
   const registry = new AttachmentSelections(); const selected = await registry.add([selectedFile]);
   const send = registry.send(f.bridge, { chat_id: 'c', text: '  ', selection_ids: [selected[0].id] });
   f.bridge.close();
-  await assert.rejects(send, /connection changed/);
+  await assert.rejects(send, /连接已变化/);
   assert.equal(f.requests.length, 0);
 });
 
@@ -187,11 +187,11 @@ test('identity clear invalidates in-flight file reads without needing a socket g
   const selectedFile = path.join(f.home, 'selected.txt'); await writeFile(selectedFile, 'test');
   const registry = new AttachmentSelections();
   const adding = registry.add([selectedFile]); registry.clear();
-  await assert.rejects(adding, /selection changed/); assert.equal(registry.files.size, 0);
+  await assert.rejects(adding, /附件选择已变化/); assert.equal(registry.files.size, 0);
   const selected = await registry.add([selectedFile]);
   const send = registry.send(f.bridge, { chat_id: 'c', text: '', selection_ids: [selected[0].id] });
   registry.clear();
-  await assert.rejects(send, /selection changed/); assert.equal(f.requests.length, 0);
+  await assert.rejects(send, /附件选择已变化/); assert.equal(f.requests.length, 0);
 });
 
 test('renderer cannot invoke unused destructive or membership methods', () => {

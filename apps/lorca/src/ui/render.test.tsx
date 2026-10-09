@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Markdown, safeMarkdownUrl } from "./markdown";
 import { TranscriptItem } from "./Transcript";
+import { LorcaShell } from "./LorcaShell";
 import { Settings, validateEndpoint } from "./Settings";
 import { McpPanel, RunnersPanel } from "./settings/RuntimePanels";
 import {
@@ -52,7 +53,7 @@ test("Markdown formats fenced code as escaped text with a copy action", () => {
     <Markdown text={"```html\n<img src=x onerror=alert(1)>\n```"} />,
   );
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
-  assert.match(html, /aria-label="Copy code"/);
+  assert.match(html, /aria-label="复制代码"/);
   assert.doesNotMatch(html, /<img/);
 });
 
@@ -82,25 +83,25 @@ test("Approval controls match capabilities without inventing persistent permissi
     status: "pending",
   };
   const normal = renderMessage(base);
-  assert.match(normal, /Allow once/);
-  assert.match(normal, />Deny</);
-  assert.doesNotMatch(normal, /Always allow/);
+  assert.match(normal, /仅允许一次/);
+  assert.match(normal, />拒绝</);
+  assert.doesNotMatch(normal, /始终允许/);
   const restricted = renderMessage({
     ...base,
     canAllow: false,
     canAlways: true,
   });
-  assert.doesNotMatch(restricted, /Allow once|Always allow/);
-  assert.match(restricted, />Deny</);
+  assert.doesNotMatch(restricted, /仅允许一次|始终允许/);
+  assert.match(restricted, />拒绝</);
   const persistent = renderMessage({ ...base, canAlways: true });
-  assert.match(persistent, /Always allow this tool/);
+  assert.match(persistent, /始终允许此工具/);
   const expired = renderMessage({
     ...base,
     status: "expired",
     canAlways: true,
   });
-  assert.match(expired, /Expired/);
-  assert.doesNotMatch(expired, /Allow once|Always allow|>Deny</);
+  assert.match(expired, /已过期/);
+  assert.doesNotMatch(expired, /仅允许一次|始终允许|>拒绝</);
 });
 
 test("Attachment-only messages show names as text without paths or navigation", () => {
@@ -130,7 +131,7 @@ test("Tool input and output are escaped, with distinct failure status", () => {
     input: "<script>bad</script>",
     output: "File not found",
   });
-  assert.match(html, /Failed/);
+  assert.match(html, /失败/);
   assert.match(html, /File not found/);
   assert.match(html, /&lt;script&gt;bad&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<script>/);
@@ -186,7 +187,7 @@ test("Named assistant identities are preserved in headers and accessible labels"
     authorName: "Fixture Bot",
     text: "Named bot response",
   });
-  assert.match(html, /aria-label="Fixture Bot response"/);
+  assert.match(html, /aria-label="Fixture Bot 的回复"/);
   assert.match(html, /<span>Fixture Bot<\/span>/);
   assert.doesNotMatch(html, /<span>Lorca<\/span>/);
 });
@@ -301,11 +302,11 @@ test("Runner inventory excludes paired phones and preserves unknown counts/model
   );
   assert.match(html, /Known runner/);
   assert.doesNotMatch(html, /Paired phone/);
-  assert.match(html, /other paired.*device is.*not a runner/);
-  assert.match(html, /Tool count not reported/);
-  assert.match(html, /Model not reported/);
-  assert.match(html, /No provider request or credential check/);
-  assert.doesNotMatch(html, />0 tools</);
+  assert.match(html, /另外 1 台已配对设备不是执行器/);
+  assert.match(html, /未报告工具数量/);
+  assert.match(html, /未报告模型/);
+  assert.match(html, /此处不会向模型服务商发送请求或检查凭据/);
+  assert.doesNotMatch(html, />0 个工具</);
 });
 
 test("MCP inspection is read-only, excludes phones, and never invents hidden counts", () => {
@@ -314,14 +315,11 @@ test("MCP inspection is read-only, excludes phones, and never invents hidden cou
   const html = renderToStaticMarkup(
     <McpPanel runtime={runtime} loading={false} onRefresh={() => {}} />,
   );
-  assert.match(html, /Inspect runner/);
+  assert.match(html, /查看执行器/);
   assert.match(html, /value="runner" selected=""/);
-  assert.doesNotMatch(html, /Paired phone|value="phone"|>0 hidden</);
-  assert.match(html, /This does not change any bot or chat assignment/);
-  assert.doesNotMatch(
-    html,
-    /type="checkbox"|Save server|Add server|Remove server/,
-  );
+  assert.doesNotMatch(html, /Paired phone|value="phone"|>0 个已隐藏</);
+  assert.match(html, /这不会更改任何机器人或聊天的执行器分配/);
+  assert.doesNotMatch(html, /type="checkbox"|保存服务器|添加服务器|移除服务器/);
 });
 
 test("MCP status is explicitly reported configuration with unknown counts intact", () => {
@@ -332,9 +330,9 @@ test("MCP status is explicitly reported configuration with unknown counts intact
       onRefresh={() => {}}
     />,
   );
-  assert.match(html, /not connection-test results/);
-  assert.match(html, /Tool count not reported/);
-  assert.doesNotMatch(html, /0 hidden|>0 tools</);
+  assert.match(html, /这些状态并非连接测试结果/);
+  assert.match(html, /未报告工具数量/);
+  assert.doesNotMatch(html, /0 个已隐藏|>0 个工具</);
 });
 
 test("Appearance storage restores known values and handles blocked or malformed storage", () => {
@@ -390,10 +388,81 @@ test("Preferences expose appearance only and disclose its session scope", () => 
       runtime={runtimeFixture()}
     />,
   );
-  assert.match(html, /For this app session/);
-  assert.match(html, /Color theme/);
+  assert.match(html, /仅适用于本次应用会话/);
+  assert.match(html, /颜色主题/);
   assert.doesNotMatch(
     html,
-    /type="checkbox"|API key|password|Save endpoint|Always approve/,
+    /type="checkbox"|API 密钥|密码|保存连接地址|始终批准/,
   );
+});
+
+test("Chinese transcript labels never translate code, tool payloads, or bot names", () => {
+  const html = renderMessage({
+    kind: "tool",
+    id: "tool",
+    name: "filesystem.read",
+    status: "complete",
+    input: '{"path":"README.md"}',
+    output: "Original output 原文",
+  });
+  assert.match(html, /已完成/);
+  assert.match(html, /filesystem.read/);
+  assert.match(html, /README.md/);
+  assert.match(html, /Original output 原文/);
+  assert.match(html, /输入/);
+  assert.match(html, /结果/);
+  const code = renderToStaticMarkup(
+    <Markdown text={"```sh\nprintf 'Original text'\n```"} />,
+  );
+  assert.match(code, /aria-label="复制代码"/);
+  assert.match(code, /printf/);
+  assert.match(code, /Original text/);
+});
+
+test("dots branding and Chinese chrome preserve original conversation and bot names", () => {
+  const html = renderToStaticMarkup(
+    <LorcaShell
+      state={{
+        connection: { status: "connected", endpoint: "ws://127.0.0.1:4862/ws" },
+        conversations: [
+          {
+            id: "chat",
+            title: "Lorca 原始对话",
+            updatedAt: "2020-01-01T00:00:00Z",
+            status: "waiting",
+          },
+        ],
+        activeConversationId: null,
+        messages: [],
+        agents: [{ id: "original-bot-id", label: "BB Bot 名称" }],
+        selectedAgentId: "original-bot-id",
+        busy: false,
+        loading: false,
+        hasMore: false,
+        loadingOlder: false,
+        error: null,
+        queue: [],
+        demo: false,
+      }}
+      actions={actions}
+    />,
+  );
+  assert.match(html, /想和 dots 聊些什么？/);
+  assert.match(html, /aria-label="搜索对话"/);
+  assert.match(html, /aria-label="发送消息"/);
+  assert.match(html, /给 dots 发消息/);
+  assert.match(html, /aria-label="等待授权"/);
+  assert.match(html, /Lorca 原始对话/);
+  assert.match(html, /BB Bot 名称/);
+  assert.match(html, /value="original-bot-id"/);
+  assert.match(html, /<circle cx="10" cy="10" r="3.5"><\/circle>/);
+  assert.doesNotMatch(html, /bb-logo|BB 界面|Lorca 工作区|给 Lorca 发消息/);
+  const fallback = renderMessage({
+    kind: "message",
+    id: "fallback",
+    role: "assistant",
+    text: "Original response",
+  });
+  assert.match(fallback, /aria-label="dots 的回复"/);
+  assert.match(fallback, /<span>dots<\/span>/);
 });

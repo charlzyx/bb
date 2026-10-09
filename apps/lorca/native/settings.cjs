@@ -1,7 +1,7 @@
-const SETTINGS_ERROR = 'Lorca settings are unavailable. Reconnect and try again.';
-const CHANGED_ERROR = 'The Lorca account or connection changed. Refresh before continuing.';
+const SETTINGS_ERROR = '无法读取 Lorca 设置，请重新连接后重试';
+const CHANGED_ERROR = 'Lorca 账号或连接已变化，请刷新后再继续';
 const PLUGIN_STATES = new Set(['ready', 'needs_setup', 'needs_auth', 'connecting', 'error', 'disabled', 'insufficient_access']);
-function invalid() { throw new Error('Incompatible Lorca response or invalid settings parameters.'); }
+function invalid() { throw new Error('Lorca 响应不兼容，或设置参数无效'); }
 function object(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) invalid();
   return value;
@@ -182,7 +182,7 @@ function wireMessage(value) {
   else if (kind === 'notice') body = { kind, text: text(source.text, 2_000_000) };
   else if (kind === 'handoff') body = { kind, from: text(source.from), to: text(source.to), reason: text(source.reason, 200_000) };
   return { id: id(item.id), chat_id: id(item.chat_id), author: { kind: text(author.kind, 64), bot_id: nullableText(author.bot_id) }, body,
-    state: { kind: text(status.kind, 64), error: status.kind === 'failed' ? 'Lorca could not complete this message. Check the local runtime.' : null }, created_at: number(item.created_at), queued: boolean(item.queued, false) };
+    state: { kind: text(status.kind, 64), error: status.kind === 'failed' ? 'Lorca 未能完成这条消息，请检查本地运行服务' : null }, created_at: number(item.created_at), queued: boolean(item.queued, false) };
 }
 function wireChat(value, messages) {
   const item = object(value);
@@ -236,8 +236,8 @@ function sanitizeRendererResult(method, value) {
   return bounded(result, 16_000_000);
 }
 function safeRendererError(error) {
-  if (error?.code === 'LORCA_REMOTE_ERROR') return new Error('Lorca could not complete this request. For actions, check the chat before retrying; nothing was replayed.');
-  if (['ENOENT', 'EACCES', 'EPERM', 'EISDIR'].includes(error?.code)) return new Error('A local file could not be read. Choose the file again and retry.');
+  if (error?.code === 'LORCA_REMOTE_ERROR') return new Error('Lorca 未能完成此请求。若涉及操作，请先检查会话再决定是否重试；请求未被自动重发。');
+  if (['ENOENT', 'EACCES', 'EPERM', 'EISDIR'].includes(error?.code)) return new Error('无法读取本地文件，请重新选择文件后重试');
   return error;
 }
 module.exports = { SettingsInventory, validateSettingsParams, projectSettingsBootstrap, projectMcp, sanitizeRendererEvent, sanitizeRendererResult, safeRendererError };

@@ -1,4 +1,4 @@
-> **Experimental Lorca desktop:** [Run the BB chat UI backed by Lorca](apps/lorca/README.md). [PC settings scope](docs/lorca-settings.md) · [Verification and synthetic screenshots](docs/lorca-verification.md). Upstream BB is preserved.
+> **dots 中文桌面客户端（实验版）：** [运行说明](apps/lorca/README.zh-CN.md) · [Technical documentation](apps/lorca/README.md). [PC settings scope](docs/lorca-settings.md) · [Verification and synthetic screenshots](docs/lorca-verification.md). Upstream BB is preserved.
 
 <p align="center">
   <picture>
