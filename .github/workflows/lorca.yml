@@ -1,0 +1,57 @@
+name: Lorca desktop integration
+on:
+  push:
+    branches: [feat/lorca-desktop]
+    paths: ['apps/lorca/**', 'packages/shared-ui/**', 'apps/app/src/components/ui/**', 'turbo.json', '.github/workflows/lorca.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lorca-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: node apps/lorca/scripts/focused.mjs install
+      - run: node apps/lorca/scripts/focused.mjs check
+      - name: Synthetic browser smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome="$(command -v google-chrome || command -v chromium || true)"
+          if [ -z "$chrome" ]; then
+            node apps/lorca/toolchain/node_modules/playwright/cli.js install --with-deps chromium
+          else
+            export CHROMIUM_PATH="$chrome"
+          fi
+          node apps/lorca/scripts/focused.mjs preview > /tmp/lorca-preview.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5178/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node apps/lorca/tests/ui-smoke.mjs
+      - name: Install Electron runtime
+        run: node apps/lorca/toolchain/node_modules/electron/install.js
+      - name: Synthetic Electron bridge smoke
+        env:
+          LORCA_SMOKE_SCREENSHOT: docs/lorca-screenshots/electron-bridge.png
+        run: xvfb-run -a node apps/lorca/tests/electron-smoke.mjs
+      - name: Synthetic screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: lorca-synthetic-screenshots
+          path: docs/lorca-screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 7

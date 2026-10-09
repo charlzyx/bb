@@ -23,10 +23,15 @@ async function fixture(t: { after: (cb: () => Promise<void>) => void }, options:
   const headers: Record<string, string | string[] | undefined>[] = [];
   const sockets: Socket[] = [];
   const requests: RequestFrame[] = [];
+  const unexpectedRejectionErrors: Error[] = [];
   let handler: (socket: Socket, request: RequestFrame) => void = (socket, request) => socket.send(JSON.stringify({ id: request.id, result: null }));
   server.on('upgrade', (request, socket, head) => {
     headers.push(request.headers);
-    if (request.headers.origin || options.reject || (!options.legacy && request.headers.authorization !== `Bearer ${token}`)) { socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'); return; }
+    if (request.headers.origin || options.reject || (!options.legacy && request.headers.authorization !== `Bearer ${token}`)) {
+      socket.on('error', (error: NodeJS.ErrnoException) => { if (error.code !== 'ECONNRESET') unexpectedRejectionErrors.push(error); });
+      socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n', () => socket.destroy());
+      return;
+    }
     wss.handleUpgrade(request, socket, head, (ws: Socket) => wss.emit('connection', ws));
   });
   wss.on('connection', (socket: Socket) => {
@@ -37,7 +42,7 @@ async function fixture(t: { after: (cb: () => Promise<void>) => void }, options:
   const address = server.address(); assert.ok(address && typeof address === 'object');
   const endpoint = `ws://127.0.0.1:${address.port}/ws`;
   const bridge = new LorcaBridge({ home, endpoint, legacy: options.legacy ?? false, timeoutMs: options.timeoutMs ?? 1000, retryMinimumMs: 20, retryMaximumMs: 60, handshakeTimeoutMs: 200 });
-  t.after(async () => { bridge.close(); for (const socket of sockets) socket.terminate(); await new Promise<void>(resolve => wss.close(() => resolve())); await new Promise<void>(resolve => server.close(() => resolve())); await rm(home, { recursive: true, force: true }); });
+  t.after(async () => { bridge.close(); for (const socket of sockets) socket.terminate(); await new Promise<void>(resolve => wss.close(() => resolve())); await new Promise<void>(resolve => server.close(() => resolve())); await rm(home, { recursive: true, force: true }); assert.deepEqual(unexpectedRejectionErrors, []); });
   return { home, token, bridge, endpoint, headers, sockets, requests, handle: (fn: typeof handler) => { handler = fn; } };
 }
 
@@ -104,7 +109,7 @@ test('dropped mutation is never replayed, reconnect rereads token, stale socket 
 test('401 never downgrades authentication', async t => {
   const f = await fixture(t, { reject: true }); const status = await f.bridge.connect(f.endpoint);
   assert.equal(status.status, 'error'); assert.match(status.detail, /serve-token/);
-  await until(() => f.headers.length >= 2);
+  await until(() => f.headers.length >= 2 && f.bridge.getStatus().status === 'error');
   for (const headers of f.headers) { assert.equal(headers.authorization, `Bearer ${f.token}`); assert.equal(headers.origin, undefined); }
   assert.equal(f.bridge.getStatus().authMode, 'token');
 });
@@ -171,7 +176,7 @@ test('reconnect reloads changed fake token and close cancels scheduled retries',
   const f = await fixture(t); await f.bridge.connect(f.endpoint);
   const newToken = 'different-fake-token'; await writeFile(path.join(f.home, 'serve-token'), newToken);
   f.sockets[0]!.terminate();
-  await until(() => f.headers.length >= 2);
+  await until(() => f.headers.length >= 2 && f.bridge.getStatus().status === 'error');
   assert.equal(f.headers[1]?.authorization, `Bearer ${newToken}`);
   f.bridge.close(); const count = f.headers.length; await delay(100); assert.equal(f.headers.length, count);
   assert.equal(f.bridge.getStatus().status, 'disconnected');

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { Input } from "@bb/shared-ui/input";
@@ -24,6 +24,68 @@ export function validateEndpoint(value: string): string | null {
   }
 }
 
+function EndpointForm({
+  initialEndpoint,
+  onSaveEndpoint,
+}: {
+  initialEndpoint: string;
+  onSaveEndpoint: LorcaShellActions["onSaveEndpoint"];
+}) {
+  const [endpoint, setEndpoint] = useState(initialEndpoint);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  return (
+    <>
+      <label htmlFor="lorca-endpoint">Lorca WebSocket endpoint</label>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          const value = endpoint.trim();
+          const problem = validateEndpoint(value);
+          setError(problem);
+          if (!problem) {
+            onSaveEndpoint(value);
+            setSaved(true);
+          }
+        }}
+      >
+        <Input
+          id="lorca-endpoint"
+          value={endpoint}
+          placeholder="ws://127.0.0.1:PORT/ws"
+          spellCheck={false}
+          aria-invalid={Boolean(error)}
+          aria-describedby="lorca-endpoint-help"
+          onChange={(event) => {
+            setEndpoint(event.target.value);
+            setSaved(false);
+            setError(null);
+          }}
+        />
+        <p className="lorca-input-help" id="lorca-endpoint-help">
+          Keep credentials in the native bridge. This field accepts only a local
+          service address.
+        </p>
+        {error && (
+          <p className="lorca-field-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="lorca-settings-form-actions">
+          <Button size="sm" type="submit">
+            Save endpoint
+          </Button>
+          {saved && (
+            <span role="status">
+              <Icon name="Check" /> Saved
+            </span>
+          )}
+        </div>
+      </form>
+    </>
+  );
+}
+
 export function Settings({
   open,
   onOpenChange,
@@ -42,14 +104,6 @@ export function Settings({
   onThemeChange: (theme: "light" | "dark") => void;
 }) {
   const { isContentRealized } = useResponsiveDrawerRealization({ open });
-  const [endpoint, setEndpoint] = useState(connection.endpoint);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  useEffect(() => {
-    setEndpoint(connection.endpoint);
-    setSaved(false);
-    setError(null);
-  }, [connection.endpoint, open]);
 
   return (
     <PersistentResponsiveDrawerShell
@@ -89,52 +143,11 @@ export function Settings({
                 </span>
               </div>
             )}
-            <label htmlFor="lorca-endpoint">Lorca WebSocket endpoint</label>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const value = endpoint.trim();
-                const problem = validateEndpoint(value);
-                setError(problem);
-                if (!problem) {
-                  actions.onSaveEndpoint(value);
-                  setSaved(true);
-                }
-              }}
-            >
-              <Input
-                id="lorca-endpoint"
-                value={endpoint}
-                placeholder="ws://127.0.0.1:PORT/ws"
-                spellCheck={false}
-                aria-invalid={Boolean(error)}
-                aria-describedby="lorca-endpoint-help"
-                onChange={(event) => {
-                  setEndpoint(event.target.value);
-                  setSaved(false);
-                  setError(null);
-                }}
-              />
-              <p className="lorca-input-help" id="lorca-endpoint-help">
-                Keep credentials in the native bridge. This field accepts only a
-                local service address.
-              </p>
-              {error && (
-                <p className="lorca-field-error" role="alert">
-                  {error}
-                </p>
-              )}
-              <div className="lorca-settings-form-actions">
-                <Button size="sm" type="submit">
-                  Save endpoint
-                </Button>
-                {saved && (
-                  <span role="status">
-                    <Icon name="Check" /> Saved
-                  </span>
-                )}
-              </div>
-            </form>
+            <EndpointForm
+              key={`${connection.endpoint}:${open}`}
+              initialEndpoint={connection.endpoint}
+              onSaveEndpoint={actions.onSaveEndpoint}
+            />
             <div className="lorca-connection-detail">
               <span
                 className={`lorca-status-dot lorca-status-${connection.status}`}

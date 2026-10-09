@@ -21,6 +21,7 @@ import {
 import type { BridgeStatus, LorcaBridge, PickedAttachment } from "./bridge";
 import type {
   LorcaShellState,
+  LorcaConversation,
   LorcaMessage,
   LorcaShellActions,
 } from "../ui/types";
@@ -50,7 +51,7 @@ function messageView(message: WireMessage): LorcaMessage {
           kind: "approval",
           id: message.id,
           title: "Run command",
-          detail: [body.run.command, body.run.reason]
+          detail: [body.run.command, body.run.reason, body.run.rule ? `Always allow rule: ${body.run.rule}` : null]
             .filter(Boolean)
             .join("\n\n"),
           status: "pending",
@@ -60,7 +61,7 @@ function messageView(message: WireMessage): LorcaMessage {
         kind: "tool",
         id: message.id,
         name: body.summary || body.name,
-        status: body.is_error
+        status: body.is_error || body.run?.state === "failed"
           ? "error"
           : body.is_running
             ? "running"
@@ -76,6 +77,7 @@ function messageView(message: WireMessage): LorcaMessage {
           body.summary,
           body.reason,
           body.command,
+          body.rule ? `Always allow rule: ${body.rule}` : null,
           body.tool === "access" || body.tool === "connect"
             ? "Manage access or sign-in in the Lorca app."
             : null,
@@ -176,7 +178,7 @@ export class LorcaController {
         detail,
       },
       conversations: [...this.model.chats.values()]
-        .map((c) => ({
+        .map((c): LorcaConversation => ({
           id: c.id,
           title:
             c.title ||
@@ -189,7 +191,8 @@ export class LorcaController {
           ).toISOString(),
           status: c.messages.some(
             (m) =>
-              m.body.kind === "permission" && m.body.decision === "pending",
+              (m.body.kind === "permission" && m.body.decision === "pending") ||
+              (m.body.kind === "tool" && m.body.run?.state === "asking"),
           )
             ? "waiting"
             : isRunning(this.model, c.id)

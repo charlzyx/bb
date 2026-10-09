@@ -160,11 +160,8 @@ test("paging deduplicates while newer message contents win", () => {
     true,
   );
   assert.equal(model.chats.get("chat-demo")?.messages[0].id, "older");
-  assert.notEqual(
-    model.chats.get("chat-demo")?.messages[1].body.kind === "text" &&
-      model.chats.get("chat-demo")?.messages[1].body.text,
-    "Stale",
-  );
+  const body = model.chats.get("chat-demo")?.messages[1].body;
+  assert.notEqual(body?.kind === "text" && body.text, "Stale");
 });
 test("bootstrap buffers events and applies them after the snapshot", async () => {
   const bridge = new FakeBridge();

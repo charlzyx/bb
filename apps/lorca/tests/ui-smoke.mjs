@@ -6,10 +6,12 @@ let playwright;
 try {
   playwright = await import("playwright");
 } catch {
-  playwright = await import(
-    process.env.PLAYWRIGHT_MODULE ||
-      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs"
-  );
+  if (!process.env.PLAYWRIGHT_MODULE) {
+    throw new Error(
+      "Install Playwright in the workspace, or set PLAYWRIGHT_MODULE to an installed Playwright module path before running this smoke test.",
+    );
+  }
+  playwright = await import(process.env.PLAYWRIGHT_MODULE);
 }
 const base = process.env.LORCA_UI_URL || "http://127.0.0.1:5178";
 const output = fileURLToPath(
@@ -22,7 +24,7 @@ const executablePath =
 const browser = await playwright.chromium.launch({
   headless: true,
   executablePath,
-  args: ["--no-sandbox"],
+  chromiumSandbox: process.env.LORCA_CHROMIUM_NO_SANDBOX !== "1",
 });
 const failures = [];
 const captureErrors = (page) => {
@@ -72,6 +74,31 @@ try {
   });
   await screenshot(desktop, "desktop-conversation-light");
   await desktop.locator(".lorca-header-status").click();
+  const savedEndpoint = await desktop
+    .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
+    .inputValue();
+  await desktop
+    .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
+    .fill("ws://remote.invalid/ws");
+  await desktop
+    .getByRole("button", { name: "Save endpoint", exact: true })
+    .click();
+  await desktop
+    .getByText(
+      "Use the local Lorca service on localhost or a loopback address.",
+      { exact: true },
+    )
+    .waitFor();
+  await desktop.getByRole("button", { name: "Close settings" }).click();
+  await desktop.locator(".lorca-header-status").click();
+  assert.equal(
+    await desktop
+      .getByRole("textbox", { name: "Lorca WebSocket endpoint" })
+      .inputValue(),
+    savedEndpoint,
+    "Closing settings discards unsaved endpoint edits and validation errors",
+  );
+  assert.equal(await desktop.locator(".lorca-field-error").count(), 0);
   await desktop.getByRole("button", { name: "Dark", exact: true }).click();
   await desktop.getByRole("button", { name: "Close settings" }).click();
   await screenshot(desktop, "desktop-conversation-dark");
