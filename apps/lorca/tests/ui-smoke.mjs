@@ -1,0 +1,314 @@
+import assert from "node:assert/strict";
+import { existsSync, mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+let playwright;
+try {
+  playwright = await import("playwright");
+} catch {
+  playwright = await import(
+    process.env.PLAYWRIGHT_MODULE ||
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs"
+  );
+}
+const base = process.env.LORCA_UI_URL || "http://127.0.0.1:5178";
+const output = fileURLToPath(
+  new URL("../../../docs/lorca-screenshots/", import.meta.url),
+);
+mkdirSync(output, { recursive: true });
+const executablePath =
+  process.env.CHROMIUM_PATH ||
+  (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined);
+const browser = await playwright.chromium.launch({
+  headless: true,
+  executablePath,
+  args: ["--no-sandbox"],
+});
+const failures = [];
+const captureErrors = (page) => {
+  page.on("pageerror", (error) => failures.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") failures.push(message.text());
+  });
+};
+async function screenshot(page, name) {
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: `${output}/${name}.png`,
+    animations: "disabled",
+  });
+  const overflow = await page.evaluate(() => ({
+    page: document.documentElement.scrollWidth > innerWidth + 1,
+    composer:
+      document.querySelector(".lorca-composer")?.getBoundingClientRect().right >
+      innerWidth + 1,
+  }));
+  assert.equal(overflow.page, false, `${name}: horizontal page overflow`);
+  assert.equal(overflow.composer, false, `${name}: composer overflow`);
+}
+async function chooseChat(page, text) {
+  await page
+    .locator(".lorca-chat-item")
+    .filter({ hasText: text })
+    .first()
+    .click();
+}
+
+try {
+  const desktop = await browser.newPage({
+    viewport: { width: 1440, height: 1000 },
+    deviceScaleFactor: 1,
+  });
+  captureErrors(desktop);
+  await desktop.goto(`${base}/?demo=1`, { waitUntil: "networkidle" });
+  await desktop
+    .getByRole("heading", { name: "Where should we begin?" })
+    .waitFor();
+  await screenshot(desktop, "desktop-empty-light");
+  await chooseChat(desktop, /^Lorca$/);
+  await desktop.locator(".lorca-assistant-message").first().waitFor();
+  await desktop.locator(".lorca-scroll").evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await screenshot(desktop, "desktop-conversation-light");
+  await desktop.locator(".lorca-header-status").click();
+  await desktop.getByRole("button", { name: "Dark", exact: true }).click();
+  await desktop.getByRole("button", { name: "Close settings" }).click();
+  await screenshot(desktop, "desktop-conversation-dark");
+  await desktop.locator(".lorca-header-status").click();
+  await desktop.getByRole("button", { name: "Light", exact: true }).click();
+  await desktop.getByRole("button", { name: "Close settings" }).click();
+  const preview = desktop
+    .locator(".lorca-chat-item")
+    .filter({ hasText: "Approval and activity preview" });
+  if (await preview.count()) {
+    await preview.click();
+    await desktop.getByRole("button", { name: "Allow once" }).waitFor();
+    await screenshot(desktop, "desktop-approval-light");
+  }
+  await desktop.keyboard.press("Control+k");
+  await desktop
+    .getByRole("searchbox", { name: "Search chats" })
+    .fill("nonexistent fixture title");
+  await desktop.getByText("No matching chats", { exact: true }).waitFor();
+  await desktop.getByRole("searchbox", { name: "Search chats" }).fill("");
+  await desktop.keyboard.press("Control+n");
+  await desktop
+    .getByRole("textbox", { name: "Message Lorca" })
+    .fill("Keep my synthetic draft");
+  await desktop.keyboard.press("Enter");
+  await desktop.getByRole("alert").first().waitFor();
+  assert.equal(
+    await desktop.getByRole("textbox", { name: "Message Lorca" }).inputValue(),
+    "Keep my synthetic draft",
+  );
+
+  const mobile = await browser.newPage({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 1,
+    isMobile: true,
+    hasTouch: true,
+  });
+  captureErrors(mobile);
+  await mobile.goto(`${base}/?demo=1`, { waitUntil: "networkidle" });
+  await screenshot(mobile, "mobile-empty-light");
+  await mobile.getByRole("button", { name: "Open chats" }).click();
+  await mobile.locator(".lorca-chat-item").first().waitFor();
+  await screenshot(mobile, "mobile-chats-light");
+  await chooseChat(mobile, /^Lorca$/);
+  await mobile.locator(".lorca-assistant-message").first().waitFor();
+  await screenshot(mobile, "mobile-conversation-light");
+  assert.equal(await mobile.locator("#root").getAttribute("aria-hidden"), null);
+  assert.equal(await mobile.locator("#root").getAttribute("inert"), null);
+  await mobile.locator(".lorca-header-status").click();
+  await mobile
+    .getByRole("heading", { name: "Settings", exact: true })
+    .last()
+    .waitFor();
+  await screenshot(mobile, "mobile-settings-light");
+  await mobile.getByRole("button", { name: "Dark", exact: true }).click();
+  await mobile.getByRole("button", { name: "Close settings" }).click();
+  await screenshot(mobile, "mobile-conversation-dark");
+
+  const offline = await browser.newPage({
+    viewport: { width: 1200, height: 850 },
+  });
+  captureErrors(offline);
+  await offline.goto(base, { waitUntil: "networkidle" });
+  await offline
+    .getByText("Connect your local Lorca runtime to send a message.", {
+      exact: true,
+    })
+    .waitFor();
+  assert.equal(
+    await offline
+      .getByRole("button", { name: "Send message", exact: true })
+      .isDisabled(),
+    true,
+  );
+  assert.equal(
+    await offline.locator(".lorca-header-status").innerText(),
+    "Offline",
+  );
+  await screenshot(offline, "desktop-disconnected-light");
+  const controlled = await browser.newPage({
+    viewport: { width: 1200, height: 850 },
+  });
+  captureErrors(controlled);
+  await controlled.addInitScript(() => {
+    const epoch = Math.floor(Date.now() / 1000);
+    const createChat = (id, title) => ({
+      id,
+      kind: "dm",
+      title,
+      bot_ids: ["fixture-bot"],
+      created_at: epoch,
+      has_more: false,
+      messages: [
+        {
+          id: `${id}-opening`,
+          chat_id: id,
+          author: { kind: "bot", bot_id: "fixture-bot" },
+          body: { kind: "text", text: "Synthetic UI interaction fixture." },
+          state: { kind: "complete" },
+          created_at: epoch,
+        },
+      ],
+    });
+    const snapshot = {
+      version: "synthetic-test",
+      has_identity: true,
+      relay_connected: false,
+      bots: [
+        { id: "fixture-bot", name: "Fixture bot", runner_id: "fixture-runner" },
+      ],
+      chats: [
+        createChat("fixture-one", "Fixture One"),
+        createChat("fixture-two", "Fixture Two"),
+      ],
+      running_turns: [],
+      running_chat_ids: [],
+    };
+    const ledger = [];
+    const sends = [];
+    window.__lorcaUiTest = {
+      ledger,
+      sends,
+      complete: () => {
+        const item = sends.shift();
+        item.resolve({
+          message: {
+            id: item.params.message_id,
+            chat_id: item.params.chat_id,
+            author: { kind: "you" },
+            body: { kind: "text", text: item.params.text },
+            state: { kind: "complete" },
+            created_at: epoch + 1,
+          },
+        });
+      },
+    };
+    window.lorca = {
+      getStatus: async () => ({
+        status: "connected",
+        endpoint: "ws://127.0.0.1:4862/ws",
+        generation: 1,
+        authMode: "token",
+        detail: "Synthetic UI test bridge",
+      }),
+      connect: async () => {
+        throw new Error("Synthetic UI tests must not connect to services.");
+      },
+      request: async (method, params) => {
+        ledger.push({ method, params });
+        if (method === "bootstrap") return structuredClone(snapshot);
+        if (method === "chats.send")
+          return new Promise((resolve, reject) =>
+            sends.push({ params, resolve, reject }),
+          );
+        throw new Error(`Unexpected synthetic request: ${method}`);
+      },
+      onEvent: () => () => {},
+      onStatus: () => () => {},
+    };
+  });
+  await controlled.goto(base, { waitUntil: "networkidle" });
+  await chooseChat(controlled, "Fixture One");
+  await controlled
+    .getByRole("textbox", { name: "Message Lorca" })
+    .fill("First synthetic submission");
+  await controlled
+    .getByRole("button", { name: "Send message", exact: true })
+    .click();
+  await controlled
+    .getByRole("textbox", { name: "Message Lorca" })
+    .fill("New edits while sending");
+  await controlled.keyboard.press("Enter");
+  assert.equal(
+    await controlled.evaluate(
+      () =>
+        window.__lorcaUiTest.ledger.filter(
+          (item) => item.method === "chats.send",
+        ).length,
+    ),
+    1,
+    "Repeated send is prevented while acknowledgement is pending",
+  );
+  await chooseChat(controlled, "Fixture Two");
+  await controlled
+    .getByRole("textbox", { name: "Message Lorca" })
+    .fill("Second chat draft");
+  await controlled.evaluate(() => window.__lorcaUiTest.complete());
+  await controlled.waitForFunction(
+    () => document.querySelector(".lorca-send-button")?.disabled === false,
+  );
+  assert.equal(
+    await controlled
+      .getByRole("textbox", { name: "Message Lorca" })
+      .inputValue(),
+    "Second chat draft",
+    "Late acknowledgement preserves another chat's draft",
+  );
+  await chooseChat(controlled, "Fixture One");
+  assert.equal(
+    await controlled
+      .getByRole("textbox", { name: "Message Lorca" })
+      .inputValue(),
+    "New edits while sending",
+    "Late acknowledgement preserves new edits in the original chat",
+  );
+  await controlled
+    .getByText("First synthetic submission", { exact: true })
+    .waitFor();
+  assert.deepEqual(
+    failures,
+    [],
+    "No browser console errors or uncaught exceptions",
+  );
+  console.log(
+    JSON.stringify(
+      {
+        result: "passed",
+        screenshots: output,
+        browser: "Chromium desktop and mobile emulation",
+        checks: [
+          "Synthetic labels",
+          "Desktop and mobile light/dark",
+          "No horizontal overflow",
+          "Search keyboard shortcut",
+          "New-chat keyboard shortcut",
+          "Failed-send draft preservation",
+          "Mobile drawer leaves app root active",
+          "Offline disables sending",
+          "Repeated send deduplication",
+          "Late acknowledgement preserves edited and switched-chat drafts",
+          "No console errors",
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+} finally {
+  await browser.close();
+}

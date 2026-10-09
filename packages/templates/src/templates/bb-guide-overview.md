@@ -66,3 +66,7 @@ Run `bb guide <chapter>` for command details:
   automations          Scheduling and editing recurring or one-shot work
   json                 The --json contract: output shapes and the error envelope
   commands [group]     Every core command on one page; add a group for options
+
+### Experimental Lorca desktop integration
+
+The fork's `apps/lorca` is a separate chat-first UI backed by the existing local Lorca CLI. It reuses BB shared UI without changing BB's server or host-daemon protocol. Its setup, native bridge API, explicit legacy mode, and verification commands are documented in `apps/lorca/README.md`; configuration variables are in `docs/configuration.md`.

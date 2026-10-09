@@ -1,0 +1,1521 @@
+@import "@fontsource-variable/inter";
+@import "../../app/src/components/ui/theme.css";
+@source "./ui";
+
+:root {
+  --lorca-reading-width: 760px;
+  --lorca-sidebar-width: 252px;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+body {
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+button:not(:disabled),
+select:not(:disabled) {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+}
+button,
+a,
+input,
+textarea,
+select {
+  outline-offset: 4px;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--ring);
+}
+::selection {
+  background: var(--state-active);
+}
+
+:where(.lorca-app) {
+  display: flex;
+  height: 100dvh;
+  min-height: 0;
+  background: var(--background);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+:where(.lorca-app, .lorca-settings-drawer, .lorca-mobile-sidebar)
+  [data-icon-root] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+:where(.lorca-app) .lorca-skip-link {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 100;
+  transform: translateY(-160%);
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--foreground);
+  color: var(--background);
+}
+:where(.lorca-app) .lorca-skip-link:focus {
+  transform: translateY(0);
+}
+:where(.lorca-app) .lorca-sidebar {
+  width: var(--lorca-sidebar-width);
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-seam);
+  background: var(--sidebar);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-brand {
+  height: 78px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 23px;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-brand-logo {
+  width: 25px;
+  height: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-brand-logo img {
+  width: 25px;
+  height: 25px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-brand-edition {
+  align-self: center;
+  margin-top: 2px;
+  margin-left: auto;
+  color: var(--subtle-foreground);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-controls {
+  padding: 0 12px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-new-chat {
+  height: 39px;
+  width: 100%;
+  padding: 0 11px;
+  justify-content: flex-start;
+  gap: 11px;
+  border: 1px solid var(--border-seam);
+  border-radius: 8px;
+  background: var(--background);
+  font-weight: 450;
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--ink) 3%, transparent);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) kbd {
+  margin-left: auto;
+  font-family: var(--font-sans);
+  color: var(--subtle-foreground);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-search {
+  display: flex;
+  align-items: center;
+  height: 39px;
+  gap: 11px;
+  margin: 7px 0 25px;
+  padding: 0 11px;
+  color: var(--muted-foreground);
+  border-radius: 8px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-search:focus-within {
+  background: var(--state-hover);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-search input {
+  min-width: 0;
+  width: 100%;
+  border: none;
+  padding: 0;
+  background: transparent;
+  outline: none;
+  color: var(--foreground);
+  font-size: var(--text-sm);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-search input::placeholder {
+  color: var(--muted-foreground);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-search kbd {
+  flex-shrink: 0;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 12px 20px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-chat-group {
+  margin-bottom: 23px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-chat-group h2 {
+  padding: 0 11px;
+  margin-bottom: 7px;
+  color: var(--subtle-foreground);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-chat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 35px;
+  padding: 8px 11px;
+  margin: 2px 0;
+  border-radius: 7px;
+  text-align: left;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  transition: background 140ms;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-chat-item:hover {
+  background: var(--state-hover);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-chat-item-active {
+  background: var(--state-active);
+  font-weight: 500;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-chat-item > span:first-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-thread-state {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--subtle-foreground);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-thread-state [data-icon-root] {
+  width: 13px;
+  height: 13px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-thread-state-running {
+  animation: lorca-spin 2.4s linear infinite;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-thread-state-waiting {
+  color: var(--warning-text);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-thread-state-error {
+  color: var(--destructive-text);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-empty {
+  padding: 25px 15px;
+  color: var(--subtle-foreground);
+  text-align: center;
+}
+:where(.lorca-app, .lorca-mobile-sidebar)
+  .lorca-sidebar-empty
+  [data-icon-root] {
+  margin: 0 auto 12px;
+  width: 23px;
+  height: 23px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-empty p {
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-empty span {
+  display: block;
+  margin-top: 7px;
+  font-size: var(--text-xs);
+  line-height: 1.7;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-footer {
+  flex-shrink: 0;
+  padding: 12px;
+  border-top: 1px solid var(--border-seam);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 7px;
+  border-radius: 8px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace:hover {
+  background: var(--state-hover);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace > [data-icon-root] {
+  margin-left: auto;
+  color: var(--subtle-foreground);
+  width: 16px;
+  height: 16px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-seam);
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--muted-foreground);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace strong {
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+  margin-top: 3px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar, .lorca-settings-drawer)
+  .lorca-status-dot,
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-demo-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--subtle-foreground);
+}
+:where(.lorca-app, .lorca-mobile-sidebar, .lorca-settings-drawer)
+  .lorca-status-connected {
+  background: var(--success-foreground);
+}
+:where(.lorca-app, .lorca-mobile-sidebar, .lorca-settings-drawer)
+  .lorca-status-connecting {
+  background: var(--warning-text);
+  animation: lorca-pulse 1.5s ease-in-out infinite;
+}
+:where(.lorca-app, .lorca-mobile-sidebar, .lorca-settings-drawer)
+  .lorca-status-error {
+  background: var(--destructive-text);
+}
+:where(.lorca-app) .lorca-main {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+:where(.lorca-app) .lorca-header {
+  height: 64px;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30px;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-seam);
+}
+:where(.lorca-app) .lorca-header-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  font-weight: 500;
+}
+:where(.lorca-app) .lorca-header-title > span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:where(.lorca-app) .lorca-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-shrink: 0;
+}
+:where(.lorca-app) .lorca-header-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+  padding: 6px;
+  border-radius: 6px;
+}
+:where(.lorca-app) .lorca-header-status:hover {
+  background: var(--state-hover);
+}
+:where(.lorca-app) .lorca-header-status [data-icon-root] {
+  width: 12px;
+  height: 12px;
+  margin-left: 3px;
+}
+:where(.lorca-app) .lorca-demo-badge {
+  color: var(--muted-foreground);
+  border-color: var(--border-seam);
+  padding: 2px 7px;
+}
+:where(.lorca-app) .lorca-demo-banner {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 18px;
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+  border-bottom: 1px solid var(--border-seam);
+  background: var(--surface-raised);
+}
+:where(.lorca-app) .lorca-demo-banner > span + span::before {
+  content: "·";
+  margin-right: 6px;
+}
+:where(.lorca-app) .lorca-header-running {
+  color: var(--subtle-foreground);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+:where(.lorca-app) .lorca-pulse-dot {
+  width: 5px;
+  height: 5px;
+  display: inline-block;
+  border-radius: 50%;
+  background: currentColor;
+  animation: lorca-pulse 1.6s ease-in-out infinite;
+}
+:where(.lorca-app) .lorca-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+:where(.lorca-app) .lorca-empty-state {
+  width: 100%;
+  max-width: 660px;
+  margin: 0 auto;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 46px 24px 66px;
+}
+:where(.lorca-app) .lorca-assistant-mark {
+  display: inline-flex;
+  width: 25px;
+  height: 25px;
+  color: var(--foreground);
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+:where(.lorca-app) .lorca-assistant-mark svg {
+  width: 100%;
+  height: 100%;
+}
+:where(.lorca-app) .lorca-assistant-mark-large {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 31px;
+}
+:where(.lorca-app) .lorca-empty-eyebrow {
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+  letter-spacing: 0.025em;
+  margin-bottom: 13px;
+}
+:where(.lorca-app) .lorca-empty-state h1 {
+  font-size: var(--text-4xl);
+  line-height: 1.2;
+  font-weight: 450;
+  letter-spacing: -0.055em;
+}
+:where(.lorca-app) .lorca-empty-state > p {
+  color: var(--muted-foreground);
+  font-size: var(--text-base);
+  line-height: 1.75;
+  margin: 20px 0 30px;
+}
+:where(.lorca-app) .lorca-suggestions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+:where(.lorca-app) .lorca-suggestions button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 13px;
+  font-size: var(--text-xs);
+  border: 1px solid var(--border-seam);
+  border-radius: 9px;
+  color: var(--muted-foreground);
+  transition:
+    background 120ms,
+    border-color 120ms;
+}
+:where(.lorca-app) .lorca-suggestions button:hover {
+  background: var(--state-hover);
+  border-color: var(--border);
+}
+:where(.lorca-app) .lorca-suggestions [data-icon-root] {
+  width: 15px;
+  height: 15px;
+}
+:where(.lorca-app) .lorca-suggestions .lorca-suggestion-arrow {
+  display: none;
+}
+:where(.lorca-app) .lorca-transcript {
+  max-width: var(--lorca-reading-width);
+  margin: 0 auto;
+  padding: 36px 0 30px;
+}
+:where(.lorca-app) .lorca-timeline {
+  gap: 22px;
+}
+:where(.lorca-app) .lorca-user-message {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 0 10px;
+}
+:where(.lorca-app) .lorca-user-message > div {
+  max-width: 87%;
+  padding: 13px 19px;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--surface-recessed);
+  color: var(--foreground);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+:where(.lorca-app) .lorca-message-author {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 13px;
+  font-size: var(--text-sm);
+  font-weight: 550;
+}
+:where(.lorca-app) .lorca-streaming-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 3px;
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+  font-weight: 400;
+}
+:where(.lorca-app) .lorca-markdown {
+  font-size: var(--text-base);
+  line-height: 1.8;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+:where(.lorca-app) .lorca-markdown > :first-child {
+  margin-top: 0;
+}
+:where(.lorca-app) .lorca-markdown > :last-child {
+  margin-bottom: 0;
+}
+:where(.lorca-app) .lorca-markdown p {
+  margin: 0 0 16px;
+}
+:where(.lorca-app) .lorca-markdown strong {
+  font-weight: 600;
+}
+:where(.lorca-app) .lorca-markdown h1 {
+  font-size: var(--text-2xl);
+}
+:where(.lorca-app) .lorca-markdown h2 {
+  font-size: var(--text-xl);
+}
+:where(.lorca-app) .lorca-markdown h3,
+:where(.lorca-app) .lorca-markdown h4 {
+  font-size: var(--text-base);
+}
+:where(.lorca-app) .lorca-markdown :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+  margin: 26px 0 10px;
+}
+:where(.lorca-app) .lorca-markdown :is(ul, ol) {
+  margin: 10px 0 18px;
+  padding-left: 24px;
+}
+:where(.lorca-app) .lorca-markdown ul {
+  list-style: disc;
+}
+:where(.lorca-app) .lorca-markdown ol {
+  list-style: decimal;
+}
+:where(.lorca-app) .lorca-markdown li {
+  padding-left: 4px;
+  margin: 6px 0;
+}
+:where(.lorca-app) .lorca-markdown li > p {
+  margin-bottom: 5px;
+}
+:where(.lorca-app) .lorca-markdown a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border);
+}
+:where(.lorca-app) .lorca-markdown a:hover {
+  text-decoration-color: var(--foreground);
+}
+:where(.lorca-app) .lorca-markdown blockquote {
+  border-left: 2px solid var(--border);
+  margin: 16px 0;
+  padding-left: 18px;
+  color: var(--muted-foreground);
+}
+:where(.lorca-app) .lorca-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--border-seam);
+  margin: 26px 0;
+}
+:where(.lorca-app) .lorca-markdown :not(pre) > code {
+  font-size: 0.88em;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--surface-recessed);
+  font-family: var(--font-mono);
+}
+:where(.lorca-app) .lorca-code-block {
+  margin: 19px 0;
+  border: 1px solid var(--border-seam);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+:where(.lorca-app) .lorca-code-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px 4px 15px;
+  border-bottom: 1px solid var(--border-seam);
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+  background: var(--surface-raised);
+}
+:where(.lorca-app) .lorca-code-heading > span {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+:where(.lorca-app) .lorca-code-heading [data-icon-root] {
+  width: 13px;
+  height: 13px;
+}
+:where(.lorca-app) .lorca-code-heading button {
+  height: 27px;
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+:where(.lorca-app) .lorca-code-block pre {
+  padding: 17px 19px;
+  margin: 0;
+  white-space: pre;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.8;
+  tab-size: 2;
+}
+:where(.lorca-app) .lorca-table-scroll {
+  overflow-x: auto;
+  margin: 16px 0;
+}
+:where(.lorca-app) .lorca-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+:where(.lorca-app) .lorca-markdown :is(td, th) {
+  border-bottom: 1px solid var(--border-seam);
+  text-align: left;
+  padding: 8px 12px;
+}
+:where(.lorca-app) .lorca-markdown th {
+  font-weight: 600;
+}
+:where(.lorca-app) .lorca-image-reference {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+:where(.lorca-app) .lorca-message-actions {
+  margin-top: 10px;
+  height: 25px;
+}
+:where(.lorca-app) .lorca-copy-message {
+  width: 27px;
+  height: 27px;
+  margin-left: -6px;
+  color: var(--subtle-foreground);
+}
+:where(.lorca-app) .lorca-copy-message [data-icon-root] {
+  width: 14px;
+  height: 14px;
+}
+:where(.lorca-app) .lorca-tool-card {
+  border-color: var(--border-seam);
+  background: transparent;
+}
+:where(.lorca-app) .lorca-tool-card summary {
+  display: flex;
+  align-items: center;
+  padding: 11px 14px;
+  gap: 9px;
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+:where(.lorca-app) .lorca-tool-card summary::-webkit-details-marker {
+  display: none;
+}
+:where(.lorca-app) .lorca-tool-card summary:hover {
+  background: var(--state-hover);
+}
+:where(.lorca-app) .lorca-tool-icon [data-icon-root] {
+  width: 16px;
+  height: 16px;
+}
+:where(.lorca-app) .lorca-tool-running {
+  animation: lorca-spin 2.4s linear infinite;
+}
+:where(.lorca-app) .lorca-tool-complete {
+  color: var(--success-foreground);
+}
+:where(.lorca-app) .lorca-tool-error {
+  color: var(--destructive-text);
+}
+:where(.lorca-app) .lorca-tool-name {
+  font-weight: 450;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:where(.lorca-app) .lorca-tool-status {
+  margin-left: auto;
+  color: var(--subtle-foreground);
+  font-size: var(--text-xs);
+}
+:where(.lorca-app) .lorca-disclosure-chevron {
+  width: 13px;
+  height: 13px;
+  color: var(--subtle-foreground);
+  transition: transform 120ms;
+}
+:where(.lorca-app) .lorca-tool-card[open] .lorca-disclosure-chevron {
+  transform: rotate(90deg);
+}
+:where(.lorca-app) .lorca-tool-body {
+  border-top: 1px solid var(--border-seam);
+  padding: 14px;
+  font-size: var(--text-sm);
+}
+:where(.lorca-app) .lorca-tool-body pre {
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 340px;
+  overflow: auto;
+  font-size: var(--text-xs);
+  background: var(--surface-raised);
+  padding: 12px;
+  border-radius: 5px;
+  margin: 7px 0 14px;
+}
+:where(.lorca-app) .lorca-tool-body pre:last-child {
+  margin-bottom: 0;
+}
+:where(.lorca-app, .lorca-settings-drawer) .lorca-field-caption {
+  color: var(--subtle-foreground);
+  font-size: var(--text-xs);
+}
+:where(.lorca-app) .lorca-approval-card {
+  border: 1px solid color-mix(in oklch, var(--warning-text) 30%, var(--canvas));
+  border-radius: 11px;
+  background: color-mix(in oklab, var(--warning) 4%, transparent);
+  padding: 19px;
+}
+:where(.lorca-app) .lorca-approval-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+:where(.lorca-app) .lorca-approval-heading > span:last-child:not(:first-child) {
+  margin-left: auto;
+}
+:where(.lorca-app) .lorca-approval-symbol {
+  color: var(--warning-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: color-mix(in oklab, var(--warning) 9%, transparent);
+  border-radius: 8px;
+}
+:where(.lorca-app) .lorca-approval-heading h3 {
+  font-size: var(--text-sm);
+  font-weight: 550;
+  margin-top: 2px;
+}
+:where(.lorca-app) .lorca-approval-card > p {
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  color: var(--muted-foreground);
+  margin: 14px 0 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+:where(.lorca-app) .lorca-approval-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+:where(.lorca-app)
+  .lorca-approval-actions
+  button:last-child:not(:nth-child(2)) {
+  margin-left: auto;
+  color: var(--muted-foreground);
+}
+:where(.lorca-app) .lorca-notice {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 8px;
+  color: var(--muted-foreground);
+  background: var(--surface-raised);
+  font-size: var(--text-sm);
+}
+:where(.lorca-app) .lorca-notice-error {
+  color: var(--destructive-text);
+  background: var(--surface-destructive);
+}
+:where(.lorca-app) .lorca-thinking {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--subtle-foreground);
+  font-size: var(--text-sm);
+  margin-top: 24px;
+}
+:where(.lorca-app) .lorca-thinking-dots {
+  display: flex;
+  gap: 3px;
+  margin-left: 3px;
+}
+:where(.lorca-app) .lorca-thinking-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: lorca-pulse 1.5s ease-in-out infinite;
+}
+:where(.lorca-app) .lorca-thinking-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+:where(.lorca-app) .lorca-thinking-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+:where(.lorca-app) .lorca-loading {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--subtle-foreground);
+}
+:where(.lorca-app) .lorca-loading [data-icon-root] {
+  animation: lorca-spin 2.4s linear infinite;
+}
+:where(.lorca-app) .lorca-load-older {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 28px;
+  color: var(--subtle-foreground);
+}
+:where(.lorca-app) .lorca-composer-area {
+  position: relative;
+  flex-shrink: 0;
+  padding: 0 30px 18px;
+  background: var(--background);
+}
+:where(.lorca-app) .lorca-composer-width {
+  width: 100%;
+  max-width: var(--lorca-reading-width);
+  margin: 0 auto;
+}
+:where(.lorca-app) .lorca-composer {
+  padding: 18px 17px 11px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--background);
+  box-shadow:
+    0 4px 18px -6px color-mix(in oklab, var(--ink) 11%, transparent),
+    0 1px 3px color-mix(in oklab, var(--ink) 3%, transparent);
+  transition:
+    border-color 140ms,
+    box-shadow 140ms;
+}
+:where(.lorca-app) .lorca-composer:focus-within {
+  border-color: color-mix(in oklch, var(--ink) 35%, var(--canvas));
+  box-shadow: 0 4px 18px -6px color-mix(in oklab, var(--ink) 14%, transparent);
+}
+:where(.lorca-app) .lorca-composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 58px;
+  max-height: 196px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 0 1px;
+  background: transparent;
+  font-size: var(--text-base);
+  line-height: 1.65;
+  color: var(--foreground);
+  scrollbar-width: thin;
+}
+:where(.lorca-app) .lorca-composer textarea::placeholder {
+  color: var(--subtle-foreground);
+}
+:where(.lorca-app) .lorca-composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+}
+:where(.lorca-app) .lorca-agent-picker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  position: relative;
+  color: var(--muted-foreground);
+  min-width: 0;
+  padding: 6px 4px;
+  border-radius: 5px;
+}
+:where(.lorca-app) .lorca-agent-picker > [data-icon-root]:first-child {
+  width: 17px;
+  height: 17px;
+}
+:where(.lorca-app) .lorca-agent-picker > [data-icon-root]:last-child {
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+}
+:where(.lorca-app) .lorca-agent-picker select {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  max-width: 220px;
+  padding-right: 19px;
+  margin-right: -21px;
+  font-size: var(--text-xs);
+  outline-offset: 6px;
+}
+:where(.lorca-app) .lorca-agent-picker select:disabled {
+  opacity: 0.7;
+}
+:where(.lorca-app) .lorca-agent-picker select option {
+  background: var(--background);
+  color: var(--foreground);
+}
+:where(.lorca-app) .lorca-send-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+:where(.lorca-app) .lorca-send-button {
+  width: 31px;
+  height: 31px;
+  border-radius: 9px;
+}
+:where(.lorca-app) .lorca-send-button svg {
+  width: 20px;
+  height: 20px;
+}
+:where(.lorca-app) .lorca-send-button:disabled {
+  background: var(--secondary);
+  color: var(--subtle-foreground);
+  opacity: 1;
+}
+:where(.lorca-app) .lorca-stop-button {
+  width: 31px;
+  height: 31px;
+  border-radius: 9px;
+}
+:where(.lorca-app) .lorca-stop-button span {
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+  border-radius: 2px;
+}
+:where(.lorca-app) .lorca-composer-footnote {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 3px 0;
+  color: var(--subtle-foreground);
+  font-size: var(--text-xs);
+}
+:where(.lorca-app) .lorca-jump-latest {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  border-color: var(--border-seam);
+  border-radius: 20px;
+  background: var(--background);
+  box-shadow: var(--shadow-sm);
+}
+:where(.lorca-app) .lorca-jump-latest [data-icon-root] {
+  width: 14px;
+  height: 14px;
+}
+:where(.lorca-app) .lorca-composer-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 11px 13px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: var(--surface-destructive);
+  color: var(--destructive-text);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+:where(.lorca-app) .lorca-composer-error [data-icon-root] {
+  width: 15px;
+  height: 15px;
+}
+:where(.lorca-app) .lorca-offline-notice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 2px;
+  color: var(--subtle-foreground);
+  font-size: var(--text-xs);
+}
+:where(.lorca-app) .lorca-offline-notice > [data-icon-root] {
+  width: 14px;
+  height: 14px;
+}
+:where(.lorca-app) .lorca-offline-notice button {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+:where(.lorca-app) .lorca-offline-notice button [data-icon-root] {
+  width: 12px;
+  height: 12px;
+}
+:where(.lorca-app) .lorca-queue {
+  border: 1px solid var(--border-seam);
+  border-radius: 10px;
+  padding: 10px 13px 5px;
+  margin-bottom: 9px;
+  background: var(--surface-raised);
+}
+:where(.lorca-app) .lorca-queue-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+}
+:where(.lorca-app) .lorca-queue-heading [data-icon-root] {
+  width: 13px;
+  height: 13px;
+}
+:where(.lorca-app) .lorca-queued-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: var(--text-sm);
+}
+:where(.lorca-app) .lorca-queued-message > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:where(.lorca-app) .lorca-queued-message button {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+:where(.lorca-settings-drawer) {
+  max-width: 600px;
+  left: 50%;
+  right: auto;
+  width: min(100%, 600px);
+  margin-left: max(-300px, -50%);
+}
+:where(.lorca-settings-drawer) .lorca-settings {
+  padding: 7px 32px 28px;
+  overflow-y: auto;
+  font-size: var(--text-sm);
+}
+:where(.lorca-settings-drawer) .lorca-settings header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 25px;
+}
+:where(.lorca-settings-drawer) .lorca-settings h2 {
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  margin-top: 4px;
+}
+:where(.lorca-settings-drawer) .lorca-settings h3 {
+  font-size: var(--text-sm);
+  font-weight: 550;
+}
+:where(.lorca-settings-drawer) .lorca-settings section > p,
+:where(.lorca-settings-drawer) .lorca-appearance-setting p {
+  margin-top: 7px;
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  line-height: 1.65;
+}
+:where(.lorca-settings-drawer) .lorca-settings label {
+  display: block;
+  margin: 22px 0 8px;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+:where(.lorca-settings-drawer) .lorca-settings input {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+:where(.lorca-settings-drawer) .lorca-input-help {
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+  margin-top: 8px;
+  line-height: 1.6;
+}
+:where(.lorca-settings-drawer) .lorca-field-error {
+  font-size: var(--text-xs);
+  color: var(--destructive-text);
+  margin-top: 9px;
+}
+:where(.lorca-settings-drawer) .lorca-settings-form-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+}
+:where(.lorca-settings-drawer) .lorca-settings-form-actions > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+:where(.lorca-settings-drawer)
+  .lorca-settings-form-actions
+  > span
+  [data-icon-root] {
+  width: 14px;
+  height: 14px;
+}
+:where(.lorca-settings-drawer) .lorca-connection-detail {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 20px;
+  margin-top: 20px;
+  border-top: 1px solid var(--border-seam);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+:where(.lorca-settings-drawer) .lorca-connection-detail button {
+  margin-left: auto;
+}
+:where(.lorca-settings-drawer) .lorca-settings .lorca-connection-explanation {
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+:where(.lorca-settings-drawer) .lorca-appearance-setting {
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border-seam);
+  margin-top: 24px;
+  padding-top: 24px;
+}
+:where(.lorca-settings-drawer) .lorca-theme-switch {
+  display: flex;
+  gap: 3px;
+  border: 1px solid var(--border-seam);
+  background: var(--surface-raised);
+  padding: 3px;
+  border-radius: 7px;
+  flex-shrink: 0;
+}
+:where(.lorca-settings-drawer) .lorca-theme-switch button {
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+:where(.lorca-settings-drawer) .lorca-theme-switch button[aria-pressed="true"] {
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 1px 3px color-mix(in oklab, var(--ink) 12%, transparent);
+}
+:where(.lorca-settings-drawer) .lorca-settings footer {
+  display: flex;
+  gap: 7px;
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+  margin-top: 35px;
+}
+:where(.lorca-settings-drawer) .lorca-settings-demo {
+  display: flex;
+  gap: 8px;
+  background: var(--surface-recessed);
+  padding: 10px 12px;
+  margin-top: 15px;
+  border-radius: 7px;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+:where(.lorca-settings-drawer) .lorca-settings-demo [data-icon-root] {
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+}
+:where(.lorca-mobile-sidebar) {
+  height: 82dvh;
+  background: var(--sidebar);
+}
+:where(.lorca-mobile-sidebar) .lorca-brand {
+  height: 52px;
+}
+
+@keyframes lorca-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes lorca-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 1140px) {
+  :root {
+    --lorca-reading-width: 680px;
+    --lorca-sidebar-width: 232px;
+  }
+  :where(.lorca-app) .lorca-transcript {
+    margin: 0 34px;
+  }
+  :where(.lorca-app) .lorca-empty-state h1 {
+    font-size: var(--text-3xl);
+  }
+  :where(.lorca-app) .lorca-suggestions {
+    max-width: 430px;
+  }
+}
+
+@media (max-width: 767px) {
+  :where(.lorca-app) .lorca-header {
+    height: 58px;
+    min-height: 58px;
+    padding: 0 12px;
+    gap: 7px;
+  }
+  :where(.lorca-app) .lorca-header-title {
+    gap: 4px;
+    font-size: var(--text-sm);
+  }
+  :where(.lorca-app) .lorca-header-actions {
+    gap: 5px;
+  }
+  :where(.lorca-app) .lorca-demo-badge {
+    display: none;
+  }
+  :where(.lorca-app) .lorca-demo-banner {
+    font-size: var(--text-xs);
+    padding: 6px 12px;
+  }
+  :where(.lorca-app) .lorca-demo-banner > span + span {
+    display: none;
+  }
+  :where(.lorca-app) .lorca-empty-state {
+    padding: 30px 24px 35px;
+  }
+  :where(.lorca-app) .lorca-assistant-mark-large {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 24px;
+  }
+  :where(.lorca-app) .lorca-empty-state h1 {
+    font-size: var(--text-3xl);
+  }
+  :where(.lorca-app) .lorca-empty-state > p {
+    font-size: var(--text-sm);
+    margin: 16px 0 24px;
+  }
+  :where(.lorca-app) .lorca-empty-eyebrow {
+    font-size: var(--text-xs);
+  }
+  :where(.lorca-app) .lorca-suggestions {
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 290px);
+  }
+  :where(.lorca-app) .lorca-suggestions button {
+    padding: 10px 12px;
+    font-size: var(--text-xs);
+  }
+  :where(.lorca-app) .lorca-suggestions .lorca-suggestion-arrow {
+    display: inline;
+    margin-left: auto;
+  }
+  :where(.lorca-app) .lorca-composer-area {
+    padding: 0 12px max(10px, env(safe-area-inset-bottom));
+  }
+  :where(.lorca-app) .lorca-composer {
+    padding: 13px 13px 10px;
+    border-radius: 13px;
+  }
+  :where(.lorca-app) .lorca-composer textarea {
+    min-height: 50px;
+    font-size: max(16px, var(--text-base));
+  }
+  :where(.lorca-app) .lorca-composer-footnote {
+    justify-content: center;
+    font-size: var(--text-2xs);
+    padding-top: 8px;
+  }
+  :where(.lorca-app) .lorca-composer-footnote > span:last-child {
+    display: none;
+  }
+  :where(.lorca-app) .lorca-transcript {
+    margin: 0 22px;
+    padding-top: 24px;
+  }
+  :where(.lorca-app) .lorca-timeline {
+    gap: 20px;
+  }
+  :where(.lorca-app) .lorca-user-message > div {
+    max-width: 92%;
+    font-size: var(--text-sm);
+    padding: 11px 15px;
+  }
+  :where(.lorca-app) .lorca-markdown {
+    font-size: var(--text-base);
+    line-height: 1.75;
+  }
+  :where(.lorca-app) .lorca-code-block pre {
+    font-size: var(--text-xs);
+    padding: 13px;
+  }
+  :where(.lorca-app) .lorca-offline-notice {
+    flex-wrap: wrap;
+    padding: 9px 3px;
+    font-size: var(--text-2xs);
+    gap: 5px;
+  }
+  :where(.lorca-app) .lorca-offline-notice button {
+    margin-left: 19px;
+  }
+  :where(.lorca-app) .lorca-approval-card {
+    padding: 14px;
+  }
+  :where(.lorca-app)
+    .lorca-approval-actions
+    button:last-child:not(:nth-child(2)) {
+    margin-left: 0;
+  }
+  :where(.lorca-settings-drawer) .lorca-settings {
+    padding: 2px 22px 25px;
+  }
+  :where(.lorca-settings-drawer) .lorca-appearance-setting {
+    align-items: flex-start;
+  }
+  :where(.lorca-settings-drawer) .lorca-theme-switch button {
+    padding: 5px 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.lorca-app, .lorca-mobile-sidebar, .lorca-settings-drawer) *,
+  :where(.lorca-app, .lorca-mobile-sidebar, .lorca-settings-drawer) *::before,
+  :where(.lorca-app, .lorca-mobile-sidebar, .lorca-settings-drawer) *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:where(.lorca-app) .lorca-reference-link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border);
+  cursor: help;
+}
+:where(.lorca-app) .lorca-composer-options {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+:where(.lorca-app) .lorca-attach-button {
+  width: 29px;
+  height: 29px;
+  color: var(--subtle-foreground);
+}
+:where(.lorca-app) .lorca-attach-button svg {
+  width: 19px;
+  height: 19px;
+}
+:where(.lorca-app) .lorca-pending-attachments {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 13px;
+}
+:where(.lorca-app) .lorca-pending-attachments > span {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--border-seam);
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  background: var(--surface-raised);
+  max-width: 210px;
+}
+:where(.lorca-app) .lorca-pending-attachments > span > span {
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+:where(.lorca-app) .lorca-pending-attachments [data-icon-root] {
+  width: 13px;
+  height: 13px;
+}
+:where(.lorca-app) .lorca-pending-attachments button {
+  padding: 2px;
+  border-radius: 3px;
+}
+:where(.lorca-app) .lorca-pending-attachments button:hover {
+  background: var(--state-hover);
+}
+:where(.lorca-app) .lorca-message-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+:where(.lorca-app) .lorca-message-attachments > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+:where(.lorca-app) .lorca-message-attachments [data-icon-root] {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 767px) and (pointer: coarse) {
+  :where(.lorca-app) .lorca-send-button,
+  :where(.lorca-app) .lorca-stop-button,
+  :where(.lorca-app) .lorca-attach-button {
+    width: 38px;
+    height: 38px;
+  }
+  :where(.lorca-mobile-sidebar) .lorca-chat-item {
+    min-height: 43px;
+  }
+  :where(.lorca-app) .lorca-suggestions button {
+    min-height: 43px;
+  }
+}
+
+:where(.lorca-app) .lorca-message-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--destructive-text);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  margin-top: 10px;
+}
+:where(.lorca-app) .lorca-message-error [data-icon-root] {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+}
+
+:where(.lorca-app) .lorca-message-attachments > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+:where(.lorca-app) .lorca-approval-heading > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

@@ -3,6 +3,19 @@
   "globalEnv": ["BB_BUILD_TOOLCHAIN"],
   "globalPassThroughEnv": ["npm_config_store_dir", "pnpm_config_store_dir"],
   "tasks": {
+    "@bb/lorca#test": {
+      "dependsOn": ["topo"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/shared-ui/src/**", "$TURBO_ROOT$/apps/app/src/components/ui/**"]
+    },
+    "@bb/lorca#build": {
+      "dependsOn": ["topo"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/shared-ui/src/**", "$TURBO_ROOT$/apps/app/src/components/ui/**", "$TURBO_ROOT$/assets/bb-logo.svg"],
+      "outputs": ["dist/**"]
+    },
+    "@bb/lorca#typecheck": {
+      "dependsOn": ["topo"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/shared-ui/src/**", "$TURBO_ROOT$/apps/app/src/components/ui/**"]
+    },
     "@bb/db#db:generate": { "cache": false },
     "@bb/desktop#smoke:browser-broker": {
       "cache": false,

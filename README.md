@@ -1,3 +1,5 @@
+> **Experimental Lorca desktop:** [Run the BB chat UI backed by Lorca](apps/lorca/README.md). Upstream BB is preserved.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/e40bda56-54a4-47f8-a417-6bbadf2e5b40">
