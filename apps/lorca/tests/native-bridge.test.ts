@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, readFile, realpath, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
@@ -140,7 +140,13 @@ test('server error and null result stay distinct', async t => {
 
 test('native file selections reveal opaque IDs only, and support attachment-only sends', async t => {
   const f = await fixture(t); await f.bridge.connect(f.endpoint);
-  const selectedFile = path.join(f.home, 'example.txt'); await writeFile(selectedFile, 'test');
+  const actualDirectory = path.join(f.home, 'actual');
+  const aliasDirectory = path.join(f.home, 'alias');
+  await mkdir(actualDirectory);
+  await symlink(actualDirectory, aliasDirectory, 'junction');
+  const selectedFile = path.join(aliasDirectory, 'example.txt'); await writeFile(selectedFile, 'test');
+  const canonicalFile = await realpath(selectedFile);
+  assert.notEqual(canonicalFile, selectedFile);
   const registry = new AttachmentSelections(); const selected = await registry.add([selectedFile]);
   assert.equal(selected[0].name, 'example.txt'); assert.equal(selected[0].size, 4); assert.equal(selected[0].path, undefined);
   assert.ok(!JSON.stringify(selected).includes(f.home));
@@ -148,7 +154,7 @@ test('native file selections reveal opaque IDs only, and support attachment-only
   await assert.rejects(registry.send(f.bridge, { chat_id: 'c', text: '', selection_ids: ['/etc/passwd'] }), /不可用/);
   assert.deepEqual(await registry.send(f.bridge, { chat_id: 'c', text: '', message_id: 'm', selection_ids: [selected[0].id] }), { message: { id: 'm' } });
   const sent = f.requests[0]!; assert.equal(sent.method, 'chats.send'); assert.equal(sent.params.text, '');
-  assert.deepEqual(sent.params.attachments, [{ path: selectedFile, name: 'example.txt', id: `att-${selected[0].id}` }]);
+  assert.deepEqual(sent.params.attachments, [{ path: canonicalFile, name: 'example.txt', id: `att-${selected[0].id}` }]);
   await assert.rejects(registry.send(f.bridge, { chat_id: 'c', text: 'again', selection_ids: [selected[0].id] }), /不可用/);
   const next = await registry.add([selectedFile]); await writeFile(selectedFile, 'changed');
   await assert.rejects(registry.send(f.bridge, { chat_id: 'c', text: '', selection_ids: [next[0].id] }), /文件已变化/);

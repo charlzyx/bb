@@ -61,19 +61,40 @@ test('dots app naming keeps existing launch-specific data, session and log direc
 test('dots icon is a reproducible nonempty PNG derived from the owned vector mark', async () => {
   const svg = await readFile(new URL('../public/dots.svg', import.meta.url), 'utf8');
   const actual = await readFile(ICON_PATH);
-  assert.deepEqual(renderIcon(svg), actual);
-  assert.deepEqual(actual.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-  const data: Buffer[] = [];
-  let size = 0;
-  for (let offset = 8; offset < actual.length;) {
-    const length = actual.readUInt32BE(offset);
-    const kind = actual.toString('ascii', offset + 4, offset + 8);
-    if (kind === 'IHDR') { size = actual.readUInt32BE(offset + 8); assert.equal(size, 256); assert.equal(actual.readUInt32BE(offset + 12), size); }
-    if (kind === 'IDAT') data.push(actual.subarray(offset + 8, offset + 8 + length));
-    offset += length + 12;
+  function decodeIcon(bytes: Buffer) {
+    assert.deepEqual(bytes.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    const data: Buffer[] = [];
+    let width = 0;
+    let height = 0;
+    let ended = false;
+    for (let offset = 8; offset < bytes.length;) {
+      assert.ok(offset + 12 <= bytes.length);
+      const length = bytes.readUInt32BE(offset);
+      assert.ok(offset + length + 12 <= bytes.length);
+      const kind = bytes.toString('ascii', offset + 4, offset + 8);
+      if (kind === 'IHDR') {
+        assert.equal(offset, 8); assert.equal(length, 13);
+        width = bytes.readUInt32BE(offset + 8); height = bytes.readUInt32BE(offset + 12);
+        assert.equal(width, 256); assert.equal(height, 256);
+        assert.deepEqual([...bytes.subarray(offset + 16, offset + 21)], [8, 6, 0, 0, 0]);
+      } else if (kind === 'IDAT') {
+        assert.ok(width > 0);
+        data.push(bytes.subarray(offset + 8, offset + 8 + length));
+      } else {
+        assert.equal(kind, 'IEND'); assert.equal(length, 0);
+        assert.equal(offset + 12, bytes.length); ended = true;
+      }
+      offset += length + 12;
+    }
+    assert.ok(ended); assert.ok(data.length > 0);
+    const rows = inflateSync(Buffer.concat(data), { maxOutputLength: (width * 4 + 1) * height });
+    assert.equal(rows.length, (width * 4 + 1) * height);
+    for (let row = 0; row < height; row++) assert.equal(rows[row * (width * 4 + 1)], 0);
+    return { width, height, rows };
   }
-  const rows = inflateSync(Buffer.concat(data));
-  assert.equal(rows.length, (size * 4 + 1) * size);
+  const decoded = decodeIcon(actual);
+  assert.deepEqual(decodeIcon(renderIcon(svg)), decoded);
+  const { rows, width: size } = decoded;
   const pixel = (x: number, y: number) => [...rows.subarray(y * (size * 4 + 1) + 1 + x * 4, y * (size * 4 + 1) + 5 + x * 4)];
   for (const [x, y] of [[80, 80], [176, 80], [80, 176], [176, 176]]) assert.deepEqual(pixel(x, y), [36, 36, 34, 255]);
   assert.deepEqual(pixel(128, 128), [243, 243, 239, 255]);
