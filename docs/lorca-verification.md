@@ -1,12 +1,12 @@
-# Lorca integration verification
+# dots client verification
 
 Verified on 2026-10-09. This is an experimental client, not a packaged release.
 
 ## Passed
 
 - Focused frozen-lock dependency installation, including a fresh offline reinstall
-- Turbo test, TypeScript and production renderer build: **92 tests passed**
-- Earlier baseline native bridge suite repeated 100 consecutive times: **2,000 tests passed**; current settings/security changes are covered by the 92-test suite
+- Turbo test, TypeScript and production renderer build: **103 tests passed**
+- Earlier baseline native bridge suite repeated 100 consecutive times: **2,000 tests passed**; current settings/security changes are covered by the 103-test suite
 - Native JavaScript syntax checks and command-line help without connecting
 - Root lockfile consistency checked with pnpm 9 frozen/offline resolution in a detached manifest-only workspace
 - Existing root dependency resolutions preserved; only the Lorca importer and required new lock records added
@@ -19,7 +19,7 @@ All protocol tests use deterministic fixtures, isolated local mock WebSockets an
 
 ## Browser and Electron verification
 
-The dedicated [Lorca CI run on c9732d6](https://github.com/charlzyx/bb/actions/runs/37980162549) passed all steps, including real Chromium browser smoke and real Electron main/preload/UI against an authenticated mock daemon. Its synthetic screenshots were downloaded and visually inspected, prioritizing normal 1240 × 820 desktop windows; the run’s `lorca-synthetic-screenshots` artifact contains the original PNGs (requires GitHub sign-in; retained for 7 days). Desktop chat, approval, empty state, and Electron bridge views showed no obvious overflow. Desktop settings captures cover Connection, Preferences (light/dark), Runners, plugin details, MCP, and unavailable inventory. The real Electron settings smoke confirms that private config, provider URLs/details and remote error markers never reach renderer IPC. The Electron chat screenshot confirms named bot headers and a synthetic send/reply through the native bridge.
+The dedicated [client CI run on e104400](https://github.com/charlzyx/bb/actions/runs/37982735356) passed all steps, including real Chromium browser smoke and real Electron main/preload/UI against an authenticated mock daemon. Its nineteen synthetic screenshots were downloaded; normal desktop views and 1240 × 820 settings pages were visually inspected. Narrow-screen visuals were not the acceptance priority; the run’s `lorca-synthetic-screenshots` artifact contains the original PNGs (requires GitHub sign-in; retained for 7 days). Desktop chat, approval, empty state, and Electron bridge views showed no obvious overflow. Simplified Chinese and lowercase dots branding are verified in chat, empty states, approvals, and desktop settings: Connection, Preferences (light/dark), Runners, plugin details, MCP, and unavailable inventory. CJK font coverage is checked in CI; no missing glyphs were found in the reviewed captures. IME composition does not send a message. The real Electron settings smoke confirms that private config, provider URLs/details and remote error markers never reach renderer IPC. The Electron chat screenshot confirms named bot headers and a synthetic send/reply through the native bridge.
 
 The artifact also retains desktop chat/approval/empty/offline states, baseline narrow-screen coverage, and actual Electron chat/settings views. PNGs are not committed to this repository. To regenerate them, use the smoke commands below in a supported browser environment.
 
@@ -46,8 +46,8 @@ The [settings contract](lorca-settings.md) compares the pinned current and legac
 
 ## Remaining runtime limits
 
-- No real Lorca identity, relay, model provider, native file transfer, or production service was exercised.
-- macOS packaging, signing, and a real macOS desktop launch remain unverified.
+- Cloud development and CI exercised no real Lorca identity, relay, model provider, native file transfer, or production service. A separate authorized macOS source-run check connected to an existing daemon and verified read-only chat/history/settings access; no new agent message was sent.
+- macOS packaging/signing remains unverified. Source-mode Electron can retain its operating-system bundle/process name until packaging; the window, application menu, owned four-dot icon and About panel use dots. Branding preserves the existing app-data paths and does not change Lorca data/token lookup.
 - Browser and Electron checks use synthetic fixtures; passing them does not prove compatibility with every live daemon version.
 
 ## Protocol limitation
