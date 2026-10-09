@@ -1,4 +1,4 @@
-> **Experimental Lorca desktop:** [Run the BB chat UI backed by Lorca](apps/lorca/README.md). [Verification and synthetic screenshots](docs/lorca-verification.md). Upstream BB is preserved.
+> **Experimental Lorca desktop:** [Run the BB chat UI backed by Lorca](apps/lorca/README.md). [PC settings scope](docs/lorca-settings.md) · [Verification and synthetic screenshots](docs/lorca-verification.md). Upstream BB is preserved.
 
 <p align="center">
   <picture>
