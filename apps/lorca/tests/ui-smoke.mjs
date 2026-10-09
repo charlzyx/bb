@@ -27,6 +27,7 @@ const browser = await playwright.chromium.launch({
   chromiumSandbox: process.env.LORCA_CHROMIUM_NO_SANDBOX !== "1",
 });
 const failures = [];
+let failurePage;
 const captureErrors = (page) => {
   page.on("pageerror", (error) => failures.push(error.message));
   page.on("console", (message) => {
@@ -76,6 +77,7 @@ try {
     viewport: { width: 1440, height: 1000 },
     deviceScaleFactor: 1,
   });
+  failurePage = desktop;
   captureErrors(desktop);
   await desktop.goto(`${base}/?demo=1`, { waitUntil: "networkidle" });
   await desktop
@@ -85,10 +87,20 @@ try {
   assert.equal(await desktop.title(), "dots");
   assert.equal(await desktop.locator(".lorca-brand").innerText(), "dots");
   assert.equal(await desktop.locator(".lorca-brand svg circle").count(), 4);
+  const faviconUrl = await desktop
+    .locator('link[rel="icon"]')
+    .evaluate(
+      (element) => new URL(element.getAttribute("href"), document.baseURI).href,
+    );
+  assert.equal(new URL(faviconUrl).pathname.endsWith("/dots.svg"), true);
+  const faviconResponse = await desktop.request.get(faviconUrl);
   assert.equal(
-    await desktop.locator('link[rel="icon"]').getAttribute("href"),
-    "/dots.svg",
+    faviconResponse.ok(),
+    true,
+    "The dots favicon asset is available",
   );
+  assert.match(faviconResponse.headers()["content-type"], /image\/svg\+xml/);
+  assert.equal((await faviconResponse.text()).match(/<circle\b/g)?.length, 4);
   await desktop.getByRole("searchbox", { name: "搜索对话" }).waitFor();
   await desktop
     .getByRole("button", { name: "发送消息", exact: true })
@@ -166,6 +178,7 @@ try {
     isMobile: true,
     hasTouch: true,
   });
+  failurePage = mobile;
   captureErrors(mobile);
   await mobile.goto(`${base}/?demo=1`, { waitUntil: "networkidle" });
   await screenshot(mobile, "mobile-empty-light");
@@ -204,6 +217,7 @@ try {
     viewport: { width: 1240, height: 820 },
     deviceScaleFactor: 1,
   });
+  failurePage = settingsDesktop;
   captureErrors(settingsDesktop);
   await settingsDesktop.goto(`${base}/?demo=1`, { waitUntil: "networkidle" });
   await settingsDesktop.locator(".lorca-header-status").click();
@@ -273,6 +287,7 @@ try {
   const offline = await browser.newPage({
     viewport: { width: 1200, height: 850 },
   });
+  failurePage = offline;
   captureErrors(offline);
   await offline.goto(base, { waitUntil: "networkidle" });
   await offline
@@ -294,6 +309,7 @@ try {
   const controlled = await browser.newPage({
     viewport: { width: 1200, height: 850 },
   });
+  failurePage = controlled;
   captureErrors(controlled);
   await controlled.addInitScript(() => {
     const epoch = Math.floor(Date.now() / 1000);
@@ -622,6 +638,17 @@ try {
       2,
     ),
   );
+} catch (error) {
+  if (failurePage && !failurePage.isClosed()) {
+    await failurePage
+      .screenshot({
+        path: `${output}/ui-smoke-failure.png`,
+        animations: "disabled",
+        timeout: 5000,
+      })
+      .catch(() => undefined);
+  }
+  throw error;
 } finally {
   await browser.close();
 }
