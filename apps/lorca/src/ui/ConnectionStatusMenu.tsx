@@ -49,6 +49,7 @@ export function ConnectionStatusMenu({ state, onSettings }: { state: ConnectionS
   const [open, setOpen] = useState(false);
   const menuOpen = useRef(false);
   const trigger = useRef<HTMLButtonElement>(null);
+  const settingsItem = useRef<HTMLDivElement>(null);
   const restoreFocus = useRef(true);
   const changeOpen = (value: boolean) => {
     menuOpen.current = value;
@@ -71,7 +72,14 @@ export function ConnectionStatusMenu({ state, onSettings }: { state: ConnectionS
         collisionPadding={12}
         aria-label={zhCN.chat.connectionStatus}
         mobileTitle={zhCN.chat.connectionStatus}
-        onInteractOutside={() => { restoreFocus.current = false; }}
+        onFocusOutside={(event) => {
+          if (event.target !== trigger.current) return;
+          event.preventDefault();
+          if (menuOpen.current) settingsItem.current?.focus({ preventScroll: true });
+        }}
+        onInteractOutside={(event) => {
+          if (event.target !== trigger.current) restoreFocus.current = false;
+        }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           if (!menuOpen.current && restoreFocus.current) trigger.current?.focus({ preventScroll: true });
@@ -90,7 +98,7 @@ export function ConnectionStatusMenu({ state, onSettings }: { state: ConnectionS
         }}
       >
         <ConnectionStatusSummary state={state} />
-        <DropdownMenuItem className="lorca-connection-settings" onSelect={() => {
+        <DropdownMenuItem ref={settingsItem} className="lorca-connection-settings" onSelect={() => {
           restoreFocus.current = false;
           changeOpen(false);
           trigger.current?.focus({ preventScroll: true });

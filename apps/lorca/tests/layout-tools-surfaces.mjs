@@ -48,13 +48,14 @@ async function columnGeometry(page, mode) {
   }
 }
 
-async function checkWidthAndStatus({ browser, base, screenshot, chooseChat, captureErrors, setFailurePage }) {
+async function checkWidthAndStatus({ browser, base, screenshot, chooseChat, captureErrors, tracePage, setFailurePage }) {
   const context = await browser.newContext({ viewport: { width: 2048, height: 1080 }, deviceScaleFactor: 1 });
   const page = await context.newPage();
   setFailurePage(page);
   captureErrors(page);
   await page.addInitScript(installLayoutToolsFixture);
   await page.goto(base, { waitUntil: "networkidle" });
+  await tracePage(page);
   await chooseChat(page, "宽度布局回归");
   const controls = page.getByRole("group", { name: "内容宽度", exact: true });
   const composer = page.getByRole("textbox", { name: "给 dots 发消息" });
@@ -124,10 +125,20 @@ async function checkWidthAndStatus({ browser, base, screenshot, chooseChat, capt
     await trigger.press("Enter");
     const menu = page.getByRole("menu", { name: "连接状态", exact: true });
     await menu.waitFor();
+    await trigger.focus();
+    assert.equal(await trigger.getAttribute("aria-expanded"), "true", "A late settings focus return to the stable trigger does not dismiss the new menu");
+    assert.equal(await menu.getByRole("menuitem", { name: "连接设置", exact: true }).evaluate((element) => element === document.activeElement), true, "A delayed anchor focus is handed back to the open menu item");
     assert.equal(await page.evaluate(() => window.__layoutToolsUiTest.requests.length), before.requests, "Opening connection status is local and sends no RPC");
     assert.equal(await composer.inputValue(), "Synthetic popover draft");
     assert.ok(Math.abs(await page.locator(".lorca-scroll").evaluate((element) => element.scrollTop) - before.scroll) <= 1, "Connection status does not move the reading position");
     await screenshot(page, `desktop-connection-status-${theme}`);
+    await page.keyboard.press("Enter");
+    await page.getByRole("heading", { name: "高级", exact: true }).waitFor();
+    await page.getByRole("button", { name: "关闭设置", exact: true }).click();
+    assert.equal(await composer.inputValue(), "Synthetic popover draft");
+    assert.ok(Math.abs(await page.locator(".lorca-scroll").evaluate((element) => element.scrollTop) - before.scroll) <= 1, "Keyboard status-to-settings navigation preserves the reading position");
+    await trigger.press("Enter");
+    await menu.waitFor();
     await page.keyboard.press("Escape");
     await menu.waitFor({ state: "hidden" });
     assert.equal(await trigger.evaluate((element) => element === document.activeElement), true, "Escape restores the status trigger's keyboard focus");
@@ -169,13 +180,14 @@ async function checkWidthAndStatus({ browser, base, screenshot, chooseChat, capt
   await context.close();
 }
 
-async function checkToolGroups({ browser, base, screenshot, chooseChat, captureErrors, setFailurePage }) {
+async function checkToolGroups({ browser, base, screenshot, chooseChat, captureErrors, tracePage, setFailurePage }) {
   const context = await browser.newContext({ viewport: { width: 1240, height: 1050 }, deviceScaleFactor: 1 });
   const page = await context.newPage();
   setFailurePage(page);
   captureErrors(page);
   await page.addInitScript(installLayoutToolsFixture);
   await page.goto(base, { waitUntil: "networkidle" });
+  await tracePage(page);
   await chooseChat(page, "工具显示回归");
   const group = (id) => page.locator(`[data-tool-group="${id}"]`);
   const detail = (id) => page.locator(`[data-tool-id="${id}"]`);
@@ -234,6 +246,13 @@ async function checkToolGroups({ browser, base, screenshot, chooseChat, captureE
 }
 
 export async function checkLayoutToolsSurfaces(options) {
-  await checkWidthAndStatus(options);
-  await checkToolGroups(options);
+  const errors = [];
+  for (const [name, check] of [["layout-status", checkWidthAndStatus], ["tool-groups", checkToolGroups]]) {
+    try { await check(options); }
+    catch (error) {
+      errors.push(error);
+      await options.onFailure?.(name, error);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, "Independent layout/status or tool-group browser checks failed");
 }

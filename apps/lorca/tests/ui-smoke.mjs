@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { installSettingsFixture } from "./settings-ui-fixture.mjs";
 import { installAvatarFixture } from "./avatar-ui-fixture.mjs";
@@ -33,6 +33,8 @@ const browser = await playwright.chromium.launch({
 });
 const failures = [];
 let failurePage;
+let layoutToolsStarted = false;
+const tracedPages = new WeakSet();
 const captureErrors = (page) => {
   page.on("pageerror", (error) => failures.push(error.message));
   page.on("console", (message) => {
@@ -55,7 +57,51 @@ async function screenshot(page, name) {
   assert.equal(overflow.page, false, `${name}: horizontal page overflow`);
   assert.equal(overflow.composer, false, `${name}: composer overflow`);
 }
+function installFocusTrace() {
+  if (window.__lorcaFocusTrace) return;
+  const events = [];
+  const target = (element) => element instanceof Element ? {
+    tag: element.tagName,
+    classes: Array.from(element.classList).filter((name) => name.startsWith("lorca-")),
+    role: element.getAttribute("role"),
+    state: element.getAttribute("data-state"),
+    open: element.getAttribute("data-open"),
+  } : null;
+  const record = (type, element, extra = {}) => {
+    events.push({ time: Math.round(performance.now() * 10) / 10, type, target: target(element), active: target(document.activeElement), ...extra });
+    if (events.length > 300) events.shift();
+  };
+  for (const type of ["focusin", "focusout", "pointerdown", "click"]) document.addEventListener(type, (event) => record(type, event.target), true);
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (!mutation.target.matches(".lorca-header-status, .lorca-connection-menu, .lorca-settings-desktop, .lorca-settings-drawer")) continue;
+      record("attribute", mutation.target, { attribute: mutation.attributeName, previous: mutation.oldValue });
+    }
+  }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["data-state", "data-open"], attributeOldValue: true });
+  window.__lorcaFocusTrace = events;
+}
+async function tracePage(page) {
+  if (tracedPages.has(page)) return;
+  tracedPages.add(page);
+  await page.addInitScript(installFocusTrace);
+  await page.evaluate(installFocusTrace);
+}
+async function saveFailure(page, name) {
+  if (!page || page.isClosed()) return;
+  await page.screenshot({ path: `${output}/${name}.png`, animations: "disabled", timeout: 5000 }).catch(() => undefined);
+  const events = await page.evaluate(() => window.__lorcaFocusTrace || []).catch(() => []);
+  writeFileSync(`${output}/${name}-events.json`, JSON.stringify(events, null, 2));
+  console.error(`${name} recent synthetic DOM events: ${JSON.stringify(events.slice(-30))}`);
+}
+async function runLayoutToolsDiagnostics() {
+  layoutToolsStarted = true;
+  await checkLayoutToolsSurfaces({ browser, base, screenshot, chooseChat, captureErrors, tracePage, setFailurePage: (page) => { failurePage = page; }, onFailure: async (name, error) => {
+    console.error(`Independent ${name} check failed:`, error);
+    await saveFailure(failurePage, `ui-smoke-${name}-failure`);
+  } });
+}
 async function openConnectionSettings(page) {
+  await tracePage(page);
   await page.locator(".lorca-header-status").click();
   await page.getByRole("menuitem", { name: "连接设置", exact: true }).click();
 }
@@ -1375,7 +1421,7 @@ try {
   await checkCrossAgentRows();
   await checkDevicePairing();
   await checkSharedDeviceScope();
-  await checkLayoutToolsSurfaces({ browser, base, screenshot, chooseChat, captureErrors, setFailurePage: (page) => { failurePage = page; } });
+  await runLayoutToolsDiagnostics();
   await checkVisualSurfaces({ browser, base, screenshot, openConnectionSettings, chooseSettingsPage, waitForSettings, chooseChat, captureErrors, setFailurePage: (page) => { failurePage = page; } });
   assert.deepEqual(
     failures,
@@ -1441,14 +1487,10 @@ try {
     ),
   );
 } catch (error) {
-  if (failurePage && !failurePage.isClosed()) {
-    await failurePage
-      .screenshot({
-        path: `${output}/ui-smoke-failure.png`,
-        animations: "disabled",
-        timeout: 5000,
-      })
-      .catch(() => undefined);
+  await saveFailure(failurePage, "ui-smoke-failure");
+  if (!layoutToolsStarted) {
+    try { await runLayoutToolsDiagnostics(); }
+    catch (diagnosticError) { console.error("Additional independent browser checks failed:", diagnosticError); }
   }
   throw error;
 } finally {
