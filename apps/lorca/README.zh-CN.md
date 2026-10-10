@@ -16,7 +16,7 @@ node apps/lorca/scripts/focused.mjs desktop
 
 首次启动桌面应用时，脚本可能下载官方 Electron 运行时。请另行启动你要连接的 Lorca CLI。
 
-默认连接 `ws://127.0.0.1:4862/ws`。新版 Lorca 的现有 `serve-token` 只在主进程读取，不进入界面。应用不会创建、恢复或复制身份，不会自动更改中继配置或启动运行端。
+默认连接 `ws://127.0.0.1:4862/ws`。支持本地令牌认证的服务所使用的现有 `serve-token` 只在主进程读取，不进入界面。应用不会创建、恢复或复制身份，不会自动更改中继配置或启动运行端。
 
 如已有隔离的开发服务，请使用与该服务对应的数据目录和端口：
 
@@ -24,7 +24,7 @@ node apps/lorca/scripts/focused.mjs desktop
 LORCA_HOME="$HOME/.lorca-dev" LORCA_PORT=4863 node apps/lorca/scripts/focused.mjs desktop
 ```
 
-仅旧版无认证 Lorca 服务需要手动开启兼容模式：
+仅在已确认本机服务不校验令牌时，手动选择本地兼容连接（不校验令牌）：
 
 ```sh
 LORCA_ALLOW_LEGACY=1 node apps/lorca/scripts/focused.mjs desktop
@@ -34,7 +34,7 @@ LORCA_ALLOW_LEGACY=1 node apps/lorca/scripts/focused.mjs desktop
 
 ## 三类连接各自使用原来的认证方式
 
-- dots → 本机 Lorca 服务：新版使用现有 `serve-token`，旧版是用户显式选择的未鉴权回环连接。这里不使用 OAuth。
+- dots → 本机 Lorca 服务：本地令牌认证使用现有 `serve-token`；本地兼容连接（不校验令牌）必须显式选择。这里不使用 OAuth。
 - Lorca → 中继 / 已配对设备：仍由 Lorca 原有身份、加密和同步协议管理；dots 不更换这套机制，也不创建身份。
 - Lorca → 模型供应商 / MCP 服务：由具体服务决定是否使用 API key、OAuth 或其他认证。文档中“未支持 OAuth”仅指这些可选服务的网页登录入口，没有说 Lorca 本地连接需要 OAuth。
 
@@ -58,7 +58,7 @@ LORCA_ALLOW_LEGACY=1 node apps/lorca/scripts/focused.mjs desktop
 
 供应商配置由服务端保存并同步到当前账号；现有密钥不回显。未知有效连接地址时需明确填写 URL，避免向无法确认的默认目标发送凭据。MCP 保存、启用、重连或重新加载可能运行程序；删除还会移除该服务凭据、插件目录及关联审批规则。保存、删除、启停和重新加载还可能一起应用整个 MCP 文件中其他尚未加载的磁盘变更，甚至启动当前列表中没有的程序。列表只能展示已加载信息，原生确认会明确这一完整文件作用范围；上游没有预览/条件写入接口。
 
-OAuth 网页登录、机器人访问授权、隐藏单个 MCP 工具、服务启停和中继编辑仍需在 Lorca 完成。旧协议不支持的新版自动审批模型字段不会发送。外观和连接地址目前不承诺跨应用重启持久保存。详见[可编辑设置协议](../../docs/lorca-editable-settings.md)。
+OAuth 网页登录、机器人访问授权、隐藏单个 MCP 工具、服务启停和中继编辑仍需在 Lorca 完成。固定兼容参考源码不支持的自动审批模型字段不会发送。外观和连接地址目前不承诺跨应用重启持久保存。详见[可编辑设置协议](../../docs/lorca-editable-settings.md)。
 
 云端验证使用确定性数据和本机模拟服务，不访问真实账号、中继或模型。macOS 源码运行实测另行进行；尚未提供签名、安装包或正式发布版本。详见[验证记录](../../docs/lorca-verification.md)与[设置能力对照](../../docs/lorca-settings.md)。
 
@@ -87,14 +87,18 @@ node apps/lorca/scripts/package-macos.cjs
 
 脚本仅对新副本运行系统 `plutil` 和 `codesign --sign -`，这是无需证书的本地 ad-hoc 校验签名，不是 Developer ID 签名或 Apple 公证，不能当作正式安装包分发。不修改全局 Electron、Lorca.app、Gatekeeper、钥匙串或权限；失败会保留生成目录供检查，不尝试关闭安全限制。
 
-完全退出先前的源码 dots 窗口，再使用脚本打印的实际路径启动；旧协议示例：
+完全退出先前的源码 dots 窗口，再使用脚本打印的实际路径启动；已确认服务不校验令牌时的显式兼容连接示例：
 
 ```sh
 LORCA_ALLOW_LEGACY=1 "实际输出路径/dots.app/Contents/MacOS/dots"
 ```
 
-新版协议不要设置 legacy 开关。认证仍由原生桥从原先的 Lorca 数据目录读取，打包不会迁移或修改该目录。新 bundle 的客户端偏好目录可能与源码宿主不同，主题等当前会话设置需要重新选择。
+本地令牌认证不要设置 legacy 开关。认证仍由原生桥从原先的 Lorca 数据目录读取，打包不会迁移或修改该目录。新 bundle 的客户端偏好目录可能与源码宿主不同，主题等当前会话设置需要重新选择。
 
 云端仅验证了副本组装、图标格式、隔离输入与命令边界；真正的 macOS bundle 签名、启动、顶部菜单和 About 图标仍须在 Mac 复验。不要在遇到系统安全警告时绕过。
 
 参考：[Electron About 选项](https://www.electronjs.org/docs/latest/api/app#appsetaboutpaneloptionsoptions)、[手动打包](https://www.electronjs.org/docs/latest/tutorial/application-distribution#manual-packaging)。
+
+连接选项描述认证行为，不代表官方存在两代协议。固定参考源码与安装包的行为可能不同，不能只凭版本号判断；详见协议文档中的提交与源码引用。
+
+当前开发与验收目标固定为 egoist/lorca 上游 main 提交 `b975eb6056b01bf7f2058b5c5e9ffc22e9930eea`（2026-10-10 核实）。默认使用本地令牌认证。保留的无令牌兼容选项仅供历史安装手动选择，不再扩展，也不作为本轮验收目标。请按固定提交核对服务能力，不能只凭版本号判断。

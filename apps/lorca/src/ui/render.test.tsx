@@ -543,10 +543,10 @@ test("Connection copy separates local authentication, device identity and servic
     const runtime = runtimeFixture();
     runtime.authMode = authMode;
     const html = renderToStaticMarkup(<Settings open onOpenChange={() => {}} page="connection" onPageChange={() => {}} connection={{ status: "connected", endpoint: "ws://127.0.0.1:4862/ws" }} demo={false} actions={actions} theme="light" onThemeChange={() => {}} themePersistent runtime={runtime} />);
-    assert.match(html, /本地连接验证/);
+    assert.match(html, /本地连接认证/);
     assert.match(html, /后端设备身份/);
-    assert.match(html, /设备身份与中继通信沿用后端原有协议/);
+    assert.match(html, /设备身份与中继通信由后端独立管理/);
     assert.match(html, /可选登录属于各自服务的授权，不替代前两者/);
-    assert.match(html, authMode === "token" ? /服务令牌（serve-token）/ : /显式兼容模式（无令牌验证）/);
+    assert.match(html, authMode === "token" ? /本地令牌认证/ : /本地兼容连接（不校验令牌）/);
   }
 });

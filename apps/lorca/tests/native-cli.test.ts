@@ -46,7 +46,7 @@ test('CLI failure never prints credential or native-path error text and still cl
   const f = noIO(); let closed = false;
   const makeBridge = () => ({ connect: async () => ({ status: 'connected', authMode: 'legacy' }), request: async () => { throw new Error('secret token at /native/private'); }, close: () => { closed = true; } });
   assert.equal(await runCli(['chats.stop', '{"chat_id":"c"}'], { ...f.options, makeBridge }), 1); assert.equal(closed, true);
-  assert.match(f.errors.join(''), /不带身份验证/); assert.match(f.errors.join(''), /结果可能尚不确定/);
+  assert.match(f.errors.join(''), /本地兼容连接（不校验令牌）/); assert.match(f.errors.join(''), /结果可能尚不确定/);
   assert.ok(!f.errors.join('').includes('/native/private')); assert.ok(!f.errors.join('').includes('secret token'));
   assert.equal(resultJSON(null), 'null');
 });

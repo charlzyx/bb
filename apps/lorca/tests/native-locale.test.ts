@@ -37,6 +37,8 @@ test('Chinese CLI guidance preserves command, protocol and environment variable 
   const help = helpText();
   assert.ok(help.startsWith('dots 本地命令行（Lorca 协议）'));
   assert.match(help, /用法：/); assert.match(help, /只读配置概览/); assert.match(help, /不会自动重发/);
+  assert.match(help, /本地令牌认证/); assert.match(help, /本地兼容连接（不校验令牌）/);
+  assert.doesNotMatch(help, /旧版|新版|新协议|旧协议/);
   for (const command of RPC_METHODS) assert.ok(help.includes(command), command);
   for (const key of ['settings', 'runnerId', 'bootstrap', 'mcp.list', 'LORCA_ENDPOINT', 'LORCA_PORT', 'LORCA_HOME', 'LORCA_ALLOW_LEGACY=1', 'serve-token']) assert.ok(help.includes(key), key);
 });

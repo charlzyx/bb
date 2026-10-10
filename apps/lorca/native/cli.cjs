@@ -41,9 +41,9 @@ function helpText() {
     '  LORCA_ENDPOINT       本机 ws://127.0.0.1:<port>/ws 连接地址',
     '  LORCA_PORT           未设置 LORCA_ENDPOINT 时使用的本地端口（默认 4862）',
     '  LORCA_HOME           存放 serve-token 的现有 Lorca 数据目录',
-    '  LORCA_ALLOW_LEGACY=1 明确启用不带身份验证的旧版本地服务兼容模式',
+    '  LORCA_ALLOW_LEGACY=1 明确启用本地兼容连接（不校验令牌）',
     '',
-    '默认模式需要现有服务的令牌。命令行不会创建账号。',
+    '默认使用本地令牌认证，需要现有服务的令牌。命令行不会创建账号。',
     '结果以 JSON 输出，仅包含允许的协议字段，不包含私密配置和凭据。',
     '选择文件附件仅在桌面应用中提供。',
     '',
@@ -96,7 +96,7 @@ async function runCli(argv, options = {}) {
     bridge = options.makeBridge ? options.makeBridge({ endpoint, home: env.LORCA_HOME, legacy: env.LORCA_ALLOW_LEGACY === '1' }) : new LorcaBridge({ endpoint, home: env.LORCA_HOME, legacy: env.LORCA_ALLOW_LEGACY === '1' });
     const status = await bridge.connect(endpoint);
     if (status.status !== 'connected') { stderr('无法连接 Lorca。请检查本地服务、LORCA_HOME 和连接地址。未发送任何请求。\n'); return 1; }
-    if (status.authMode === 'legacy') stderr('警告：已明确启用旧版兼容模式，本地 Lorca 服务不带身份验证。\n');
+    if (status.authMode === 'legacy') stderr('警告：已明确启用本地兼容连接（不校验令牌）。仅连接你信任的本机服务。\n');
     submitted = true;
     let result;
     if (argv[0] === 'settings') { settings = new SettingsInventory(bridge); const fence = settings.capture(); result = await settings.get(params); settings.check(fence); }

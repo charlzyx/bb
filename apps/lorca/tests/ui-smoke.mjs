@@ -25,7 +25,7 @@ const executablePath =
 const browser = await playwright.chromium.launch({
   headless: true,
   executablePath,
-  chromiumSandbox: process.env.LORCA_CHROMIUM_NO_SANDBOX !== "1",
+  chromiumSandbox: true,
 });
 const failures = [];
 let failurePage;
@@ -74,6 +74,14 @@ async function chooseChat(page, text) {
 }
 
 try {
+  const sandboxSession = await browser.newBrowserCDPSession();
+  try {
+    const commandLine = await sandboxSession.send("Browser.getBrowserCommandLine");
+    assert.ok(Array.isArray(commandLine.arguments), "Chromium reports its actual launch arguments");
+    assert.equal(commandLine.arguments.some((argument) => argument === "--no-sandbox" || argument.startsWith("--no-sandbox=")), false, "Chromium must not launch with --no-sandbox");
+  } finally {
+    await sandboxSession.detach();
+  }
   const desktop = await browser.newPage({
     viewport: { width: 1440, height: 1000 },
     deviceScaleFactor: 1,
@@ -290,6 +298,27 @@ try {
   await settingsDesktop.getByRole("switch", { name: "启用自动审批" }).click();
   await settingsDesktop.getByRole("button", { name: "查看变更", exact: true }).click();
   await screenshot(settingsDesktop, "desktop-settings-auto-review-confirm");
+  const lastReviewRule = settingsDesktop.locator(".lorca-approval-review-list li").last();
+  await lastReviewRule.scrollIntoViewIfNeeded();
+  await settingsDesktop.locator(".lorca-approval-confirmation > p").last().evaluate((element) => element.scrollIntoView({ block: "center" }));
+  const confirmationButton = settingsDesktop.getByRole("button", { name: "确认并提交", exact: true });
+  for (const [label, locator] of [["Last approval rule", lastReviewRule], ["Approval confirmation button", confirmationButton]]) {
+    assert.equal(await locator.isVisible(), true, `${label} is visible`);
+    const geometry = await locator.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const scroll = element.closest(".lorca-settings-scroll").getBoundingClientRect();
+      const footer = document.querySelector(".lorca-auto-review-actions").getBoundingClientRect();
+      const isRule = element.matches(".lorca-approval-review-list li");
+      const points = [[bounds.left + 2, bounds.top + 2], [bounds.right - 2, bounds.top + 2], [bounds.left + 2, bounds.bottom - 2], [bounds.right - 2, bounds.bottom - 2], [(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2]];
+      return {
+        complete: bounds.width > 0 && bounds.height > 0 && bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= Math.max(0, scroll.top) && bounds.bottom <= Math.min(innerHeight, scroll.bottom, isRule ? footer.top : innerHeight),
+        unobscured: points.every(([x, y]) => element.contains(document.elementFromPoint(x, y))),
+      };
+    });
+    assert.equal(geometry.complete, true, `${label} fits completely above any sticky footer or viewport edge`);
+    assert.equal(geometry.unobscured, true, `${label} is not covered by another element`);
+  }
+  await screenshot(settingsDesktop, "desktop-settings-auto-review-confirm-end");
   await settingsDesktop.getByRole("button", { name: "返回修改", exact: true }).click();
   await settingsDesktop.keyboard.press("Escape");
   assert.equal(
@@ -693,6 +722,8 @@ try {
         browser: "Chromium desktop and mobile emulation",
         checks: [
           "Synthetic labels",
+          "Chromium command line has no --no-sandbox flag",
+          "Final approval rule and confirmation button are complete and unobscured",
           "Simplified Chinese UI and input composition",
           "Desktop and mobile light/dark",
           "No horizontal overflow",

@@ -180,7 +180,7 @@ export class LorcaController {
     const messages = chat?.messages ?? [];
     const detail =
       this.status.authMode === "legacy"
-        ? "dots · 旧版回环模式 · 本地连接未进行身份验证"
+        ? "dots · 本地兼容连接（不校验令牌）"
         : this.status.status === "connected"
           ? `dots · 运行环境 ${this.model.version || "连接中"} · ${this.model.relayConnected ? "中继已同步" : "中继离线"}`
           : this.status.detail;

@@ -9,9 +9,13 @@ const { SettingsInventory, validateSettingsParams, sanitizeRendererEvent, saniti
 const { validateRequest } = require('../native/bridge.cjs');
 const { runCli } = require('../native/cli.cjs');
 const secret = 'DO_NOT_EXPOSE_SYNTHETIC_SECRET';
+const sharedLinkSecret = 'SYNTHETIC_SHARED_SECRET';
+const playbookSecret = 'SYNTHETIC_PRIVATE_PLAYBOOK';
 const privateFields = { path: secret, env: { KEY: secret }, args: [secret], cwd: secret, headers: { Authorization: secret }, oauth: { clientSecret: secret }, url: secret, base_url: secret, detail: secret };
 const bootstrap = () => ({
   ...structuredClone(demoSnapshot), identity_id: 'account-one', relay_url: secret, relay_error: secret,
+  shared_links: [{ url: `https://synthetic.invalid/#${sharedLinkSecret}` }],
+  playbooks: [{ id: 'synthetic-playbook', name: playbookSecret, instructions: playbookSecret }],
   devices: [{ id: 'runner-one', name: 'Test Runner', os: 'macos', version: 'fixture', status: 'online', is_this_device: true, ...privateFields,
     plugins: [{ id: 'plugin-one', name: 'Test plugin', state: 'ready', ...privateFields }] }],
   providers: [{ kind: 'test-provider', name: 'Test Provider', is_connected: true, ...privateFields }],
@@ -125,6 +129,21 @@ test('existing bootstrap, roster and events keep the chat contract but drop priv
   assert.deepEqual(parseMessage(clean.message), parseMessage(message));
   assert.equal(JSON.stringify(clean).includes(secret), false);
   assert.throws(() => sanitizeRendererEvent({ event: 'message.updated', data: { chat_id: 'other', message } }));
+});
+
+test('new bootstrap and roster fields never expose shared-link fragment keys or private playbooks', () => {
+  const raw = bootstrap();
+  assert.ok(JSON.stringify(raw).includes(sharedLinkSecret)); assert.ok(JSON.stringify(raw).includes(playbookSecret));
+  const projected = sanitizeRendererResult('bootstrap', raw);
+  assert.deepEqual(parseSnapshot(projected), parseSnapshot(raw));
+  for (const value of [projected, ...['snapshot', 'roster.changed'].map(event => {
+    const clean = sanitizeRendererEvent({ event, data: raw });
+    assert.deepEqual(parseEvent(clean), parseEvent({ event, data: raw }));
+    return clean.data;
+  })]) {
+    assert.equal(Object.hasOwn(value, 'shared_links'), false); assert.equal(Object.hasOwn(value, 'playbooks'), false);
+    assert.equal(JSON.stringify(value).includes(sharedLinkSecret), false); assert.equal(JSON.stringify(value).includes(playbookSecret), false);
+  }
 });
 
 test('IPC distinguishes remote error text from helpful local bridge guidance', () => {

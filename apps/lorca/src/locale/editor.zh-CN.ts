@@ -42,7 +42,7 @@ export const editorZh = {
   enable: "启用",
   disable: "停用",
   remove: "移除",
-  mcpBoundary: "密钥、命令和原始配置仅在独立安全窗口中编辑。启用、重连或重新加载可能执行服务器命令或连接远程服务。此处的 OAuth 仅指 MCP 服务自身的可选登录，本界面暂不提供；它不替代本地连接验证或设备身份。",
+  mcpBoundary: "密钥、命令和原始配置仅在独立安全窗口中编辑。启用、重连或重新加载可能执行服务器命令或连接远程服务。此处的 OAuth 仅指 MCP 服务自身的可选登录，本界面暂不提供；它不替代本地连接认证或设备身份。",
   mcpScope: (runner: string, name: string, operation: string) => `将在执行器「${runner}」上${operation}服务器「${name}」。启用或重连可能运行其配置的命令，并连接远程服务。`,
   removeMcpScope: (runner: string, name: string) => `将从执行器「${runner}」移除服务器「${name}」，并删除其本地配置、凭据、数据和关联的工具规则。此操作无法在这里撤销。`,
   reloadMcpScope: (runner: string) => `将在执行器「${runner}」重新读取配置文件，应用其中的更改。这可能启动服务器命令或连接远程服务。`,

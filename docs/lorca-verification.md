@@ -4,7 +4,7 @@ Verified on 2026-10-09. This is an experimental client, not a packaged release.
 
 ## Editable settings follow-up
 
-The controlled settings implementation passes 177 local deterministic tests, TypeScript, production build and lint. Coverage includes source-fenced isolated credential windows, secret preservation, stale revision/account/connection failures, exact native confirmation, full-rule policy review, MCP whole-file caveats, readback races, cancellation, TTY-only CLI writes and unknown-outcome no replay. The extended real-browser/Electron smoke scripts are part of the same branch; the previously linked green run below predates these edits, so do not treat it as verification of the new write paths. Current CI results are recorded in the PR checks.
+The controlled settings implementation passes 177 local deterministic tests, TypeScript, production build and lint. Earlier Electron smoke runs checked renderer sandbox preferences only: Playwright on Linux implicitly added `--no-sandbox`, so those runs did not establish process-level sandboxing. The new smoke explicitly requests `chromiumSandbox: true`, rejects a `no-sandbox` application switch and checks Linux secure-renderer kernel seccomp/no-new-privileges state; its CI result must pass before claiming that stronger verification. Production BrowserWindow sandbox configuration was not relaxed. Coverage includes source-fenced isolated credential windows, secret preservation, stale revision/account/connection failures, exact native confirmation, full-rule policy review, MCP whole-file caveats, readback races, cancellation, TTY-only CLI writes and unknown-outcome no replay. The extended real-browser/Electron smoke scripts are part of the same branch; the previously linked green run below predates these edits, so do not treat it as verification of the new write paths. Current CI results are recorded in the PR checks.
 
 This phase does not use the user's Mac or live service. macOS native confirmation and production-provider compatibility remain to be tested later with the user. Credentials are entered only into a dedicated local sandboxed window with an ephemeral session; no existing key/raw MCP config is returned to the main renderer. Unknown default provider destinations require an explicit URL. MCP file-writing changes may apply unrelated pending on-disk edits, as documented in the editable-settings contract.
 
@@ -29,7 +29,7 @@ The dedicated [client CI run on e104400](https://github.com/charlzyx/bb/actions/
 
 The artifact also retains desktop chat/approval/empty/offline states, baseline narrow-screen coverage, and actual Electron chat/settings views. PNGs are not committed to this repository. To regenerate them, use the smoke commands below in a supported browser environment.
 
-The local build environment still prevents browser socket creation, so runtime verification uses the normal sandboxed CI environment. No security isolation was disabled.
+The local build environment prevents browser socket creation, so GUI verification uses CI. Earlier Playwright-launched Electron runs implicitly disabled the process sandbox despite sandboxed renderer preferences; the new explicit launch and kernel-state checks correct that verification gap without changing production security settings.
 
 Repeatable scripts are included for a normal browser/desktop environment:
 
@@ -44,7 +44,7 @@ The browser smoke script covers synthetic desktop/mobile light/dark states, empt
 
 `tests/electron-smoke.mjs` separately uses the real Electron main/preload/UI with an authenticated mock daemon and an isolated temporary home. It checks renderer isolation and performs exactly one synthetic send. It requires a normally installed Electron binary and a supported graphical environment, such as Xvfb on Linux; it passed in the linked CI run.
 
-The single-Linux `.github/workflows/lorca.yml` runs the focused checks, browser smoke and authenticated Electron mock smoke with the normal sandbox, then retains synthetic screenshots as a short-lived artifact. The dedicated workflow passed in the linked run. No Actions settings were changed as part of this implementation. Inherited upstream workflows are separate and are not evidence for this Lorca client.
+The single-Linux `.github/workflows/lorca.yml` runs the focused checks, browser smoke and authenticated Electron mock smoke with explicit sandbox verification, then retains synthetic screenshots as a short-lived artifact. The historical linked run predates process-level sandbox assertions; consult the current settings run for the stronger checks. No Actions settings were changed as part of this implementation. Inherited upstream workflows are separate and are not evidence for this Lorca client.
 
 ## Desktop settings scope
 

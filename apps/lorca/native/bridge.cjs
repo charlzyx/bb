@@ -103,7 +103,7 @@ class LorcaBridge extends EventEmitter {
   setStatus(status, detail) {
     this.status = { ...this.status, status };
     delete this.status.detail;
-    const warning = this.legacy ? '旧版兼容模式：此 Lorca 服务未启用身份验证。仅连接可信的本地服务。' : '';
+    const warning = this.legacy ? '本地兼容连接（不校验令牌）。仅连接你信任的本机服务。' : '';
     if (detail || warning) this.status.detail = [detail, warning].filter(Boolean).join(' ');
     this.emit('status', this.getStatus());
   }

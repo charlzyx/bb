@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -115,7 +115,8 @@ async function main() {
     for (const key of ['PATH', 'DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'SystemRoot']) if (process.env[key]) env[key] = process.env[key];
     Object.assign(env, { HOME: temporary, USERPROFILE: temporary, XDG_CONFIG_HOME: path.join(temporary, 'config'), XDG_CACHE_HOME: path.join(temporary, 'cache'), LORCA_HOME: home, LORCA_ENDPOINT: endpoint, LORCA_ALLOW_LEGACY: '0' });
     const args = [path.join(appDirectory, 'native', 'main.cjs')];
-    application = await _electron.launch({ executablePath, args, cwd: appDirectory, env, timeout: 30_000 });
+    application = await _electron.launch({ executablePath, args, cwd: appDirectory, env, chromiumSandbox: true, timeout: 30_000 });
+    assert.equal(await application.evaluate(({ app }) => app.commandLine.hasSwitch("no-sandbox")), false);
     const page = await application.firstWindow();
     page.setDefaultTimeout(15_000);
     await page.getByText('已连接', { exact: true }).first().waitFor();
@@ -220,12 +221,20 @@ async function main() {
     assert.equal(secureState.processType, 'undefined'); assert.equal(secureState.requireType, 'undefined'); assert.equal(secureState.mainBridge, 'undefined');
     assert.deepEqual(secureState.keys, ['cancel', 'initialize', 'submit']);
     assert.equal(JSON.stringify(secureState).includes(secretMarker), false);
-    const securePreferences = await application.evaluate(({ BrowserWindow }) => {
+    const securePreferences = await application.evaluate(async ({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/secure-editor.html'));
       const prefs = window.webContents.getLastWebPreferences();
-      return { contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration, sandbox: prefs.sandbox, devTools: prefs.devTools };
+      window.webContents.openDevTools({ mode: 'detach' });
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return { contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration, sandbox: prefs.sandbox, devToolsOpened: window.webContents.isDevToolsOpened(), pid: window.webContents.getOSProcessId() };
     });
-    assert.deepEqual(securePreferences, { contextIsolation: true, nodeIntegration: false, sandbox: true, devTools: false });
+    const { pid: securePid, ...secureFlags } = securePreferences;
+    assert.deepEqual(secureFlags, { contextIsolation: true, nodeIntegration: false, sandbox: true, devToolsOpened: false });
+    if (process.platform === 'linux') {
+      const kernelStatus = await readFile(`/proc/${securePid}/status`, 'utf8');
+      assert.match(kernelStatus, /^Seccomp:\s+2$/m, 'Secure renderer must run with a kernel seccomp filter');
+      assert.match(kernelStatus, /^NoNewPrivs:\s+1$/m, 'Secure renderer must not gain new privileges');
+    }
     if (process.env.LORCA_SMOKE_SCREENSHOT) await securePage.screenshot({ path: path.resolve(process.env.LORCA_SMOKE_SCREENSHOT).replace(/\.png$/i, '') + '-secure-settings.png', fullPage: true });
     await securePage.getByLabel('HTTPS 连接地址（留空保留原值）', { exact: true }).fill('https://synthetic.example.invalid/v1');
     await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).fill('SYNTHETIC_REPLACEMENT_KEY');

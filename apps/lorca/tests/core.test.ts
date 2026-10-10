@@ -1057,7 +1057,7 @@ test("Chinese controller labels preserve original user text, tool content, and b
     assert.match(controller.getSnapshot().connection.detail ?? "", /中继已同步/);
     bridge.status = { ...bridge.status, authMode: "legacy" };
     bridge.change(bridge.status.generation);
-    assert.equal(controller.getSnapshot().connection.detail, "dots · 旧版回环模式 · 本地连接未进行身份验证");
+    assert.equal(controller.getSnapshot().connection.detail, "dots · 本地兼容连接（不校验令牌）");
   } finally {
     controller.dispose();
   }

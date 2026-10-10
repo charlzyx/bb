@@ -34,13 +34,13 @@ Select the matching loopback endpoint in Connection settings. The home is launch
 
 ### Older charlzyx Lorca fork
 
-The pinned older fork has no local WebSocket authentication. To deliberately connect to that version:
+The pinned fork compatibility reference has no local WebSocket authentication. To deliberately connect to an installation verified to have that behavior:
 
 ```sh
 LORCA_ALLOW_LEGACY=1 node apps/lorca/scripts/focused.mjs desktop
 ```
 
-This is **explicit legacy mode** and is visibly labeled in the app. It remains loopback-only. There is no automatic fallback after a missing token or authentication failure. The older daemon itself allows unauthenticated local requests; this UI cannot add authentication to that daemon. Prefer the newer authenticated Lorca CLI when practical.
+This is **explicit local compatibility connection (no token validation)** and is visibly labeled in the app. It remains loopback-only. There is no automatic fallback after a missing token or authentication failure. An unauthenticated daemon itself allows unauthenticated local requests; this UI cannot add authentication to that daemon. Prefer local token authentication when supported by the installed daemon. These connection choices describe behavior, not official protocol generations; a release number alone does not establish the installed binary’s authentication behavior.
 
 ### Browser preview
 
@@ -64,7 +64,7 @@ The preload exposes a small allowlisted chat API. Identity secrets, provider cre
 
 Read [Protocol and compatibility](../../docs/lorca-protocol.md) for exact RPC mappings, snapshot/event semantics, pinned source versions, and security assumptions.
 
-Read [Settings and runtime inventory](../../docs/lorca-settings.md) for the current/legacy capability matrix, native redaction contract, and which preferences are editable. Connection and appearance are local session preferences. Runtime inventory remains a sanitized daemon report, not a health test. The separate [editable settings contract](../../docs/lorca-editable-settings.md) covers bot-wide model/Runner changes, controlled provider/MCP configuration and explicit account-wide approval policy updates. Persistent changes use native confirmation and session-bound revision checks; secrets never enter the ordinary renderer. MCP file writes/reload can also apply unrelated pending on-disk changes and start programs absent from the cached inventory. Native confirmation discloses the whole-file scope; the daemon has no preview/CAS endpoint.
+Read [Settings and runtime inventory](../../docs/lorca-settings.md) for the pinned-reference capability matrix, native redaction contract, and which preferences are editable. Connection and appearance are local session preferences. Runtime inventory remains a sanitized daemon report, not a health test. The separate [editable settings contract](../../docs/lorca-editable-settings.md) covers bot-wide model/Runner changes, controlled provider/MCP configuration and explicit account-wide approval policy updates. Persistent changes use native confirmation and session-bound revision checks; secrets never enter the ordinary renderer. MCP file writes/reload can also apply unrelated pending on-disk changes and start programs absent from the cached inventory. Native confirmation discloses the whole-file scope; the daemon has no preview/CAS endpoint.
 
 ## Scope
 
@@ -93,7 +93,7 @@ The renderer controller is the programmatic surface for the same operations used
 
 ### Authentication scopes
 
-The dots-to-daemon connection does **not** use OAuth: it uses the existing local serve-token on newer daemons, or explicitly selected unauthenticated loopback legacy mode. Lorca continues to own its existing relay/device identity and encrypted synchronization protocol. References to optional OAuth sign-in in settings apply only to certain model providers or MCP services; they do not replace or alter either Lorca authentication layer.
+The dots-to-daemon connection does **not** use OAuth: it uses the existing local serve-token on daemons that support local token authentication, or explicitly selected local compatibility connection (no token validation). Lorca continues to own its existing relay/device identity and encrypted synchronization protocol. References to optional OAuth sign-in in settings apply only to certain model providers or MCP services; they do not replace or alter either Lorca authentication layer.
 
 ## Programmatic and command-line surface
 
@@ -142,3 +142,5 @@ The small local Tailwind adapter uses Tailwind's public compiler and scanner API
 ## License
 
 BB is MIT licensed, copyright © 2026 Michael Yong. The repository root LICENSE is retained; shared BB components are imported directly rather than copied without attribution. Lorca source was inspected to implement the wire contract; its Rust runtime and identity/crypto implementation are not copied or rewritten here.
+
+The current development and acceptance target is upstream egoist/lorca main at `b975eb6056b01bf7f2058b5c5e9ffc22e9930eea`, verified on 2026-10-10. Local token authentication remains the default. The retained explicit unauthenticated compatibility option is historical support, not an acceptance target or an automatic fallback.

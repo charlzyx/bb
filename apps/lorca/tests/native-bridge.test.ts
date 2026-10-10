@@ -118,7 +118,7 @@ test('explicit legacy mode is visible and never reads an account token', async t
   const f = await fixture(t, { legacy: true });
   f.bridge.readToken = () => { throw new Error('must not read'); };
   const status = await f.bridge.connect(f.endpoint);
-  assert.equal(status.status, 'connected'); assert.equal(status.authMode, 'legacy'); assert.match(status.detail, /未启用身份验证/);
+  assert.equal(status.status, 'connected'); assert.equal(status.authMode, 'legacy'); assert.match(status.detail, /本地兼容连接（不校验令牌）/);
   assert.equal(f.headers[0]?.authorization, undefined); assert.equal(f.headers[0]?.origin, undefined);
 });
 

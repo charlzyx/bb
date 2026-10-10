@@ -267,7 +267,7 @@ class SettingsEditor {
         if (['mcp.configure', 'mcp.setEnabled', 'mcp.remove', 'mcp.reload'].includes(action.kind)) detail = `重要：将应用该执行器整个 MCP 文件的当前磁盘内容。其他客户端或文件编辑器的未加载变更也可能一起生效并启动程序；当前列表无法完整预览这些变化。\n\n${detail}`;
         mutation.params.runner_id = action.runnerId;
       }
-      if (fresh.safe.authMode === 'legacy') detail = `旧版本地连接未进行身份验证，请确认这是你信任的本机服务。\n\n${detail}`;
+      if (fresh.safe.authMode === 'legacy') detail = `当前使用本地兼容连接（不校验令牌），请确认这是你信任的本机服务。\n\n${detail}`;
       this.guard(entry, trusted);
       const confirmed = await this.confirm({ title: '确认设置变更', message: visibleConfirmation(`是否更改${target}？`), detail: visibleConfirmation(detail) }, () => this.guard(entry, trusted));
       this.guard(entry, trusted); if (confirmed !== true) return { status: 'cancelled' };

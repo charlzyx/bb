@@ -137,7 +137,7 @@ test('provider credentials stay native, blank inputs preserve them and explicit 
   ctx.bridge.status.authMode = 'legacy';
   assert.deepEqual(await ctx.editor.apply({ kind: 'provider.configure', revision: ctx.revision, providerId: 'deepseek' }), { status: 'applied' });
   assert.equal(JSON.stringify(form).includes(secret), false); assert.equal(JSON.stringify(ctx.prompts).includes(secret), false);
-  assert.ok(JSON.stringify(ctx.prompts).includes('https://provider.example')); assert.ok(JSON.stringify(ctx.prompts).includes('未进行身份验证'));
+  assert.ok(JSON.stringify(ctx.prompts).includes('https://provider.example')); assert.ok(JSON.stringify(ctx.prompts).includes('本地兼容连接（不校验令牌）'));
   assert.deepEqual(mutations(ctx.bridge), [{ method: 'providers.connect_deepseek', params: { api_key: secret, base_url: 'https://provider.example/v1' } }]); ctx.dispose();
 });
 
