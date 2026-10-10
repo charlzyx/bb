@@ -42,6 +42,40 @@ function rulePayload(rules: RuleDraft[]) {
   }));
 }
 
+function policySnapshot(editor: SettingsEditor | undefined) {
+  if (
+    !editor ||
+    editor.autoReview.status !== "ready" ||
+    editor.autoReview.isEnabled === null
+  ) return null;
+  return {
+    revision: editor.revision,
+    isEnabled: editor.autoReview.isEnabled,
+    rules: snapshotRules(editor),
+  };
+}
+
+function RuleSummary({ rule }: { rule: RuleDraft }) {
+  const tool = rule.tool.trim();
+  return (
+    <>
+      <strong>
+        {rule.behavior === "allow"
+          ? tool ? approvalZh.allowTool : approvalZh.allow
+          : approvalZh.ask}
+      </strong>
+      <p>{tool ? approvalZh.ruleNote : approvalZh.ruleText}：{rule.text.trim()}</p>
+      <p className={tool && rule.behavior === "allow" ? "lorca-field-error" : "lorca-input-help"}>
+        {tool
+          ? rule.behavior === "allow"
+            ? approvalZh.toolAllowWarning(tool)
+            : approvalZh.toolAskWarning(tool)
+          : approvalZh.textScope}
+      </p>
+    </>
+  );
+}
+
 export function AutoReviewPanel({
   editor,
   disabled,
@@ -52,6 +86,7 @@ export function AutoReviewPanel({
   onAction: (action: SettingsAction) => Promise<SettingsActionResult>;
 }) {
   const panelId = useId();
+  const [baseline, setBaseline] = useState(() => policySnapshot(editor));
   const [isEnabled, setIsEnabled] = useState(
     editor?.autoReview.isEnabled === true,
   );
@@ -63,17 +98,41 @@ export function AutoReviewPanel({
     SettingsActionResult["status"] | "failed" | null
   >(null);
   const pendingRef = useRef(false);
-  const nextRuleKey = useRef(rules.length);
   const resultRef = useRef<HTMLDivElement>(null);
   const reviewRef = useRef<HTMLDivElement>(null);
   const hasEmptyRule = rules.some((rule) => !rule.text.trim());
+  const currentSnapshot = policySnapshot(editor);
+  const toolCounts = new Map<string, number>();
+  for (const rule of rules) {
+    const tool = rule.tool.trim();
+    if (tool) toolCounts.set(tool, (toolCounts.get(tool) ?? 0) + 1);
+  }
+  const duplicateTools = [...toolCounts].filter(([, count]) => count > 1).map(([tool]) => tool);
   const needsRefresh = outcome === "applied" || outcome === "unknownOutcome";
-  const locked = disabled || pending || needsRefresh;
+  const dirty = baseline !== null && (
+    isEnabled !== baseline.isEnabled ||
+    JSON.stringify(rulePayload(rules)) !== JSON.stringify(rulePayload(baseline.rules))
+  );
+  const snapshotChanged = currentSnapshot !== null && currentSnapshot.revision !== baseline?.revision;
+  const conflict = snapshotChanged && !pending && !needsRefresh;
+  const locked = disabled || pending || needsRefresh || conflict || !currentSnapshot;
   const fieldsLocked = locked || reviewing;
-  const dirty =
-    isEnabled !== editor?.autoReview.isEnabled ||
-    JSON.stringify(rulePayload(rules)) !==
-      JSON.stringify(rulePayload(snapshotRules(editor)));
+
+  if (snapshotChanged && !dirty && !pending && !reviewing && outcome === null) {
+    setBaseline(currentSnapshot);
+    setIsEnabled(currentSnapshot.isEnabled);
+    setRules(currentSnapshot.rules);
+  }
+
+  function adoptCurrent() {
+    if (disabled || pending || !currentSnapshot) return;
+    setBaseline(currentSnapshot);
+    setIsEnabled(currentSnapshot.isEnabled);
+    setRules(currentSnapshot.rules);
+    setOutcome(null);
+    setShowValidation(false);
+    setReviewing(false);
+  }
 
   function updateRule(key: number, update: Partial<Omit<RuleDraft, "key" | "id">>) {
     setRules((current) =>
@@ -86,7 +145,7 @@ export function AutoReviewPanel({
     if (locked || !dirty) return;
     setShowValidation(true);
     setOutcome(null);
-    if (hasEmptyRule) return;
+    if (hasEmptyRule || duplicateTools.length) return;
     setReviewing(true);
     requestAnimationFrame(() => reviewRef.current?.focus());
   }
@@ -100,6 +159,8 @@ export function AutoReviewPanel({
       editor.autoReview.status !== "ready" ||
       editor.autoReview.isEnabled === null ||
       hasEmptyRule ||
+      duplicateTools.length > 0 ||
+      !baseline ||
       !dirty
     ) {
       return;
@@ -110,7 +171,7 @@ export function AutoReviewPanel({
     try {
       const result = await onAction({
         kind: "autoReview.set",
-        revision: editor.revision,
+        revision: baseline.revision,
         isEnabled,
         rules: rulePayload(rules),
       });
@@ -125,11 +186,7 @@ export function AutoReviewPanel({
     }
   }
 
-  if (
-    !editor ||
-    editor.autoReview.status !== "ready" ||
-    editor.autoReview.isEnabled === null
-  ) {
+  if (!baseline && !currentSnapshot) {
     return (
       <SettingsSection title={approvalZh.title} description={approvalZh.description}>
         <div className="lorca-settings-empty" role="status">
@@ -187,10 +244,9 @@ export function AutoReviewPanel({
             size="sm"
             disabled={fieldsLocked}
             onClick={() => {
-              const key = nextRuleKey.current++;
               setRules((current) => [
                 ...current,
-                { key, text: "", behavior: "ask", tool: "" },
+                { key: Math.max(-1, ...current.map((rule) => rule.key)) + 1, text: "", behavior: "ask", tool: "" },
               ]);
               setOutcome(null);
             }}
@@ -206,11 +262,11 @@ export function AutoReviewPanel({
               <SettingsRow key={rule.key} className="lorca-approval-rule">
                 <div className="lorca-approval-rule-fields">
                   <label htmlFor={`${panelId}-text-${rule.key}`}>
-                    {approvalZh.ruleLabel(index + 1)} · {approvalZh.ruleText}
+                    {approvalZh.ruleLabel(index + 1)} · {rule.tool.trim() ? approvalZh.ruleNote : approvalZh.ruleText}
                     <Input
                       id={`${panelId}-text-${rule.key}`}
                       value={rule.text}
-                      placeholder={approvalZh.ruleTextPlaceholder}
+                      placeholder={rule.tool.trim() ? approvalZh.ruleNotePlaceholder : approvalZh.ruleTextPlaceholder}
                       disabled={fieldsLocked}
                       aria-invalid={showValidation && !rule.text.trim()}
                       aria-describedby={
@@ -238,7 +294,7 @@ export function AutoReviewPanel({
                         }}
                       >
                         <option value="ask">{approvalZh.ask}</option>
-                        <option value="allow">{approvalZh.allow}</option>
+                        <option value="allow">{rule.tool.trim() ? approvalZh.allowTool : approvalZh.allow}</option>
                       </select>
                       <Icon name="ChevronDown" />
                     </div>
@@ -251,11 +307,23 @@ export function AutoReviewPanel({
                       placeholder={approvalZh.ruleToolPlaceholder}
                       spellCheck={false}
                       disabled={fieldsLocked}
+                      aria-invalid={duplicateTools.includes(rule.tool.trim())}
+                      aria-describedby={`${panelId}-scope-${rule.key}`}
                       onChange={(event) =>
                         updateRule(rule.key, { tool: event.target.value })
                       }
                     />
                   </label>
+                  <p
+                    id={`${panelId}-scope-${rule.key}`}
+                    className={`lorca-approval-scope-help ${rule.tool.trim() && rule.behavior === "allow" ? "lorca-field-error" : "lorca-input-help"}`}
+                  >
+                    {rule.tool.trim()
+                      ? rule.behavior === "allow"
+                        ? approvalZh.toolAllowWarning(rule.tool.trim())
+                        : approvalZh.toolAskWarning(rule.tool.trim())
+                      : approvalZh.textScope}
+                  </p>
                 </div>
                 <Button
                   type="button"
@@ -287,6 +355,11 @@ export function AutoReviewPanel({
         {!isEnabled && (
           <p className="lorca-input-help">{approvalZh.rulesDisabled}</p>
         )}
+        {duplicateTools.length > 0 && (
+          <p className="lorca-field-error" role="alert">
+            {approvalZh.duplicateTools(duplicateTools)}
+          </p>
+        )}
         {showValidation && hasEmptyRule && (
           <p className="lorca-field-error" id={`${panelId}-validation`} role="alert">
             {approvalZh.emptyRuleError}
@@ -308,15 +381,7 @@ export function AutoReviewPanel({
             <ol className="lorca-approval-review-list">
               {rules.map((rule) => (
                 <li key={rule.key}>
-                  <strong>
-                    {rule.behavior === "allow" ? approvalZh.allow : approvalZh.ask}
-                  </strong>
-                  <p>{rule.text.trim()}</p>
-                  <span>
-                    {rule.tool.trim()
-                      ? approvalZh.ruleScope(rule.tool.trim())
-                      : approvalZh.allTools}
-                  </span>
+                  <RuleSummary rule={rule} />
                 </li>
               ))}
             </ol>
@@ -341,6 +406,24 @@ export function AutoReviewPanel({
           <p>{approvalZh[outcome]}</p>
         </div>
       )}
+      {conflict && (
+        <div className="lorca-settings-warning" role="alert">
+          <Icon name="AlertCircle" />
+          <p>{approvalZh.conflict}</p>
+        </div>
+      )}
+      {(needsRefresh || conflict) && currentSnapshot && (
+        <section className="lorca-approval-readback" aria-label={approvalZh.readbackTitle}>
+          <h3>{approvalZh.readbackTitle}</h3>
+          <p>{currentSnapshot.isEnabled ? approvalZh.readbackEnabled : approvalZh.readbackDisabled}</p>
+          {currentSnapshot.rules.length ? (
+            <ol className="lorca-approval-review-list">
+              {currentSnapshot.rules.map((rule) => <li key={rule.key}><RuleSummary rule={rule} /></li>)}
+            </ol>
+          ) : <p>{approvalZh.readbackNoRules}</p>}
+        </section>
+      )}
+      {!currentSnapshot && <p className="lorca-field-error" role="status">{approvalZh.waitingReadback}</p>}
       <footer className="lorca-auto-review-actions">
         <p className="lorca-input-help">{approvalZh.draftNotice}</p>
         <div className="lorca-settings-form-actions">
@@ -370,7 +453,7 @@ export function AutoReviewPanel({
               <Button
                 type="button"
                 size="sm"
-                disabled={locked || !dirty}
+                disabled={locked || !dirty || duplicateTools.length > 0}
                 onClick={reviewChanges}
               >
                 {approvalZh.review}
@@ -379,15 +462,10 @@ export function AutoReviewPanel({
                 type="button"
                 size="sm"
                 variant="ghost"
-                disabled={locked || !dirty}
-                onClick={() => {
-                  setIsEnabled(editor.autoReview.isEnabled === true);
-                  setRules(snapshotRules(editor));
-                  setOutcome(null);
-                  setShowValidation(false);
-                }}
+                disabled={disabled || pending || !currentSnapshot || (!dirty && !needsRefresh && !conflict)}
+                onClick={adoptCurrent}
               >
-                {approvalZh.reset}
+                {needsRefresh || conflict ? approvalZh.adoptCurrent : approvalZh.reset}
               </Button>
             </>
           )}

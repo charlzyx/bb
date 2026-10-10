@@ -2,6 +2,16 @@ export function installSettingsFixture() {
   let revision = 0;
   const requests = [];
   const pending = [];
+  const readbacks = [];
+  const eventListeners = new Set();
+  const statusListeners = new Set();
+  let holdReadback = false;
+  let identity = "synthetic-identity";
+  let hasIdentity = true;
+  let generation = 1;
+  const emitStatus = (status) => {
+    for (const listener of statusListeners) listener({ status, endpoint: "ws://127.0.0.1:4862/ws", generation, authMode: "token" });
+  };
   const snapshot = {
     version: "synthetic-settings-fixture",
     hasIdentity: true,
@@ -23,7 +33,7 @@ export function installSettingsFixture() {
       canUpdateBots: true,
       canAddProvider: true,
       canManageMcp: true,
-      autoReview: { status: "ready", isEnabled: false, rules: [{ id: "existing-rule", text: "Ask before external messages", behavior: "ask", tool: "messages.send" }] },
+      autoReview: { status: "ready", isEnabled: false, rules: [{ id: "existing-rule", text: "Ask before external messages", behavior: "ask", tool: "messages/send" }] },
     },
   };
   const apply = (action) => {
@@ -39,6 +49,17 @@ export function installSettingsFixture() {
   window.__settingsUiTest = {
     requests,
     pending,
+    readbacks,
+    holdReadback() { holdReadback = true; },
+    releaseReadback() { holdReadback = false; for (const resolve of readbacks.splice(0)) resolve(); },
+    disconnect() { emitStatus("disconnected"); },
+    reconnect() { generation++; emitStatus("connecting"); emitStatus("connected"); },
+    changeIdentity(nextIdentity = "synthetic-identity-two") {
+      identity = nextIdentity;
+      hasIdentity = nextIdentity !== null;
+      snapshot.hasIdentity = hasIdentity;
+      for (const listener of eventListeners) listener({ event: "identity.changed", data: { has_identity: hasIdentity } });
+    },
     resolve(status = "applied") {
       const item = pending.shift();
       if (status === "applied") apply(item.action);
@@ -51,10 +72,11 @@ export function installSettingsFixture() {
     getStatus: async () => ({ status: "connected", endpoint: "ws://127.0.0.1:4862/ws", generation: 1, authMode: "token", detail: "仅用于合成设置交互测试" }),
     connect: async () => { throw new Error("Synthetic fixtures cannot connect to services"); },
     request: async (method) => {
-      if (method === "bootstrap") return { version: "synthetic-settings-fixture", identity_id: "synthetic-identity", has_identity: true, relay_connected: false, bots: [{ id: "bot-one", name: "Synthetic Bot", runner_id: "runner-one" }], chats: [], running_turns: [], running_chat_ids: [] };
+      if (method === "bootstrap") return { version: "synthetic-settings-fixture", identity_id: identity, has_identity: hasIdentity, relay_connected: false, bots: [{ id: "bot-one", name: "Synthetic Bot", runner_id: "runner-one" }], chats: [], running_turns: [], running_chat_ids: [] };
       throw new Error(`Unexpected synthetic request: ${method}`);
     },
     getSettings: async (options) => {
+      if (holdReadback) await new Promise((resolve) => readbacks.push(resolve));
       snapshot.editor.revision = `fixture-${++revision}`;
       snapshot.mcp.runnerId = options?.runnerId || "runner-one";
       return structuredClone(snapshot);
@@ -63,7 +85,7 @@ export function installSettingsFixture() {
       requests.push(structuredClone(action));
       return new Promise((resolve, reject) => pending.push({ action, resolve, reject }));
     },
-    onEvent: () => () => {},
-    onStatus: () => () => {},
+    onEvent: (listener) => { eventListeners.add(listener); return () => eventListeners.delete(listener); },
+    onStatus: (listener) => { statusListeners.add(listener); return () => statusListeners.delete(listener); },
   };
 }

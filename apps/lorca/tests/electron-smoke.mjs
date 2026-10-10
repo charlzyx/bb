@@ -129,7 +129,7 @@ async function main() {
     assert.equal(renderer.processType, 'undefined'); assert.equal(renderer.requireType, 'undefined');
     assert.equal(renderer.status.status, 'connected'); assert.equal(renderer.status.authMode, 'token');
     assert.equal(JSON.stringify(renderer).includes(token), false); assert.equal(JSON.stringify(renderer).includes(home), false);
-    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'pickAttachments', 'request', 'sendAttachments', 'settingsAction']);
+    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'settingsAction']);
     const inventory = await page.evaluate(async () => {
       const events = [];
       const unsubscribe = window.lorca.onEvent(event => events.push(event));

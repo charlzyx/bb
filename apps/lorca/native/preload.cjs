@@ -25,5 +25,6 @@ contextBridge.exposeInMainWorld('lorca', Object.freeze({
   onEvent: listener => subscribe('lorca:event', listener),
   onStatus: listener => subscribe('lorca:status-update', listener),
   pickAttachments: () => invoke('lorca:pick-attachments'),
+  releaseAttachments: ids => invoke('lorca:release-attachments', ids),
   sendAttachments: params => invoke('lorca:send-attachments', params),
 }));

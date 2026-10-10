@@ -1,13 +1,15 @@
 name: Lorca desktop integration
 on:
   push:
-    branches: [feat/lorca-desktop]
+    branches: [main]
     paths: ['apps/lorca/**', 'packages/shared-ui/**', 'apps/app/src/components/ui/**', 'turbo.json', '.github/workflows/lorca.yml']
+  pull_request:
+    paths: ['apps/lorca/**', 'docs/lorca-*.md', 'packages/shared-ui/**', 'apps/app/src/components/ui/**', 'turbo.json', 'pnpm-lock.yaml', '.github/workflows/lorca.yml', '.github/workflows/ci.yml', '.github/workflows/check-lorca-fork-scope.*']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: lorca-${{ github.ref }}
+  group: lorca-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   verify:
@@ -23,6 +25,10 @@ jobs:
           package-manager-cache: false
       - run: node apps/lorca/scripts/focused.mjs install
       - run: node apps/lorca/scripts/focused.mjs check
+      - name: Lint Lorca through Turbo
+        run: |
+          export PATH="$GITHUB_WORKSPACE/apps/lorca/toolchain/node_modules/.bin:$PATH"
+          node apps/lorca/toolchain/node_modules/turbo/bin/turbo run lint --filter=@bb/lorca
       - name: Chinese system font coverage
         shell: bash
         run: |

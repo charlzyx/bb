@@ -318,7 +318,9 @@ export function Settings({
         </>
       )}
       {page === "models" && (runtime ? <BotSettingsPanel key={String(open)} runtime={runtime} disabled={disabled} onAction={actions.onSettingsAction} selectedBotId={selectedBotId} onSelectBot={setSelectedBotId} /> : <InventoryEmpty icon="Info" title={settingsZh.noRuntimeDetails} detail={editorZh.unsupported} />)}
-      {page === "approvals" && <AutoReviewPanel key={`${String(open)}:${runtime?.editor?.revision ?? "unavailable"}`} editor={runtime?.editor} disabled={disabled} onAction={actions.onSettingsAction} />}
+      <div hidden={page !== "approvals"}>
+        <AutoReviewPanel editor={runtime?.editor} disabled={disabled} onAction={actions.onSettingsAction} />
+      </div>
       {(page === "runners" || page === "mcp") &&
         (runtime ? (
           page === "runners" ? (

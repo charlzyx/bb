@@ -481,7 +481,7 @@ function editableRuntime(): RuntimeSettings {
     canUpdateBots: true,
     canAddProvider: true,
     canManageMcp: true,
-    autoReview: { status: "ready", isEnabled: false, rules: [{ id: "rule", text: "Original rule", behavior: "ask", tool: "filesystem.read" }] },
+    autoReview: { status: "ready", isEnabled: false, rules: [{ id: "rule", text: "Original rule", behavior: "ask", tool: "filesystem/read" }] },
   };
   return runtime;
 }
@@ -519,13 +519,46 @@ test("MCP management exposes scoped actions without raw configuration fields", (
 test("Auto-review starts strict and preserves exact ask and allow wire values", () => {
   const html = renderToStaticMarkup(<AutoReviewPanel editor={editableRuntime().editor} disabled={false} onAction={actions.onSettingsAction} />);
   assert.match(html, /aria-checked="false"/);
-  assert.match(html, /每次工具调用都会询问你/);
+  assert.match(html, /需审批的操作会请求确认；只读工具不受影响/);
   assert.match(html, /value="ask" selected=""/);
   assert.match(html, /value="allow"/);
   assert.match(html, /Original rule/);
-  assert.match(html, /filesystem.read/);
+  assert.match(html, /filesystem\/read/);
   assert.match(html, /查看变更/);
   assert.doesNotMatch(html, /value="deny"|value="always"/);
+});
+
+test("Exact tool rules label text as notes and disclose unconditional allow scope", () => {
+  const editor = editableRuntime().editor;
+  assert.ok(editor);
+  editor.autoReview.rules[0] = { id: "existing", text: "Only if recipient is trusted", behavior: "allow", tool: "messages/send_external_message" };
+  const html = renderToStaticMarkup(<AutoReviewPanel editor={editor} disabled={false} onAction={actions.onSettingsAction} />);
+  assert.match(html, /规则 1 · 备注/);
+  assert.match(html, /始终允许此工具/);
+  assert.match(html, /精确工具：messages\/send_external_message。启用自动审批后，将始终允许此工具；备注不构成限制条件。/);
+  assert.match(html, /value="Only if recipient is trusted"/);
+  assert.doesNotMatch(html, /<option value="allow" selected="">符合规则时允许/);
+  editor.autoReview.rules[0].tool = null;
+  const textOnly = renderToStaticMarkup(<AutoReviewPanel editor={editor} disabled={false} onAction={actions.onSettingsAction} />);
+  assert.match(textOnly, /适用情景/);
+  assert.match(textOnly, /<option value="allow" selected="">符合规则时允许/);
+  assert.match(textOnly, /未指定精确工具：适用情景交给模型判断。/);
+});
+
+test("Duplicate exact tool rules are disclosed and never silently collapsed", () => {
+  const editor = editableRuntime().editor;
+  assert.ok(editor);
+  editor.autoReview.rules = [
+    { id: "first", text: "Original allow note", behavior: "allow", tool: "messages/send" },
+    { id: "second", text: "Original ask note", behavior: "ask", tool: "messages/send" },
+  ];
+  const html = renderToStaticMarkup(<AutoReviewPanel editor={editor} disabled={false} onAction={actions.onSettingsAction} />);
+  assert.match(html, /以下精确工具重复：messages\/send/);
+  assert.match(html, /后端按首条匹配处理，不保证“始终询问”优先/);
+  assert.match(html, /Original allow note/);
+  assert.match(html, /Original ask note/);
+  assert.equal((html.match(/value="messages\/send"/g) ?? []).length, 2);
+  assert.match(html, /disabled=""[^>]*>查看变更<\/button>/);
 });
 
 test("Unsupported or unreported auto-review state has no mutation controls", () => {

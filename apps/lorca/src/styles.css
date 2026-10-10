@@ -2186,7 +2186,8 @@ select:focus-visible {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
-:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule-fields > label:first-child {
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule-fields > label:first-child,
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-scope-help {
   grid-column: 1 / -1;
 }
 :where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule-fields input,
@@ -2228,4 +2229,14 @@ select:focus-visible {
   :where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule-fields {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-scope-help,
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-review-list li {
+  overflow-wrap: anywhere;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-readback {
+  border: 1px solid var(--border-seam);
+  border-radius: 12px;
+  padding: 16px;
 }

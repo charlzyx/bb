@@ -20,6 +20,7 @@ export interface LorcaBridge {
   getSettings?(options: { runnerId?: string }): Promise<unknown>;
   copyText?(text: string): Promise<void>;
   pickAttachments?(): Promise<PickedAttachment[]>;
+  releaseAttachments?(ids: string[]): Promise<void>;
   sendAttachments?(params: {
     chat_id: string;
     text: string;

@@ -224,3 +224,51 @@ test('native confirmation escapes bidirectional controls without changing rule d
   for (const control of ['\u202e', '\u061c', '\u200e', '\u200f', '\u2066']) { assert.ok(ctx.prompts[0].detail.includes(`\\u${control.charCodeAt(0).toString(16).padStart(4, '0')}`)); assert.equal(ctx.prompts[0].detail.includes(control), false); }
   assert.deepEqual(mutations(ctx.bridge)[0].params.rules, [{ text, behavior: 'ask' }]); ctx.dispose();
 });
+
+test('tool approval rules disclose unconditional scope and reject duplicate exact tools', async () => {
+  const ctx = await setup();
+  await ctx.editor.apply({ kind: 'autoReview.set', revision: ctx.revision, isEnabled: true, rules: [{ text: 'Only send to myself', behavior: 'allow', tool: 'gmail/send' }] });
+  assert.match(ctx.prompts[0].detail, /工具级始终允许/);
+  assert.match(ctx.prompts[0].detail, /gmail\/send/);
+  assert.match(ctx.prompts[0].detail, /文字仅为备注，不是限制条件/);
+  assert.match(ctx.prompts[0].detail, /Only send to myself/);
+  assert.throws(() => validateSettingsAction({ kind: 'autoReview.set', revision: 'r', isEnabled: true, rules: [{ text: 'Allow', behavior: 'allow', tool: 'gmail/send' }, { text: 'Ask', behavior: 'ask', tool: 'gmail/send' }] }), /同一工具/);
+  ctx.dispose();
+});
+
+for (const url of ['https://synthetic.example/mcp?key=SYNTHETIC_URL_SECRET', 'http://synthetic.example/mcp', 'SYNTHETIC_INVALID_SAVED_URL']) {
+  test(`existing MCP can be disabled without treating its URL as new credentials: ${url.startsWith('https:') ? 'https' : url.startsWith('http:') ? 'http' : 'invalid'}`, async () => {
+    const ctx = await setup();
+    ctx.bridge.mcp.servers[0].config = { url } as unknown as typeof ctx.bridge.mcp.servers[0]['config'];
+    const settings = await ctx.inventory.get({ runnerId: 'runner-one' });
+    ctx.bridge.calls = [];
+    assert.deepEqual(await ctx.editor.apply({ kind: 'mcp.setEnabled', revision: settings.editor.revision, runnerId: 'runner-one', name: 'server-one', enabled: false }), { status: 'applied' });
+    assert.deepEqual(mutations(ctx.bridge), [{ method: 'mcp.set_enabled', params: { name: 'server-one', enabled: false, runner_id: 'runner-one' } }]);
+    assert.equal(JSON.stringify(ctx.prompts).includes('SYNTHETIC_URL_SECRET'), false);
+    assert.match(ctx.prompts[0].detail, /整个 MCP 文件/);
+    ctx.dispose();
+  });
+}
+
+test('MCP reconnect replaces the cached connection with explicit restart scope', async () => {
+  const ctx = await setup();
+  assert.deepEqual(await ctx.editor.apply({ kind: 'mcp.reconnect', revision: ctx.revision, runnerId: 'runner-one', name: 'server-one' }), { status: 'applied' });
+  assert.deepEqual(mutations(ctx.bridge), [{ method: 'mcp.reconnect', params: { name: 'server-one', fresh: true, runner_id: 'runner-one' } }]);
+  assert.match(ctx.prompts[0].detail, /断开缓存连接并重新建立/);
+  assert.match(ctx.prompts[0].detail, /保留已保存凭据/);
+  assert.match(ctx.prompts[0].detail, /不代表连接健康/);
+  ctx.dispose();
+});
+
+test('an unknown device with empty descriptions does not disable other settings', async () => {
+  const ctx = await setup();
+  ctx.bridge.bootstrap.devices.push({ ...ctx.bridge.bootstrap.devices[0], id: 'unknown-device', name: '', os: '', status: 'offline', unknown: true } as typeof ctx.bridge.bootstrap.devices[number]);
+  const settings = await ctx.inventory.get({ runnerId: 'runner-one' });
+  assert.equal(settings.editor.canUpdateBots, true);
+  assert.equal(settings.editor.autoReview.status, 'ready');
+  assert.equal(settings.editor.canManageMcp, true);
+  assert.deepEqual(await ctx.editor.apply({ kind: 'bot.update', revision: settings.editor.revision, botId: 'bot-one', runnerId: 'runner-two' }), { status: 'applied' });
+  const next = await ctx.inventory.get({ runnerId: 'runner-one' });
+  await assert.rejects(ctx.editor.apply({ kind: 'bot.update', revision: next.editor.revision, botId: 'bot-one', runnerId: 'unknown-device' }));
+  ctx.dispose();
+});

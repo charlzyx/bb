@@ -150,11 +150,13 @@ export class LorcaController {
   private loading = false;
   private synchronized = false;
   private loadingOlder = false;
+  private olderRequest = 0;
   private sending = false;
   private navigation = 0;
   private accountEpoch = 0;
   private pendingActions = new Set<string>();
   private pendingAttachments: PickedAttachment[] = [];
+  private sendingAttachmentIds = new Set<string>();
   private disposed = false;
   private state: LorcaShellState;
   constructor(
@@ -262,6 +264,8 @@ export class LorcaController {
   }
   dispose(): void {
     this.disposed = true;
+    this.resetOlder();
+    this.clearAttachments();
     this.clearSettings();
     for (const unsubscribe of this.unsubscribers) unsubscribe();
     this.unsubscribers = [];
@@ -278,10 +282,10 @@ export class LorcaController {
       this.clearSettings();
       this.snapshotRequest++;
       this.synchronized = false;
-      this.pendingAttachments = [];
+      this.clearAttachments();
       this.buffering = null;
       this.loading = false;
-      this.loadingOlder = false;
+      this.resetOlder();
     }
     if (newSession) {
       if (this.model.version && !this.model.identityId) {
@@ -309,7 +313,7 @@ export class LorcaController {
         this.navigation++;
         this.model = emptyModel();
         this.activeId = null;
-        this.pendingAttachments = [];
+        this.clearAttachments();
         void this.refresh();
         return;
       }
@@ -335,12 +339,13 @@ export class LorcaController {
   }
   private checkIdentity(snapshot: WireSnapshot): boolean {
     if (this.model.version && this.model.identityId !== (snapshot.identity_id ?? null)) {
+      this.resetOlder();
       this.clearSettings();
       this.accountEpoch++;
       this.navigation++;
       this.model = emptyModel();
       this.activeId = null;
-      this.pendingAttachments = [];
+      this.clearAttachments();
       return true;
     }
     return false;
@@ -357,6 +362,7 @@ export class LorcaController {
     return this.refreshTask;
   }
   private async refreshSnapshot(): Promise<void> {
+    this.resetOlder();
     const request = ++this.snapshotRequest,
       generation = this.generation;
     this.buffering = [];
@@ -422,7 +428,8 @@ export class LorcaController {
   private async send(text: string): Promise<void | { chatId: string }> {
     if (this.sending) return;
     let sent: { chatId: string } | undefined;
-    await this.run(async () => {
+    let sendError: Error | null = null;
+    const perform = async () => {
       this.requireReady();
       if (!text.trim() && !this.pendingAttachments.length) return;
       this.sending = true;
@@ -430,6 +437,7 @@ export class LorcaController {
       const generation = this.generation,
         accountEpoch = this.accountEpoch;
       const selected = this.pendingAttachments.slice();
+      this.sendingAttachmentIds = new Set(selected.map(file => file.id));
       try {
         let chatId = this.activeId;
         if (!chatId) {
@@ -503,10 +511,19 @@ export class LorcaController {
           };
         sent = { chatId };
       } finally {
+        this.sendingAttachmentIds.clear();
+        this.releaseAttachments(selected.filter(file => !this.pendingAttachments.some(pending => pending.id === file.id)));
         this.sending = false;
       }
+    };
+    await this.run(async () => {
+      try { await perform(); }
+      catch (error) {
+        sendError = error instanceof Error ? error : new Error("dots 请求失败。");
+        throw sendError;
+      }
     });
-    if (this.error) throw new Error(this.error);
+    if (sendError) throw sendError;
     return sent;
   }
   private async unique(
@@ -520,6 +537,15 @@ export class LorcaController {
     } finally {
       this.pendingActions.delete(key);
     }
+  }
+  private releaseAttachments(files: PickedAttachment[]): void {
+    const ids = files.filter(file => !this.sendingAttachmentIds.has(file.id)).map(file => file.id);
+    if (ids.length && this.bridge.releaseAttachments) void this.bridge.releaseAttachments(ids).catch(() => {});
+  }
+  private clearAttachments(): void {
+    const files = this.pendingAttachments;
+    this.pendingAttachments = [];
+    this.releaseAttachments(files);
   }
   private clearSettings(): void {
     this.settingsRequest++;
@@ -593,14 +619,14 @@ export class LorcaController {
         this.activeId = id;
         this.selectedBot =
           this.model.chats.get(id)?.bot_ids[0] ?? this.selectedBot;
-        this.pendingAttachments = [];
+        this.clearAttachments();
         this.emit();
       }
     },
     onNewConversation: () => {
       this.navigation++;
       this.activeId = null;
-      this.pendingAttachments = [];
+      this.clearAttachments();
       this.error = null;
       this.emit();
     },
@@ -689,6 +715,7 @@ export class LorcaController {
       const canonical = `ws://127.0.0.1:${Number(match[2])}/ws`;
       const changed = canonical !== this.status.endpoint.replace("localhost", "127.0.0.1");
       if (changed) {
+        this.resetOlder();
         this.snapshotRequest++;
         this.buffering = null;
         this.loading = false;
@@ -697,7 +724,7 @@ export class LorcaController {
         this.navigation++;
         this.model = emptyModel();
         this.activeId = null;
-        this.pendingAttachments = [];
+        this.clearAttachments();
         this.synchronized = false;
         this.emit();
       }
@@ -713,7 +740,7 @@ export class LorcaController {
       }
     },
     onReconnect: () => {
-      this.pendingAttachments = [];
+      this.clearAttachments();
       void this.run(async () => {
         const generation = this.generation;
         const status = await this.bridge.connect(this.status.endpoint);
@@ -734,45 +761,57 @@ export class LorcaController {
         if (this.bridge.pickAttachments) {
           const picked = await this.bridge.pickAttachments();
           if (
+            !this.disposed &&
             generation === this.generation &&
             navigation === this.navigation &&
             accountEpoch === this.accountEpoch
-          )
-            this.pendingAttachments = [
-              ...this.pendingAttachments,
-              ...picked,
-            ].slice(0, 10);
+          ) {
+            const combined = [...this.pendingAttachments, ...picked];
+            this.pendingAttachments = combined.slice(0, 10);
+            this.releaseAttachments(combined.slice(10));
+          } else this.releaseAttachments(picked);
         }
       });
     },
     onRemoveAttachment: (id) => {
-      this.pendingAttachments = this.pendingAttachments.filter(
-        (f) => f.id !== id,
-      );
+      const removed = this.pendingAttachments.filter(file => file.id === id);
+      this.pendingAttachments = this.pendingAttachments.filter(file => file.id !== id);
+      this.releaseAttachments(removed);
       this.emit();
     },
   };
+  private resetOlder(): void {
+    this.olderRequest++;
+    this.loadingOlder = false;
+  }
   private async loadOlder(): Promise<void> {
     const id = this.activeId,
       chat = id ? this.model.chats.get(id) : undefined;
     if (!chat || !id || !chat.has_more || this.loadingOlder) return;
-    const generation = this.generation,
+    const request = ++this.olderRequest,
+      generation = this.generation,
       accountEpoch = this.accountEpoch;
+    const current = () => !this.disposed && request === this.olderRequest && generation === this.generation && accountEpoch === this.accountEpoch;
     this.loadingOlder = true;
+    this.error = null;
     this.emit();
-    await this.run(async () => {
+    try {
       this.requireReady();
-      const page = parsePage(
-        await this.bridge.request("chats.messages", {
-          chat_id: id,
-          before: chat.messages[0]?.id,
-          limit: 60,
-        }),
-      );
-      if (generation === this.generation && accountEpoch === this.accountEpoch)
-        this.model = appendOlder(this.model, id, page.messages, page.has_more);
-    });
-    this.loadingOlder = false;
-    this.emit();
+      const raw = await this.bridge.request("chats.messages", {
+        chat_id: id,
+        before: chat.messages[0]?.id,
+        limit: 60,
+      });
+      if (!current()) return;
+      const page = parsePage(raw);
+      this.model = appendOlder(this.model, id, page.messages, page.has_more);
+    } catch (error) {
+      if (current()) this.fail(error);
+    } finally {
+      if (current()) {
+        this.loadingOlder = false;
+        this.emit();
+      }
+    }
   }
 }

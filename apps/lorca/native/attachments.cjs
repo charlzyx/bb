@@ -7,6 +7,10 @@ const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 class AttachmentSelections {
   constructor() { this.files = new Map(); this.epoch = 0; }
   clear() { this.epoch++; this.files.clear(); }
+  release(ids) {
+    if (!Array.isArray(ids) || ids.length > 50 || ids.some(id => typeof id !== 'string' || !/^[a-f0-9]{32}$/.test(id))) throw new Error('附件选择标识无效');
+    for (const id of ids) if (!this.files.get(id)?.busy) this.files.delete(id);
+  }
   async add(paths) {
     const epoch = this.epoch;
     if (!Array.isArray(paths) || paths.length > 10) throw new Error('最多可选择十个文件');

@@ -58,7 +58,7 @@ bridge.on('status', value => {
   if (value.status !== 'connected') selections.clear();
   send('lorca:status-update', value);
 });
-ipcMain.handle('lorca:connect', async (event, endpoint) => { ensureSender(event); selections.clear(); return bridge.connect(endpoint); });
+ipcMain.handle('lorca:connect', async (event, endpoint) => { ensureSender(event); return bridge.connect(endpoint); });
 ipcMain.handle('lorca:copy-text', (event, text) => { ensureSender(event); clipboard.writeText(validateCopyText(text)); return null; });
 ipcMain.handle('lorca:status', event => { ensureSender(event); return bridge.getStatus(); });
 ipcMain.handle('lorca:get-settings', async (event, params = {}) => {
@@ -95,6 +95,7 @@ ipcMain.handle('lorca:pick-attachments', async event => {
     return result.canceled ? [] : await selections.add(result.filePaths);
   } catch (error) { throw safeRendererError(error); } finally { choosing = false; }
 });
+ipcMain.handle('lorca:release-attachments', (event, ids) => { ensureSender(event); selections.release(ids); return null; });
 ipcMain.handle('lorca:send-attachments', async (event, params) => {
   ensureSender(event);
   const fence = settings.capture();

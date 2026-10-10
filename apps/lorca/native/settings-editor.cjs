@@ -43,7 +43,7 @@ function policy(value) {
 function botConfig(value) { const input = object(value); return { id: id(input.id), name: text(input.name), provider: input.provider ?? null, model: input.model ?? null, thinking: input.thinking ?? null, runner_id: input.runner_id }; }
 function providerConfig(value) { const input = object(value); return { kind: id(input.kind), name: input.name ?? null, api: input.api ?? null, models: input.models ?? null, base_url: input.base_url ?? null }; }
 function mcpConfig(value) { const input = object(value); return { name: id(input.name), enabled: flag(input.enabled), config: object(input.config) }; }
-function runnerConfig(value) { const input = object(value); return { id: id(input.id), name: text(input.name), os: text(input.os), status: text(input.status), is_this_device: input.is_this_device === true }; }
+function runnerConfig(value) { const input = object(value); return { id: id(input.id), name: text(input.name, 256, input.unknown === true), os: text(input.os, 256, input.unknown === true), unknown: input.unknown === true, status: text(input.status), is_this_device: input.is_this_device === true }; }
 function configurableProvider(provider) { return Object.hasOwn(KEY_PROVIDERS, provider.kind) || (provider.kind.startsWith('custom:') && CUSTOM_APIS.includes(provider.api)); }
 function modelCatalog(bootstrap) {
   const catalog = new Map();
@@ -76,6 +76,8 @@ function validateSettingsAction(value) {
   } else if (kind === 'autoReview.set') {
     result.isEnabled = flag(input.isEnabled); result.rules = list(input.rules, 200).map(value => rule(value));
     const ids = result.rules.flatMap(item => item.id ? [item.id] : []);
+    const tools = result.rules.flatMap(item => item.tool ? [item.tool] : []);
+    if (new Set(tools).size !== tools.length) throw new Error('同一工具只能保留一条规则，请明确删除或调整重复项');
     if (new Set(ids).size !== ids.length || JSON.stringify(result.rules).length > 200_000) invalid();
   }
   return result;
@@ -225,8 +227,8 @@ class SettingsEditor {
       } else if (action.kind === 'autoReview.set') {
         if (policy(fresh.bootstrap.auto_review).status !== 'ready') throw new Error(UNAVAILABLE);
         mutation = { method: 'auto_review.set', params: { is_enabled: action.isEnabled, rules: action.rules } }; target = '当前账号的自动审批策略';
-        const describeRules = rules => rules.length ? rules.map((value, index) => `${index + 1}. ${value.behavior === 'allow' ? '允许' : '每次询问'}\n规则 ID：${JSON.stringify(value.id ?? '新增')}\n工具：${JSON.stringify(value.tool ?? '所有工具')}\n完整规则文本：\n${value.text}`).join('\n\n') : '无规则';
-        detail = `${action.isEnabled ? '将启用模型审核及允许规则，部分操作可能不再逐次询问。' : '将关闭自动审批，Shell 和有副作用的插件操作逐次询问。'}\n整份规则列表将替换，未出现在新列表的旧规则会删除。策略会同步到此账号的所有配对设备。\n\n现有规则：\n${describeRules(fresh.bootstrap.auto_review.rules)}\n\n替换后的完整规则：\n${describeRules(action.rules)}`;
+        const describeRules = rules => rules.length ? rules.map((value, index) => `${index + 1}. ${value.tool ? (value.behavior === 'allow' ? '工具级始终允许' : '工具级始终询问') : (value.behavior === 'allow' ? '自然语言允许规则' : '自然语言询问规则')}\n规则 ID：${JSON.stringify(value.id ?? '新增')}\n工具：${JSON.stringify(value.tool ?? '未指定，交由模型审核文本')}\n${value.tool ? '此规则精确匹配该工具；下列文字仅为备注，不是限制条件。启用自动审批时，始终允许将直接放行该工具的调用（仍受机器人访问权限限制）。' : '下列自然语言条件由后端模型审核，不是确定性过滤器。'}\n完整${value.tool ? '备注' : '规则文本'}：\n${value.text}`).join('\n\n') : '无规则';
+        detail = `${action.isEnabled ? '将启用模型审核及允许规则，部分操作可能不再逐次询问。' : '将关闭自动审批，Shell 和有副作用的插件操作逐次询问。'}\n规则只作用于后端进入审批流程的操作；只读工具可能直接执行。整份规则列表将替换，未出现在新列表的旧规则会删除。策略会同步到此账号的所有配对设备。\n\n现有规则：\n${describeRules(fresh.bootstrap.auto_review.rules)}\n\n替换后的完整规则：\n${describeRules(action.rules)}`;
       } else if (action.kind.startsWith('provider.')) {
         const provider = action.providerId ? fresh.bootstrap.providers.find(value => value.kind === action.providerId) : null;
         target = provider ? `服务商「${label(provider.name ?? provider.kind)}」（${provider.kind}）` : '新的自定义服务商';
@@ -251,10 +253,11 @@ class SettingsEditor {
           this.guard(entry, trusted); if (mutation === null) return { status: 'cancelled' };
           if (fresh.mcp.servers.some(value => value.name === mutation.params.name && value.name !== action.name)) invalid();
         } else if (action.kind === 'mcp.setEnabled') mutation = { method: 'mcp.set_enabled', params: { name: action.name, enabled: action.enabled } };
-        else if (action.kind === 'mcp.reconnect') mutation = { method: 'mcp.reconnect', params: { name: action.name, fresh: false } };
+        else if (action.kind === 'mcp.reconnect') { mutation = { method: 'mcp.reconnect', params: { name: action.name, fresh: true } }; detail += '\n将断开缓存连接并重新建立，可能重启程序或影响进行中的调用；保留已保存凭据，不会发起新的登录授权。完成后请查看服务报告状态，提交成功不代表连接健康。'; }
         else if (action.kind === 'mcp.remove') { mutation = { method: 'mcp.remove', params: { name: action.name } }; detail = '将删除此 MCP 服务的配置、插件目录、已保存凭据和关联的自动审批规则。此操作无法由客户端自动恢复。'; }
         else mutation = { method: 'mcp.reload', params: {} };
-        if (!['mcp.remove', 'mcp.reload'].includes(action.kind)) {
+        if (action.kind === 'mcp.setEnabled' && !action.enabled) detail += '\n将停用此服务的已保存配置，不会把地址、环境变量或请求头作为新连接输入；现有配置和凭据不会回显。';
+        else if (!['mcp.remove', 'mcp.reload'].includes(action.kind)) {
           const servers = [{ name: mutation.params.name ?? action.name, config: mutation.params.config ?? fresh.mcp.servers.find(value => value.name === action.name)?.config }];
           const descriptions = servers.map(server => {
             const config = object(server.config); const enabled = action.kind === 'mcp.setEnabled' ? action.enabled : config.disabled !== true;

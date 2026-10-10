@@ -57,7 +57,7 @@ function main() {
     if (result.status !== 0) throw new Error(`${command} 失败；保留生成目录供检查：${release}`);
   };
   assemble({ sourceApp, electronApp, wsDirectory, output, run });
-  console.log(`本地开发包：${output}\n无 Developer ID 签名或公证；仅使用本地 ad-hoc 签名，不可作为正式安装包分发。\n启动："${output}/Contents/MacOS/dots"\n旧协议需显式添加 LORCA_ALLOW_LEGACY=1。`);
+  console.log(`本地开发包：${output}\n无 Developer ID 签名或公证；仅使用本地 ad-hoc 签名，不可作为正式安装包分发。\n启动："${output}/Contents/MacOS/dots"\n默认使用本地令牌认证。本地兼容连接（不校验令牌）需显式添加 LORCA_ALLOW_LEGACY=1。`);
 }
 module.exports = { icnsFromPng, bundleMetadata, assemble };
 if (require.main === module) main();

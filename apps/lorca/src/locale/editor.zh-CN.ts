@@ -11,7 +11,7 @@ export const editorZh = {
   addProvider: "新增服务商…",
   configure: "配置…",
   disconnect: "断开连接",
-  disconnectScope: (name: string) => `将移除 ${name} 的本地凭据。使用此服务商的机器人可能无法继续响应。此操作不会撤销远端服务的密钥。`,
+  disconnectScope: (name: string) => `将在当前账号中断开 ${name}，移除其凭据；若为自定义服务商，也会删除其配置。使用此服务商的机器人可能无法继续响应，相关登录令牌也可能被撤销。`,
   selectBot: "选择机器人",
   botSettings: "机器人设置",
   botScope: "这些设置属于机器人，会影响所有使用该机器人的对话。不会只应用于当前对话。",

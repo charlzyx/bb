@@ -26,7 +26,6 @@ const browser = await playwright.chromium.launch({
   headless: true,
   executablePath,
   chromiumSandbox: true,
-  // Required by CDP Browser.getBrowserCommandLine; this does not weaken sandboxing.
   args: ["--enable-automation"],
 });
 const failures = [];
@@ -418,6 +417,9 @@ try {
       rejectSend: () => {
         sends.shift().reject(new Error("Synthetic send failure"));
       },
+      job: (event) => {
+        for (const listener of eventListeners) listener({ event, data: { job_id: "synthetic-stop-job", chat_id: "fixture-two", bot_id: "fixture-bot" } });
+      },
       complete: () => {
         const item = sends.shift();
         item.resolve({
@@ -454,6 +456,7 @@ try {
           snapshot.chats.push(chat);
           return { chat };
         }
+        if (method === "chats.stop") throw new Error("Synthetic stop failure");
         if (method === "chats.send")
           return new Promise((resolve, reject) =>
             sends.push({ params, resolve, reject }),
@@ -605,6 +608,17 @@ try {
     "Fixture Two",
     "Late first-send acknowledgement does not steal explicit navigation",
   );
+  await controlled.getByRole("textbox", { name: "给 dots 发消息" }).fill("Accepted despite a concurrent stop failure");
+  await controlled.getByRole("button", { name: "发送消息", exact: true }).click();
+  await controlled.waitForFunction(() => window.__lorcaUiTest.sends.length === 1);
+  await controlled.evaluate(() => window.__lorcaUiTest.job("job.started"));
+  await controlled.getByRole("button", { name: "停止回复", exact: true }).click();
+  await controlled.getByText("Synthetic stop failure", { exact: true }).waitFor();
+  await controlled.evaluate(() => window.__lorcaUiTest.complete());
+  await controlled.waitForFunction(() => document.querySelector("#lorca-composer")?.value === "");
+  await controlled.getByText("Accepted despite a concurrent stop failure", { exact: true }).waitFor();
+  assert.equal(await controlled.locator(".lorca-composer-error").innerText(), "Synthetic stop failure", "The unrelated stop error remains distinct from the acknowledged send");
+  await controlled.evaluate(() => window.__lorcaUiTest.job("job.finished"));
   await controlled.locator(".lorca-header-status").click();
   await controlled
     .getByRole("button", { name: "连接本次会话", exact: true })
@@ -678,6 +692,23 @@ try {
   const ruleFields = settingsInteraction.locator(".lorca-approval-rule-fields");
   assert.equal(await ruleFields.last().getByRole("combobox").inputValue(), "ask", "New approval rules default to asking");
   await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).fill("Read only the synthetic fixture");
+  assert.equal(await ruleFields.first().getByRole("textbox", { name: /备注/ }).inputValue(), "Ask before external messages", "Existing tool-rule text remains editable as a note");
+  await ruleFields.last().getByRole("textbox", { name: "精确工具 ID（plugin_id/tool，可选）", exact: true }).fill("messages/send");
+  await ruleFields.last().getByRole("combobox").selectOption("allow");
+  assert.equal(await ruleFields.last().getByRole("textbox", { name: /备注/ }).inputValue(), "Read only the synthetic fixture", "Choosing a tool relabels text without rewriting it");
+  await ruleFields.last().getByText("精确工具：messages/send。启用自动审批后，将始终允许此工具；备注不构成限制条件。", { exact: true }).waitFor();
+  await settingsInteraction.getByRole("alert").filter({ hasText: "后端按首条匹配处理，不保证“始终询问”优先" }).waitFor();
+  assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isDisabled(), true, "Duplicate tools block saving until explicitly changed");
+  assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), 2, "Duplicate tools do not dispatch any setting action");
+  await ruleFields.last().getByRole("textbox", { name: "精确工具 ID（plugin_id/tool，可选）", exact: true }).fill("filesystem/read_complete_identifier");
+  await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).click();
+  const toolReview = settingsInteraction.locator(".lorca-approval-confirmation");
+  await toolReview.getByText("始终允许此工具", { exact: true }).waitFor();
+  await toolReview.getByText("备注：Read only the synthetic fixture", { exact: true }).waitFor();
+  await toolReview.getByText("精确工具：filesystem/read_complete_identifier。启用自动审批后，将始终允许此工具；备注不构成限制条件。", { exact: true }).waitFor();
+  await settingsInteraction.getByRole("button", { name: "返回修改", exact: true }).click();
+  await ruleFields.last().getByRole("textbox", { name: "精确工具 ID（plugin_id/tool，可选）", exact: true }).fill("");
+  await ruleFields.last().getByRole("combobox").selectOption("ask");
   await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).click();
   assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), 2, "Approval edits do not immediately mutate");
   await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).click();
@@ -695,8 +726,21 @@ try {
   assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).getAttribute("aria-checked"), "true");
   await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).click();
   await settingsInteraction.getByRole("button", { name: "确认并提交", exact: true }).click();
-  await settingsInteraction.evaluate(() => window.__settingsUiTest.resolve("unknownOutcome"));
-  await settingsInteraction.getByRole("alert").filter({ hasText: /结果|确认|核对/ }).first().waitFor();
+  await settingsInteraction.evaluate(() => { window.__settingsUiTest.holdReadback(); window.__settingsUiTest.resolve("unknownOutcome"); });
+  await settingsInteraction.waitForFunction(() => window.__settingsUiTest.readbacks.length === 1);
+  assert.equal(await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).inputValue(), "Read only the synthetic fixture", "Loading a readback does not unmount or replace the pending policy draft");
+  await settingsInteraction.evaluate(() => window.__settingsUiTest.releaseReadback());
+  await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).waitFor();
+  assert.equal(await ruleFields.count(), 2, "Unknown result retains the complete draft rule table after a new revision arrives");
+  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).getAttribute("aria-checked"), "true");
+  await settingsInteraction.getByRole("region", { name: "当前读回配置", exact: true }).getByText("自动审批：关闭", { exact: true }).waitFor();
+  assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isDisabled(), true, "Unknown outcome is never automatically replayed");
+  const afterUnknown = await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length);
+  await settingsInteraction.getByRole("button", { name: "刷新", exact: true }).click();
+  await settingsInteraction.getByRole("button", { name: "刷新", exact: true }).waitFor();
+  assert.equal(await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).inputValue(), "Read only the synthetic fixture", "Explicit refresh preserves unknown-result draft");
+  await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).waitFor();
+  assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), afterUnknown);
   await chooseSettingsPage(settingsInteraction, "MCP");
   await settingsInteraction.getByRole("button", { name: "移除", exact: true }).click();
   await settingsInteraction.getByText(/删除其本地配置、凭据、数据和关联的工具规则/).waitFor();
@@ -711,6 +755,34 @@ try {
   assert.equal(await settingsInteraction.locator('input[type="password"], textarea').count(), 1, "Only the chat composer remains; no secret configuration form exists in the main renderer");
   await settingsInteraction.evaluate(() => window.__settingsUiTest.resolve("cancelled"));
   await settingsInteraction.getByText("已取消，未应用更改。", { exact: true }).waitFor();
+  await chooseSettingsPage(settingsInteraction, "自动审批");
+  await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).waitFor();
+  assert.equal(await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).inputValue(), "Read only the synthetic fixture", "Switching settings pages preserves unknown-result draft");
+  await settingsInteraction.evaluate(() => window.__settingsUiTest.disconnect());
+  assert.equal(await settingsInteraction.getByRole("button", { name: "放弃草稿并采用当前配置", exact: true }).isDisabled(), true, "Unavailable readback cannot replace a draft");
+  await settingsInteraction.evaluate(() => window.__settingsUiTest.reconnect());
+  await settingsInteraction.getByRole("button", { name: "刷新", exact: true }).click();
+  await settingsInteraction.getByRole("region", { name: "当前读回配置", exact: true }).waitFor();
+  await settingsInteraction.getByRole("button", { name: "放弃草稿并采用当前配置", exact: true }).click();
+  assert.equal(await ruleFields.count(), 1);
+  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).getAttribute("aria-checked"), "false", "Only explicit adoption discards uncertain policy draft");
+  await ruleFields.first().getByRole("textbox", { name: /备注/ }).fill("Private unsaved policy draft");
+  await settingsInteraction.evaluate(() => { window.__settingsUiTest.snapshot.editor.autoReview.rules[0].text = "Changed by another client"; });
+  const beforeConflict = await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length);
+  await settingsInteraction.getByRole("button", { name: "刷新", exact: true }).click();
+  await settingsInteraction.getByRole("alert").filter({ hasText: "服务端配置已更新" }).waitFor();
+  assert.equal(await ruleFields.first().getByRole("textbox", { name: /备注/ }).inputValue(), "Private unsaved policy draft", "External revision changes never silently replace dirty policy text");
+  await settingsInteraction.getByRole("region", { name: "当前读回配置", exact: true }).getByText("备注：Changed by another client", { exact: true }).waitFor();
+  assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isDisabled(), true, "Dirty policy cannot overwrite a new revision without explicit reconciliation");
+  assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), beforeConflict);
+  await settingsInteraction.evaluate(() => window.__settingsUiTest.changeIdentity(null));
+  await settingsInteraction.waitForFunction(() => !Array.from(document.querySelectorAll("input")).some((input) => input.value === "Private unsaved policy draft"));
+  await settingsInteraction.evaluate(() => window.__settingsUiTest.changeIdentity("synthetic-next-identity"));
+  await settingsInteraction.locator(".lorca-header-status").click();
+  await waitForSettings(settingsInteraction);
+  await chooseSettingsPage(settingsInteraction, "自动审批");
+  assert.equal(await ruleFields.first().getByRole("textbox", { name: /备注/ }).inputValue(), "Changed by another client", "Identity loss and replacement clear private policy drafts");
+  assert.equal(await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).count(), 0);
   assert.deepEqual(
     failures,
     [],

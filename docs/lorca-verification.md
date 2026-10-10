@@ -1,14 +1,37 @@
 # dots client verification
 
-Verified on 2026-10-09. This is an experimental client, not a packaged release.
+Verified on 2026-10-10. This is an experimental client, not a packaged release.
 
 ## Editable settings follow-up
 
-The controlled settings implementation passes 177 local deterministic tests, TypeScript, production build and lint. Earlier Electron smoke runs checked renderer sandbox preferences only: Playwright on Linux implicitly added `--no-sandbox`, so those runs did not establish process-level sandboxing. The new smoke explicitly requests `chromiumSandbox: true`, rejects a `no-sandbox` application switch and checks Linux secure-renderer kernel seccomp/no-new-privileges state; its CI result must pass before claiming that stronger verification. Production BrowserWindow sandbox configuration was not relaxed. Coverage includes source-fenced isolated credential windows, secret preservation, stale revision/account/connection failures, exact native confirmation, full-rule policy review, MCP whole-file caveats, readback races, cancellation, TTY-only CLI writes and unknown-outcome no replay. The extended real-browser/Electron smoke scripts are part of the same branch; the previously linked green run below predates these edits, so do not treat it as verification of the new write paths. Current CI results are recorded in the PR checks.
+The controlled settings implementation passes **178 deterministic tests**, TypeScript, production build and lint. Strict browser and Electron integration verification passed on [`f86e76e`](https://github.com/charlzyx/bb/commit/f86e76e2d3913e46e3ffa0de900b52fbfb74092b) in [CI run 38009952957](https://github.com/charlzyx/bb/actions/runs/38009952957); all verification steps ran, none were skipped.
+
+Earlier Electron runs checked renderer sandbox preferences only: Playwright on Linux implicitly added `--no-sandbox`, so those historical runs did not establish process-level sandboxing. The current smoke explicitly sets `chromiumSandbox: true`, checks the real application command line contains no `no-sandbox` switch, and checks the secure renderer's Linux kernel `Seccomp: 2` and `NoNewPrivs: 1` state. It also attempts to open DevTools and verifies that they remain closed. These checks establish this Linux fixture run, not an exhaustive sandbox audit or verification on macOS. Production security preferences were never relaxed.
+
+Coverage includes source-fenced isolated credential windows, no existing-secret echo, credential replacement only into a synthetic daemon, secret-free main renderer and confirmation details, stale revision/account/connection failures, exact native confirmation, full-rule policy review, MCP whole-file caveats, readback races, cancellation, TTY-only CLI writes and unknown-outcome no replay. The latest upstream target is `egoist/lorca@b975eb6056b01bf7f2058b5c5e9ffc22e9930eea`; new shared-link fragment keys and playbooks remain excluded from renderer projection, with regression coverage.
+
+The run produced 25 synthetic PNGs in artifact `11652917905` (7-day retention). Desktop model/Runner configuration and confirmation, MCP, automatic approval and its final confirmation controls, connection settings, and the dedicated secure provider window were actually viewed after download. Chinese typography was readable and no blocking overlap was observed. No PNGs were added to the repository; these are fixture screenshots, not user data or live provider verification.
 
 This phase does not use the user's Mac or live service. macOS native confirmation and production-provider compatibility remain to be tested later with the user. Credentials are entered only into a dedicated local sandboxed window with an ephemeral session; no existing key/raw MCP config is returned to the main renderer. Unknown default provider destinations require an explicit URL. MCP file-writing changes may apply unrelated pending on-disk edits, as documented in the editable-settings contract.
 
-## Passed
+## PC audit follow-up
+
+The subsequent local audit passes **212 tests**, types/build and lint, plus five fork-scope guard tests. It fixes:
+
+- Successful send acknowledgements no longer inherit a concurrent stop/history error.
+- Discarded attachments release opaque native handles without deleting files; same-endpoint Save preserves valid selections, and active sends retain their handles until completion.
+- Late history responses/errors cannot unlock or overwrite a newer pagination request.
+- Exact-tool approval rules clearly label text as a note, not a condition; duplicate exact tools are rejected. Unknown outcomes retain the policy draft and lock resubmission, with explicit readback/adoption and account-bound cleanup.
+- Unknown devices with empty descriptions no longer disable every settings editor. Existing MCP entries can be disabled without interpreting their saved URL as new credentials; reconnect explicitly rebuilds the cached connection with native confirmation.
+- Provider disconnect descriptions match account-wide scope and possible token revocation.
+
+The browser smoke includes interruption, conflict, unknown-readback and successful-send/concurrent-stop regressions. The `f86e76e` screenshot run above predates these audit changes; use the exact later commit's PR checks for its browser/Electron result, not that historical green run.
+
+Fork CI now runs the actual version checks on standard Ubuntu and uses a failing scope guard for code/lockfile/Turbo changes outside this focused integration. Dedicated Lorca CI still runs build/types/tests/lint and strict-sandbox browser/Electron fixtures. This is not the upstream BB full-stack or mobile matrix. See [CI scope](../.github/workflows/lorca-ci.md).
+
+## Earlier baseline verification
+
+The following records describe earlier milestones, not the latest test count above.
 
 - Focused frozen-lock dependency installation, including a fresh offline reinstall
 - Turbo test, TypeScript and production renderer build: **103 tests passed**
