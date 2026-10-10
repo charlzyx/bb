@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
@@ -73,6 +74,42 @@ test('expired trusted input closes the secure window while a forged frame cannot
   const rejection = assert.rejects(pending, /账号或连接已变化/);
   assert.throws(() => ctx.invoke('submit', child, { apiKey: 'must-not-send' }), /账号或连接已变化/);
   await rejection; assert.equal(child.destroyed, true); assert.equal(child.webContents.session.clears, 2);
+});
+
+test('secure editor permits only its fixed Ghost image without directory, query, or network access', async () => {
+  const ctx = setup();
+  const pending = ctx.manager.edit(spec, () => {}, (value: unknown) => value);
+  const child = ctx.child();
+  try {
+    const pageURL = child.webContents.mainFrame.url;
+    const html = await readFile(new URL(pageURL), 'utf8');
+    assert.match(html, /<img class="brand-icon" src="\.\.\/public\/app-icon\/64\.png" alt="" width="32" height="32">/);
+    const policy = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];
+    assert.equal(policy, "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self'; font-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'");
+    const iconURL = new URL('../public/app-icon/64.png', pageURL).href;
+    const icon = await readFile(new URL(iconURL));
+    assert.deepEqual([...icon.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.equal(icon.readUInt32BE(16), 64); assert.equal(icon.readUInt32BE(20), 64);
+    const allowed = [pageURL, new URL('secure-editor.js', pageURL).href, new URL('secure-editor.css', pageURL).href, iconURL];
+    const denied = [
+      new URL('../public/app-icon/32.png', pageURL).href,
+      new URL('../public/dots.png', pageURL).href,
+      new URL('../public/app-icon/', pageURL).href,
+      new URL('../artwork/ghost-original.png', pageURL).href,
+      `${iconURL}?token=synthetic`, `${iconURL}#synthetic`, `${iconURL}/private`,
+      'file:///tmp/private-token', 'https://synthetic.example.invalid/64.png', 'data:image/png;base64,AA==',
+    ];
+    for (const url of [...allowed, ...denied]) {
+      let cancelled: boolean | undefined;
+      child.webContents.session.request?.({ url }, value => { cancelled = value.cancel; });
+      assert.equal(cancelled, !allowed.includes(url), url);
+    }
+    assert.deepEqual(ctx.invoke('init', child), spec);
+    assert.deepEqual([...ctx.handlers.keys()].sort(), ['lorca:secure-settings-cancel', 'lorca:secure-settings-init', 'lorca:secure-settings-submit']);
+  } finally {
+    ctx.invoke('cancel', child);
+    assert.equal(await pending, null);
+  }
 });
 
 test('secure editor validates without exposing error text and closes on account change or explicit cancellation', async () => {

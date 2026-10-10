@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { installSettingsFixture } from "./settings-ui-fixture.mjs";
 import { installAvatarFixture } from "./avatar-ui-fixture.mjs";
@@ -39,6 +39,7 @@ const captureErrors = (page) => {
 };
 async function screenshot(page, name) {
   await page.evaluate(() => document.fonts.ready);
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('img[data-app-mark="ghost"]')).every((image) => image.complete && image.naturalWidth > 0));
   await page.screenshot({
     path: `${output}/${name}.png`,
     animations: "disabled",
@@ -97,21 +98,27 @@ try {
   assert.equal(await desktop.locator("html").getAttribute("lang"), "zh-CN");
   assert.equal(await desktop.title(), "dots");
   assert.equal(await desktop.locator(".lorca-brand").innerText(), "dots");
-  assert.equal(await desktop.locator(".lorca-brand svg circle").count(), 4);
+  assert.equal(await desktop.locator('.lorca-brand img[data-app-mark="ghost"]').count(), 1);
+  assert.equal(await desktop.locator(".lorca-brand svg").count(), 0);
+  await desktop.waitForFunction(() => document.querySelector('.lorca-brand img[data-app-mark="ghost"]')?.naturalWidth === 64);
   const faviconUrl = await desktop
     .locator('link[rel="icon"]')
     .evaluate(
       (element) => new URL(element.getAttribute("href"), document.baseURI).href,
     );
-  assert.equal(new URL(faviconUrl).pathname.endsWith("/dots.svg"), true);
+  assert.equal(new URL(faviconUrl).pathname.endsWith("/app-icon/32.png"), true);
   const faviconResponse = await desktop.request.get(faviconUrl);
   assert.equal(
     faviconResponse.ok(),
     true,
     "The dots favicon asset is available",
   );
-  assert.match(faviconResponse.headers()["content-type"], /image\/svg\+xml/);
-  assert.equal((await faviconResponse.text()).match(/<circle\b/g)?.length, 4);
+  assert.match(faviconResponse.headers()["content-type"], /image\/png/);
+  const faviconBytes = await faviconResponse.body();
+  assert.deepEqual(faviconBytes.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  assert.equal(faviconBytes.readUInt32BE(16), 32);
+  assert.equal(faviconBytes.readUInt32BE(20), 32);
+  assert.deepEqual(faviconBytes, readFileSync(new URL("../public/app-icon/32.png", import.meta.url)), "Favicon is the selected Ghost artwork asset");
   await desktop.getByRole("searchbox", { name: "搜索对话" }).waitFor();
   await desktop
     .getByRole("button", { name: "发送消息", exact: true })
@@ -850,7 +857,8 @@ try {
   await chooseChat(avatars, "合成头像 · 单聊");
   assert.equal(await avatarPicker.isDisabled(), true, "Existing-chat bot selection remains disabled");
   await avatars.waitForFunction(() => Array.from(document.querySelectorAll('[data-avatar-bot="avatar-photo"] img')).every((image) => image.complete && image.naturalWidth === 64) && document.querySelectorAll('[data-avatar-bot="avatar-photo"] img').length >= 3);
-  assert.equal(await avatars.locator(".lorca-brand .lorca-brand-logo svg").count(), 1, "Application dots mark remains separate from bot avatars");
+  assert.equal(await avatars.locator('.lorca-brand .lorca-brand-logo img[data-app-mark="ghost"]').count(), 1, "Application Ghost mark remains separate from bot avatars");
+  assert.equal(await avatars.locator('.lorca-avatar img[data-app-mark="ghost"]').count(), 0, "Actual bot and user avatars never inherit the application Ghost mark");
   assert.equal(await avatars.locator(".lorca-user-message .lorca-avatar-person").count(), 1);
   assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').count(), 1);
   assert.equal(await avatars.evaluate(() => window.__avatarUiTest.calls.filter((id) => id === "avatar-photo").length), 1, "Sidebar, header and transcript deduplicate avatar reads");

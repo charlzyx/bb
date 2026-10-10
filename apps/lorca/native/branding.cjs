@@ -14,7 +14,7 @@ function configureApplicationBranding(app, nativeImage, platform = process.platf
   app.setAboutPanelOptions({
     applicationName: APP_NAME,
     applicationVersion: APP_VERSION,
-    copyright: '界面基于 BB，MIT © 2026 Michael Yong',
+    copyright: '界面基于 BB，MIT © 2026 Michael Yong；App icon: Ghost / ipaslogo.com',
     ...(platform === 'darwin' ? { version: APP_VERSION } : { iconPath: ICON_PATH }),
   });
   if (platform === 'darwin' && app.dock && !icon.isEmpty()) app.dock.setIcon(icon);

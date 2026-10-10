@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Markdown, safeMarkdownUrl } from "./markdown";
 import { TranscriptItem } from "./Transcript";
+import { DotsMark } from "./DotsMark";
 import { Avatar, ConversationAvatars, safeAvatarImage } from "./Avatar";
 import { LorcaShell } from "./LorcaShell";
 import { Settings, validateEndpoint } from "./Settings";
@@ -466,7 +467,9 @@ test("dots branding and Chinese chrome preserve original conversation and bot na
   assert.match(html, /Lorca 原始对话/);
   assert.match(html, /BB Bot 名称/);
   assert.match(html, /value="original-bot-id"/);
-  assert.match(html, /<circle cx="10" cy="10" r="3.5"><\/circle>/);
+  assert.match(html, /data-app-mark="ghost" src="\.\/app-icon\/64\.png"/);
+  assert.match(html, /data-app-mark="ghost" src="\.\/app-icon\/128\.png"/);
+  assert.doesNotMatch(html, /dots\.svg|<circle cx="10" cy="10" r="3.5"/);
   assert.doesNotMatch(html, /bb-logo|BB 界面|Lorca 工作区|给 Lorca 发消息/);
   const fallback = renderMessage({
     kind: "message",
@@ -631,7 +634,7 @@ test("Message avatars preserve bot identity and give user messages a person fall
   assert.match(html, /data-avatar-bot="named-bot"/);
   assert.match(html, /data-icon="ComputerTerminal01"/);
   assert.match(html, /Named Bot/);
-  assert.doesNotMatch(html, /<circle cx="10" cy="10" r="3.5"/);
+  assert.doesNotMatch(html, /data-app-mark="ghost"|<circle cx="10" cy="10" r="3.5"/);
   const user = renderMessage({ kind: "message", id: "user", role: "user", text: "Synthetic message" });
   assert.match(user, /lorca-avatar-person/);
   assert.doesNotMatch(user, /<img/);
@@ -665,4 +668,16 @@ test("Composer bot selector shows the selected avatar and retains native labels 
   const noImage = picker({ ...state, agents: state.agents.map((agent) => ({ ...agent, appearance: agent.appearance && { ...agent.appearance, image: undefined } })) });
   assert.match(noImage, /data-icon="ComputerTerminal01"/);
   assert.doesNotMatch(noImage, /<img/);
+});
+
+
+test("Application marks use the unchanged Ghost PNG assets without SVG or color treatment", () => {
+  for (const large of [false, true]) {
+    const html = renderToStaticMarkup(<DotsMark large={large} />);
+    const size = large ? 128 : 64;
+    assert.ok(html.includes(`src="./app-icon/${size}.png"`));
+    assert.ok(html.includes(`width="${size}" height="${size}"`));
+    assert.match(html, /data-app-mark="ghost"/);
+    assert.doesNotMatch(html, /<svg|<circle|filter=|style=/);
+  }
 });

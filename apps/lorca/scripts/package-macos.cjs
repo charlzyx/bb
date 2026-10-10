@@ -1,7 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { renderIcon } = require('./render-icon.cjs');
+const ICON_SIZES = [16, 32, 64, 128, 256, 512, 1024];
+const ICON_NOTICES = ['NOTICE.md', 'LICENSE.figma-squircle', 'icon-manifest.json'];
 
 function icnsFromPngs(images) {
   const kinds = new Map([[16, 'icp4'], [32, 'icp5'], [64, 'icp6'], [128, 'ic07'], [256, 'ic08'], [512, 'ic09'], [1024, 'ic10']]);
@@ -21,16 +22,26 @@ function icnsFromPngs(images) {
   return Buffer.concat([header, ...chunks]);
 }
 function icnsFromPng(png) { return icnsFromPngs([png]); }
-function applicationIcon(svg) { return icnsFromPngs([16, 32, 64, 128, 256, 512, 1024].map(size => renderIcon(svg, size))); }
+function applicationIcon(sourceApp) {
+  return icnsFromPngs(ICON_SIZES.map(size => {
+    const relative = size === 256 ? 'public/dots.png' : `public/app-icon/${size}.png`;
+    const file = path.join(sourceApp, relative);
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) throw new Error(`缺少图标输入：${relative}`);
+    const bytes = fs.readFileSync(file);
+    if (bytes.length < 33 || bytes.toString('ascii', 12, 16) !== 'IHDR' || bytes.readUInt32BE(16) !== size || bytes.readUInt32BE(20) !== size) throw new Error(`图标尺寸不匹配：${relative}`);
+    return bytes;
+  }));
+}
 function bundleMetadata(version) {
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('产品版本必须为三个数字段');
   return { CFBundleName: 'dots', CFBundleDisplayName: 'dots', CFBundleIdentifier: 'local.dots.desktop.dev', CFBundleExecutable: 'dots', CFBundleIconFile: 'dots.icns', CFBundleShortVersionString: version, CFBundleVersion: version };
 }
 function assemble({ sourceApp, electronApp, wsDirectory, output, run }) {
   if (fs.existsSync(output)) throw new Error(`目标已存在，请使用新的输出目录：${output}`);
-  for (const file of ['dist/index.html', 'native/main.cjs', 'public/dots.png', 'public/dots.svg', 'package.json']) {
+  for (const file of ['dist/index.html', 'native/main.cjs', 'package.json', ...ICON_NOTICES.map(file => `artwork/${file}`)]) {
     if (!fs.statSync(path.join(sourceApp, file)).isFile()) throw new Error(`缺少构建输入：${file}`);
   }
+  const icon = applicationIcon(sourceApp);
   const metadata = bundleMetadata(JSON.parse(fs.readFileSync(path.join(sourceApp, 'package.json'), 'utf8')).version);
   if (!fs.statSync(path.join(electronApp, 'Contents/MacOS/Electron')).isFile()) throw new Error('需要当前 Mac 架构的 Electron.app');
   if (JSON.parse(fs.readFileSync(path.join(wsDirectory, 'package.json'), 'utf8')).name !== 'ws') throw new Error('WebSocket 依赖无效');
@@ -43,10 +54,12 @@ function assemble({ sourceApp, electronApp, wsDirectory, output, run }) {
   fs.mkdirSync(app);
   for (const directory of ['native', 'dist', 'public']) fs.cpSync(path.join(sourceApp, directory), path.join(app, directory), { recursive: true, dereference: true });
   fs.copyFileSync(path.resolve(sourceApp, '../../LICENSE'), path.join(app, 'LICENSE'));
+  fs.mkdirSync(path.join(app, 'artwork'));
+  for (const file of ICON_NOTICES) fs.copyFileSync(path.join(sourceApp, 'artwork', file), path.join(app, 'artwork', file));
   fs.writeFileSync(path.join(app, 'package.json'), JSON.stringify({ name: 'dots', productName: 'dots', version: metadata.CFBundleVersion, main: 'native/main.cjs', private: true }));
   fs.cpSync(wsDirectory, path.join(app, 'node_modules/ws'), { recursive: true, dereference: true });
   fs.rmSync(path.join(resources, 'default_app.asar'), { force: true });
-  fs.writeFileSync(path.join(resources, 'dots.icns'), applicationIcon(fs.readFileSync(path.join(sourceApp, 'public/dots.svg'), 'utf8')));
+  fs.writeFileSync(path.join(resources, 'dots.icns'), icon);
   fs.renameSync(path.join(contents, 'MacOS/Electron'), path.join(contents, 'MacOS/dots'));
   const plist = path.join(contents, 'Info.plist');
   for (const [key, value] of Object.entries(metadata)) run('/usr/bin/plutil', ['-replace', key, '-string', value, plist]);

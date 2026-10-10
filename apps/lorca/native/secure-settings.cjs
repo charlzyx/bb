@@ -7,6 +7,7 @@ function createSecureSettingsEditor({ BrowserWindow, ipcMain, bridge, getParent,
   const page = path.join(__dirname, 'secure-editor.html');
   const trustedURL = pathToFileURL(page).href;
   const resources = new Set(['secure-editor.html', 'secure-editor.js', 'secure-editor.css'].map(name => pathToFileURL(path.join(__dirname, name)).href));
+  resources.add(pathToFileURL(path.join(__dirname, '..', 'public', 'app-icon', '64.png')).href);
   let active = null;
   const trusted = event => {
     if (!active || active.window.isDestroyed() || !isTrustedSender(event, active.window.webContents, trustedURL)) throw new Error('安全设置请求来源不可信');

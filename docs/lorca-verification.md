@@ -2,6 +2,12 @@
 
 Verified on 2026-10-10. This is an experimental client, not a packaged release.
 
+## Selected Ghost app icon
+
+The selected A / Ghost artwork replaces the native app, About and Dock icon. The sidebar, empty state, favicon and secure-settings brand use the same approved Ghost artwork; bot/user avatar semantics are unchanged. The original and seven derived sizes have recorded SHA-256 and decoded-pixel hashes; the 1024- and 32-pixel outputs match the selected preview pixel-for-pixel. The retained mask is MIT figma-squircle 1.1.0 with the preview's same parameters, described as macOS-style continuous corners rather than an Apple template. See [source, permission and reproduction](../apps/lorca/artwork/NOTICE.md).
+
+The local aggregate passes **285 tests**, TypeScript, production build and lint. Independent checks cover PNG CRC/filter decoding, pixel/file manifests, all seven ICNS sizes, input validation before bundle creation, no overwrite, license inclusion, and exclusion of the original artwork and optional Sharp toolchain from the runtime bundle. The generator's read-only `--check` passed using the recorded Sharp version. Cloud checks do not claim that macOS native appearance has already been accepted; use the rebuilt bundle for that separate check.
+
 ## Avatar and native icon follow-up
 
 The avatar/icon changes on [`0d6a9f7`](https://github.com/charlzyx/bb/commit/0d6a9f7abfb4f12f681ad8ec273a5f9a9fe32b12) pass **281 deterministic tests**, TypeScript, production build and lint locally and in [CI run 38019373604](https://github.com/charlzyx/bb/actions/runs/38019373604). Fork scope and both version-lockstep runs also passed. Cached images are tested with synthetic raster data only: no remote image URL, file-path IPC or `files.path` request is added. Native reads are bound to the known bot, opaque expected avatar version, account and connection; symlinks, hardlinks, unsupported/animated raster inputs, excessive bytes/pixels and stale reads are rejected. The main process re-encodes accepted images; the renderer has its own 64-entry/8 MiB image budget and four-request limit. A failed image falls back and may retry only after a bounded explicit refresh.

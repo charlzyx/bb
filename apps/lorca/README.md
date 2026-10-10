@@ -72,7 +72,7 @@ The pinned daemon has one direct conversation per bot. “开始聊天” opens 
 
 Bot avatars are derived from the actual bot roster; group conversations combine bot appearances and bot messages resolve their author. The pinned protocol has no separate user avatar, so user messages use a person fallback. A dedicated main-process capability reads only an observed bot's already-cached image beneath the selected Lorca home, validates its path/format/byte and pixel limits, and re-encodes a small PNG. It exposes no native path, attachment key or arbitrary filesystem reader. Missing/unsupported resources fall back without failing chat; avatar display never registers a device or initiates a relay download. Select a custom daemon home with `LORCA_HOME` at launch.
 
-The owned four-dot macOS app icon uses an approximately 80.5% optical footprint and seven ICNS resolutions from 16 to 1024 pixels. Rebuild the isolated development bundle to update its icon; an old bundle is unchanged.
+The selected Ghost artwork supplies the native app/About/Dock icon, using the approved macOS-style continuous-corner mask and seven ICNS resolutions from 16 to 1024 pixels. Its composition and colors are preserved. The sidebar, empty state, favicon and secure-settings brand use the same artwork; actual bot/user avatars are unchanged. See [artwork attribution and reproduction](artwork/NOTICE.md). Rebuild the isolated development bundle to update its icon; an old bundle is unchanged.
 
 ## Scope
 

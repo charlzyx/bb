@@ -5,13 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
-import { inflateSync } from 'node:zlib';
+import { iconSizes, iconPath, decodeIcon, checkOpticalBounds, sha256 } from './icon-assets';
 const require = createRequire(import.meta.url);
 const { applicationMenuTemplate } = require('../native/menu.cjs');
 const { helpText } = require('../native/cli.cjs');
 const { RPC_METHODS } = require('../native/bridge.cjs');
 const { APP_NAME, APP_VERSION, ICON_PATH, configureApplicationName, configureApplicationBranding } = require('../native/branding.cjs');
-const { renderIcon } = require('../scripts/render-icon.cjs');
 
 test('Chinese native menus preserve standard editing roles without debug or external actions', () => {
   for (const platform of ['darwin', 'linux', 'win32']) {
@@ -60,52 +59,43 @@ test('dots app naming keeps existing launch-specific data, session and log direc
   } finally { await rm(temporary, { recursive: true, force: true }); }
 });
 
-test('dots icon is a reproducible nonempty PNG derived from the owned vector mark', async () => {
-  const svg = await readFile(new URL('../public/dots.svg', import.meta.url), 'utf8');
-  const actual = await readFile(ICON_PATH);
-  function decodeIcon(bytes: Buffer) {
-    assert.deepEqual(bytes.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-    const data: Buffer[] = [];
-    let width = 0;
-    let height = 0;
-    let ended = false;
-    for (let offset = 8; offset < bytes.length;) {
-      assert.ok(offset + 12 <= bytes.length);
-      const length = bytes.readUInt32BE(offset);
-      assert.ok(offset + length + 12 <= bytes.length);
-      const kind = bytes.toString('ascii', offset + 4, offset + 8);
-      if (kind === 'IHDR') {
-        assert.equal(offset, 8); assert.equal(length, 13);
-        width = bytes.readUInt32BE(offset + 8); height = bytes.readUInt32BE(offset + 12);
-        assert.equal(width, 256); assert.equal(height, 256);
-        assert.deepEqual([...bytes.subarray(offset + 16, offset + 21)], [8, 6, 0, 0, 0]);
-      } else if (kind === 'IDAT') {
-        assert.ok(width > 0);
-        data.push(bytes.subarray(offset + 8, offset + 8 + length));
-      } else {
-        assert.equal(kind, 'IEND'); assert.equal(length, 0);
-        assert.equal(offset + 12, bytes.length); ended = true;
-      }
-      offset += length + 12;
-    }
-    assert.ok(ended); assert.ok(data.length > 0);
-    const rows = inflateSync(Buffer.concat(data), { maxOutputLength: (width * 4 + 1) * height });
-    assert.equal(rows.length, (width * 4 + 1) * height);
-    for (let row = 0; row < height; row++) assert.equal(rows[row * (width * 4 + 1)], 0);
-    return { width, height, rows };
+test('native icon assets match the selected Ghost original, mask provenance and decoded pixel manifest', async () => {
+  const root = new URL('../', import.meta.url);
+  const manifest = JSON.parse(await readFile(new URL('artwork/icon-manifest.json', root), 'utf8'));
+  assert.equal(manifest.artwork, 'Ghost — ipaslogo.com');
+  assert.equal(manifest.original, 'artwork/ghost-original.png');
+  assert.equal(manifest.mask, 'artwork/macos-style-mask.svg');
+  const original = await readFile(new URL(manifest.original, root));
+  assert.equal(sha256(original), '4ab06f6c35f5ab49f1c0c6b406f225b3ded473dd1f1b1679e90a719a0a27cac3');
+  assert.equal(sha256(original), manifest.originalSha256);
+  assert.equal(original.readUInt32BE(16), 1024); assert.equal(original.readUInt32BE(20), 1024);
+  const mask = await readFile(new URL(manifest.mask, root));
+  assert.equal(sha256(mask), manifest.maskSha256);
+  assert.match(mask.toString(), /viewBox="0 0 1024 1024"/); assert.match(mask.toString(), /translate\(100 100\)/);
+  assert.deepEqual(manifest.maskGenerator, { name: 'figma-squircle', version: '1.1.0', width: 824, height: 824, cornerRadius: 184, cornerSmoothing: 0.6, preserveSmoothing: true, inset: 100, canvas: 1024 });
+  const tools = JSON.parse(await readFile(new URL('icon-tools/package.json', root), 'utf8'));
+  assert.equal(manifest.renderer.sharp, '0.35.4'); assert.equal(tools.dependencies.sharp, manifest.renderer.sharp);
+  for (const name of ['vips', 'rsvg']) assert.match(manifest.renderer[name], /^\d+(?:\.\d+){1,3}$/);
+  assert.deepEqual(manifest.images.map((item: { size: number }) => item.size), iconSizes);
+  for (const item of manifest.images) {
+    assert.equal(item.path, iconPath(item.size));
+    const bytes = await readFile(new URL(item.path, root)); const decoded = decodeIcon(bytes);
+    assert.equal(decoded.width, item.size); assert.equal(decoded.height, item.size);
+    assert.equal(sha256(bytes), item.sha256); assert.equal(sha256(decoded.pixels), item.pixelSha256);
   }
-  const decoded = decodeIcon(actual);
-  assert.deepEqual(decodeIcon(renderIcon(svg)), decoded);
-  const { rows, width: size } = decoded;
-  const pixel = (x: number, y: number) => [...rows.subarray(y * (size * 4 + 1) + 1 + x * 4, y * (size * 4 + 1) + 5 + x * 4)];
-  for (const [x, y] of [[80, 80], [176, 80], [80, 176], [176, 176]]) assert.deepEqual(pixel(x, y), [36, 36, 34, 255]);
-  assert.deepEqual(pixel(128, 128), [243, 243, 239, 255]);
-  assert.equal(pixel(0, 0)[3], 0);
-  assert.equal(pixel(24, 128)[3], 0);
-  assert.equal(pixel(25, 128)[3], 255);
-  assert.equal(pixel(230, 128)[3], 255);
-  assert.equal(pixel(231, 128)[3], 0);
-  assert.throws(() => renderIcon('<svg/>'));
+  const actual = await readFile(ICON_PATH); const decoded = decodeIcon(actual);
+  assert.equal(decoded.width, 256); checkOpticalBounds(256, decoded.pixels);
+  const colors = new Set<number>();
+  for (let pixel = 0; pixel < decoded.pixels.length; pixel += 4) if (decoded.pixels[pixel + 3] > 127) colors.add(decoded.pixels.readUIntBE(pixel, 3));
+  assert(colors.size > 1000, 'The selected ceramic artwork must retain its tonal detail');
+  const license = await readFile(new URL('artwork/LICENSE.figma-squircle', root), 'utf8');
+  assert.match(license, /MIT License/); assert.match(license, /Copyright \(c\) 2021 Tien Pham/);
+  assert.match(license, /Permission is hereby granted, free of charge/); assert.match(license, /THE SOFTWARE IS PROVIDED "AS IS"/);
+  const notice = await readFile(new URL('artwork/NOTICE.md', root), 'utf8');
+  assert.match(notice, /https:\/\/cdn\.ipaslogo\.com\/logos\/4ab06f6c35f5ab49-ghost-7\.png/);
+  assert.match(notice, /commercial use/); assert.match(notice, /not claimed to be MIT-licensed/);
+  assert.match(notice, /figma-squircle 1\.1\.0/); assert.match(notice, /LICENSE\.figma-squircle/);
+  assert.match(notice, /not an Apple template/);
 });
 
 test('dots About uses the product version, retains attribution and follows platform icon support', () => {
@@ -123,6 +113,7 @@ test('dots About uses the product version, retains attribution and follows platf
     assert.equal(about.version, platform === 'darwin' ? APP_VERSION : undefined);
     assert.equal(about.iconPath, platform === 'darwin' ? undefined : ICON_PATH);
     assert.match(about.copyright, /BB.*MIT.*2026 Michael Yong/);
+    assert.match(about.copyright, /App icon: Ghost \/ ipaslogo\.com/);
     assert.equal(dockIcon, platform === 'darwin' && !empty ? icon : undefined);
   }
 });

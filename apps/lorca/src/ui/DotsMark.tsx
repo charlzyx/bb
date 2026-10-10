@@ -1,15 +1,19 @@
 export function DotsMark({ large = false }: { large?: boolean }) {
+  const size = large ? 128 : 64;
+  const base = import.meta.env?.BASE_URL ?? "./";
   return (
     <span
       className={`lorca-assistant-mark${large ? " lorca-assistant-mark-large" : ""}`}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 32 32" fill="currentColor">
-        <circle cx="10" cy="10" r="3.5" />
-        <circle cx="22" cy="10" r="3.5" />
-        <circle cx="10" cy="22" r="3.5" />
-        <circle cx="22" cy="22" r="3.5" />
-      </svg>
+      <img
+        data-app-mark="ghost"
+        src={`${base}app-icon/${size}.png`}
+        width={size}
+        height={size}
+        alt=""
+        draggable={false}
+      />
     </span>
   );
 }

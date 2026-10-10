@@ -1,0 +1,6 @@
+{
+  "name": "dots-icon-tools",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": { "sharp": "0.35.4" }
+}

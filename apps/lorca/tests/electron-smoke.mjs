@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 
 const require = createRequire(import.meta.url);
@@ -244,6 +244,17 @@ async function main() {
     securePage.setDefaultTimeout(15_000);
     await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).waitFor();
     assert.equal(await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).inputValue(), '');
+    const secureLogo = securePage.locator('.brand .brand-icon');
+    await secureLogo.waitFor({ state: 'visible' });
+    assert.deepEqual(await secureLogo.evaluate(async image => {
+      await image.decode();
+      return { src: image.currentSrc, width: image.naturalWidth, height: image.naturalHeight, displayWidth: image.width, displayHeight: image.height };
+    }), { src: pathToFileURL(path.join(appDirectory, 'public', 'app-icon', '64.png')).href, width: 64, height: 64, displayWidth: 32, displayHeight: 32 });
+    assert.equal(await securePage.evaluate(() => new Promise(resolve => {
+      const image = new Image();
+      image.onload = () => resolve(true); image.onerror = () => resolve(false);
+      image.src = '../public/dots.png';
+    })), false);
     const secureState = await securePage.evaluate(async () => ({
       processType: typeof window.process, requireType: typeof window.require, mainBridge: typeof window.lorca,
       keys: Object.keys(window.dotsSecureSettings).sort(), spec: await window.dotsSecureSettings.initialize(),
@@ -281,7 +292,7 @@ async function main() {
     assert.equal(JSON.stringify(confirmations).includes('SYNTHETIC_REPLACEMENT_KEY'), false);
     assert.equal((await page.content()).includes('SYNTHETIC_REPLACEMENT_KEY'), false);
     assert.deepEqual(failures, []);
-    process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, secureSettingsIsolated: true, nativeSettingsConfirmed: true, menusLocalized: true, dotsBranding: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
+    process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, secureSettingsIsolated: true, secureLogoLoaded: true, nativeSettingsConfirmed: true, menusLocalized: true, dotsBranding: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
   } catch (error) {
     process.stderr.write(`Electron smoke assertion: ${error.stack ?? error.message}\n`);
     throw error;

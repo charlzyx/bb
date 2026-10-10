@@ -437,9 +437,11 @@ select:focus-visible {
   justify-content: center;
   flex-shrink: 0;
 }
-:where(.lorca-app, .lorca-mobile-sidebar) .lorca-assistant-mark svg {
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-assistant-mark img {
+  display: block;
   width: 100%;
   height: 100%;
+  object-fit: contain;
 }
 :where(.lorca-app) .lorca-assistant-mark-large {
   width: 48px;
