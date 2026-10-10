@@ -47,13 +47,16 @@ export function ConnectionStatusSummary({ state }: { state: ConnectionState }) {
 
 export function ConnectionStatusMenu({ state, onSettings }: { state: ConnectionState; onSettings: () => void }) {
   const [open, setOpen] = useState(false);
+  const menuOpen = useRef(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef(true);
+  const changeOpen = (value: boolean) => {
+    menuOpen.current = value;
+    if (value) restoreFocus.current = true;
+    setOpen(value);
+  };
   return (
-    <DropdownMenu modal={false} open={open} onOpenChange={(value) => {
-      if (value) restoreFocus.current = true;
-      setOpen(value);
-    }}>
+    <DropdownMenu modal={false} open={open} onOpenChange={changeOpen}>
       <DropdownMenuTrigger asChild ref={trigger}>
         <button className="lorca-header-status" aria-label={zhCN.chat.viewConnectionStatus}>
           <ConnectionLabel state={state} />
@@ -71,7 +74,7 @@ export function ConnectionStatusMenu({ state, onSettings }: { state: ConnectionS
         onInteractOutside={() => { restoreFocus.current = false; }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          if (restoreFocus.current) trigger.current?.focus({ preventScroll: true });
+          if (!menuOpen.current && restoreFocus.current) trigger.current?.focus({ preventScroll: true });
         }}
         onKeyDown={(event) => {
           if (event.key !== "Tab") return;
@@ -82,14 +85,15 @@ export function ConnectionStatusMenu({ state, onSettings }: { state: ConnectionS
           const index = controls.findIndex((element) => element === trigger.current);
           const target = controls[index + (event.shiftKey ? -1 : 1)] ?? trigger.current;
           restoreFocus.current = false;
-          setOpen(false);
+          changeOpen(false);
           target?.focus({ preventScroll: true });
         }}
       >
         <ConnectionStatusSummary state={state} />
         <DropdownMenuItem className="lorca-connection-settings" onSelect={() => {
           restoreFocus.current = false;
-          setOpen(false);
+          changeOpen(false);
+          trigger.current?.focus({ preventScroll: true });
           onSettings();
         }}>
           <Icon name="Settings" />

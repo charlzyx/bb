@@ -498,6 +498,7 @@ try {
   await assertDesktopDensity(desktop);
   await desktop.getByRole("textbox", { name: "给 dots 发消息" }).focus();
   assert.notEqual(await desktop.locator(".lorca-composer").evaluate((element) => getComputedStyle(element).boxShadow), "none", "Borderless composer keeps a visible focus indicator");
+  const connectionRoundTrip = await desktop.evaluate(() => ({ draft: document.querySelector("#lorca-composer").value, scroll: document.querySelector(".lorca-scroll").scrollTop }));
   await openConnectionSettings(desktop);
   const savedEndpoint = await desktop
     .getByRole("textbox", { name: "WebSocket 连接地址" })
@@ -524,6 +525,16 @@ try {
     "Closing settings discards unsaved endpoint edits and validation errors",
   );
   assert.equal(await desktop.locator(".lorca-field-error").count(), 0);
+  for (let repeat = 0; repeat < 2; repeat++) {
+    await desktop.getByRole("button", { name: "关闭设置", exact: true }).click();
+    const after = await desktop.evaluate(() => ({ draft: document.querySelector("#lorca-composer").value, scroll: document.querySelector(".lorca-scroll").scrollTop }));
+    assert.deepEqual(after, connectionRoundTrip, "Repeated status-to-settings round trips preserve the draft and reading position");
+    await openConnectionSettings(desktop);
+    assert.equal(await desktop.getByRole("textbox", { name: "WebSocket 连接地址" }).inputValue(), savedEndpoint);
+  }
+  await desktop.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await desktop.waitForFunction(() => document.querySelector(".lorca-header-status") === document.activeElement);
+  await openConnectionSettings(desktop);
   await chooseSettingsPage(desktop, "通用");
   await desktop.getByRole("button", { name: "深色", exact: true }).click();
   await desktop.getByRole("button", { name: "关闭设置" }).click();
