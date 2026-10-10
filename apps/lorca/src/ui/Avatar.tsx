@@ -65,6 +65,11 @@ export function Avatar({ appearance, person = false, size = "sm" }: {
   const requestedSymbol = appearance?.symbolName ?? "";
   const symbol = person ? "UserRound" : Object.hasOwn(symbols, requestedSymbol) ? symbols[requestedSymbol] : undefined;
   const accent = appearance && accents.has(appearance.accent) ? appearance.accent : "indigo";
+  const fallback = (
+    <span className="lorca-avatar-fallback" data-avatar-fallback="">
+      {symbol ? <Icon name={symbol} /> : <Sparkles />}
+    </span>
+  );
   return (
     <span
       className={`lorca-avatar lorca-avatar-${size}${person ? " lorca-avatar-person" : ""}`}
@@ -73,8 +78,8 @@ export function Avatar({ appearance, person = false, size = "sm" }: {
       aria-hidden="true"
     >
       {source ? (
-        <AvatarImage key={source} source={source} fallback={symbol ? <Icon name={symbol} /> : <Sparkles />} />
-      ) : symbol ? <Icon name={symbol} /> : <Sparkles />}
+        <AvatarImage key={source} source={source} fallback={fallback} />
+      ) : fallback}
     </span>
   );
 }

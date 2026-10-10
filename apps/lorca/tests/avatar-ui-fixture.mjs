@@ -14,7 +14,7 @@ export function installAvatarFixture() {
     context.fillRect(26, 38, 12, 3);
     return canvas.toDataURL("image/png");
   };
-  const images = [drawAvatar("#4263c7"), drawAvatar("#8756b4")];
+  const images = [drawAvatar("#db62a3"), drawAvatar("#8756b4")];
   let imageIndex = 0;
   let identity = "synthetic-avatar-identity";
   const calls = [];
@@ -31,9 +31,13 @@ export function installAvatarFixture() {
       message("avatar-dm", "avatar-you", { kind: "you" }, "检查头像在对话中的呈现。"),
       message("avatar-dm", "avatar-response", { kind: "bot", bot_id: "avatar-photo" }, "这是一段合成头像测试对话，不连接真实服务。\n\n侧栏、会话标题和回复共用机器人图片；你的消息使用用户图标。"),
     ] },
-    { id: "avatar-group", kind: "group", title: "合成头像 · 群组", bot_ids: ["avatar-photo", "avatar-symbol"], created_at: epoch - 1, has_more: false, messages: [
+    { id: "avatar-group", kind: "group", title: "合成头像 · 群组", bot_ids: ["avatar-symbol", "avatar-photo"], created_at: epoch - 1, has_more: false, messages: [
       message("avatar-group", "avatar-group-photo", { kind: "bot", bot_id: "avatar-photo" }, "我使用合成图片头像。"),
-      message("avatar-group", "avatar-group-symbol", { kind: "bot", bot_id: "avatar-symbol" }, "我没有图片，使用设置中的终端符号与绿色主题。"),
+      message("avatar-group", "avatar-group-symbol", { kind: "bot", bot_id: "avatar-symbol" }, "我没有图片，保留终端符号，使用中性色默认样式。"),
+      message("avatar-group", "avatar-group-default", { kind: "bot", bot_id: "unreported-bot" }, "缺少机器人外观信息时，也使用中性色默认符号。"),
+    ] },
+    { id: "avatar-default", kind: "dm", title: "合成头像 · 默认外观", bot_ids: [], created_at: epoch - 3, has_more: false, messages: [
+      message("avatar-default", "avatar-default-response", { kind: "bot", bot_id: "unreported-bot" }, "没有提供外观信息的合成示例。"),
     ] },
     { id: "avatar-fallback", kind: "dm", title: "合成头像 · 缓存缺失", bot_ids: ["avatar-missing"], created_at: epoch - 2, has_more: false, messages: [
       message("avatar-fallback", "avatar-fallback-response", { kind: "bot", bot_id: "avatar-missing" }, "本地没有缓存图片时，保留地球图标，不请求远程头像。"),

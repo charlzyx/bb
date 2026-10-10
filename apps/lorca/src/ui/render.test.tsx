@@ -629,6 +629,23 @@ test("Conversation avatars use at most two ordered bot identities", () => {
   assert.doesNotMatch(html, /data-avatar-bot="third"/);
 });
 
+test("Default and configured symbols use the fallback surface while custom images remain separate", () => {
+  const appearance = { botId: "synthetic-pink-bot", name: "Original Pink Bot", symbolName: "terminal.fill", accent: "pink" };
+  const plain = renderToStaticMarkup(<Avatar />);
+  assert.match(plain, /data-avatar-fallback/);
+  assert.match(plain, /<svg/);
+  assert.doesNotMatch(plain, /<img|style=/);
+  const configured = renderToStaticMarkup(<Avatar appearance={appearance} />);
+  assert.match(configured, /data-accent="pink"/);
+  assert.match(configured, /data-avatar-fallback/);
+  assert.match(configured, /data-icon="ComputerTerminal01"/);
+  const image = "data:image/png;base64,iVBORw0KGgo=";
+  const custom = renderToStaticMarkup(<Avatar appearance={{ ...appearance, image }} />);
+  assert.match(custom, /src="data:image\/png;base64,iVBORw0KGgo="/);
+  assert.doesNotMatch(custom, /data-avatar-fallback|style=|filter/);
+  assert.equal(appearance.accent, "pink");
+});
+
 test("Message avatars preserve bot identity and give user messages a person fallback", () => {
   const html = renderMessage({ kind: "message", id: "avatar", role: "assistant", authorName: "Named Bot", authorAvatar: { botId: "named-bot", name: "Named Bot", symbolName: "terminal.fill", accent: "green" }, text: "Synthetic response" });
   assert.match(html, /data-avatar-bot="named-bot"/);

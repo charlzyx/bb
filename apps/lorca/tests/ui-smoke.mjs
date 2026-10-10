@@ -115,6 +115,61 @@ async function assertNativeSkipLink(page) {
   assert.ok(await link.evaluate((element) => element.getBoundingClientRect().bottom) <= 0, "Native skip link becomes completely hidden after blur");
 }
 
+async function assertNeutralAvatarFallbacks(page) {
+  const styles = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d");
+    const pixel = (color) => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data);
+    };
+    return Array.from(document.querySelectorAll(".lorca-avatar:not(.lorca-avatar-person) [data-avatar-fallback]")).map((element) => {
+      const style = getComputedStyle(element);
+      return { color: style.color, background: style.backgroundColor, image: style.backgroundImage, foregroundPixel: pixel(style.color), backgroundPixel: pixel(style.backgroundColor) };
+    });
+  });
+  assert.ok(styles.length >= 6, "Default, configured and missing-image fallbacks are represented across the UI");
+  for (const style of styles) {
+    assert.equal(style.color, styles[0].color, "All bot fallback symbols use one neutral foreground token");
+    assert.equal(style.background, styles[0].background, "All bot fallbacks use one neutral surface token");
+    assert.equal(style.image, "none", "Fallbacks do not retain colored gradients");
+    for (const pixel of [style.foregroundPixel, style.backgroundPixel]) {
+      assert.ok(Math.max(...pixel.slice(0, 3)) - Math.min(...pixel.slice(0, 3)) <= 16, "Fallback colors remain low-saturation in the current theme");
+    }
+  }
+  assert.ok(await page.locator(".lorca-chat-list [data-avatar-fallback]").count() > 0);
+  assert.ok(await page.locator(".lorca-message-author [data-avatar-fallback]").count() > 0);
+  assert.equal(await page.locator(".lorca-agent-picker [data-avatar-fallback]").count(), 1);
+  assert.equal(await page.locator(".lorca-header-title .lorca-avatar-stack [data-avatar-fallback]").count(), 1);
+  assert.equal(await page.locator('.lorca-message-author .lorca-avatar:not([data-avatar-bot]) [data-avatar-fallback]').count(), 1, "A missing appearance uses the same neutral default");
+  const photos = await page.locator('[data-avatar-bot="avatar-photo"] img').evaluateAll(async (images) => {
+    await Promise.all(images.map((image) => image.decode()));
+    return images.map((image) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 64;
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0);
+      const treatments = [];
+      for (let element = image; element; element = element.parentElement) {
+        const style = getComputedStyle(element);
+        treatments.push({ filter: style.filter, opacity: style.opacity, blend: style.mixBlendMode });
+      }
+      return { original: image.src === window.__avatarUiTest.images[0], pixel: Array.from(context.getImageData(8, 32, 1, 1).data), width: image.naturalWidth, height: image.naturalHeight, treatments };
+    });
+  });
+  assert.ok(photos.length >= 3, "The same custom pink PNG is visible in list, group header and message");
+  for (const photo of photos) {
+    assert.equal(photo.original, true, "Custom PNG bytes are not substituted");
+    assert.deepEqual(photo.pixel, [219, 98, 163, 255], "Custom pink image keeps its exact decoded pixels");
+    assert.equal(photo.width, 64);
+    assert.equal(photo.height, 64);
+    assert.ok(photo.treatments.every((style) => style.filter === "none" && style.opacity === "1" && style.blend === "normal"), "Neutral fallback styling never recolors or fades a custom image");
+  }
+}
+
 try {
   const sandboxSession = await browser.newBrowserCDPSession();
   try {
@@ -952,10 +1007,20 @@ try {
   assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-symbol"] [data-icon="ComputerTerminal01"]').count(), 1);
   assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').count(), 1);
   await screenshot(avatars, "desktop-avatars-group");
+  await assertNeutralAvatarFallbacks(avatars);
+  await screenshot(avatars, "desktop-avatar-fallbacks-dark");
+  await avatars.locator(".lorca-header-status").click();
+  await waitForSettings(avatars);
+  await chooseSettingsPage(avatars, "偏好设置");
+  await avatars.getByRole("button", { name: "浅色", exact: true }).click();
+  await avatars.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await assertNeutralAvatarFallbacks(avatars);
+  await screenshot(avatars, "desktop-avatar-fallbacks-light");
   await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').dispatchEvent("error");
   await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').waitFor({ state: "detached" });
   assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').count(), 0, "A failed image decode falls back locally");
   assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] svg').count(), 1);
+  assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] [data-avatar-fallback]').count(), 1, "Decode errors use the same neutral fallback surface");
   assert.equal(await avatars.locator(".lorca-composer-error").count(), 0);
   await avatars.evaluate(() => window.__avatarUiTest.replace());
   await avatars.waitForFunction(() => document.querySelectorAll('[data-avatar-bot="avatar-photo"] img').length >= 3 && Array.from(document.querySelectorAll('[data-avatar-bot="avatar-photo"] img')).every((image) => image.src === window.__avatarUiTest.images[1] && image.complete && image.naturalWidth === 64));
@@ -1062,6 +1127,8 @@ try {
           "Bot avatars in sidebar, header, messages and native composer selector",
           "Composer avatar follows keyboard selection and preserves disabled states",
           "Avatar replacement, identity clearing and no renderer remote-image fetches",
+          "Neutral default, symbol and missing-cache avatars across light/dark themes",
+          "Custom pink PNG source pixels and unfiltered display stay unchanged",
           "No console errors",
         ],
       },
