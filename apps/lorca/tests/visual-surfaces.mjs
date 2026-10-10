@@ -1,19 +1,24 @@
 import assert from "node:assert/strict";
 import { installFooterFixture } from "./footer-ui-fixture.mjs";
 
-async function paintedPixel(page, x, y) {
+async function paintedPixels(page, points) {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  const bytes = await page.screenshot({ clip: { x, y, width: 1, height: 1 }, animations: "disabled" });
-  return page.evaluate(async (png) => {
+  const bytes = await page.screenshot({ fullPage: false, scale: "css", animations: "disabled" });
+  return page.evaluate(async ({ png, points }) => {
     const image = new Image();
     image.src = png;
     await image.decode();
+    if (image.naturalWidth !== innerWidth || image.naturalHeight !== innerHeight) throw new Error("Full viewport PNG must map one screenshot pixel to one CSS pixel");
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 1;
     const context = canvas.getContext("2d");
-    context.drawImage(image, 0, 0);
-    return Array.from(context.getImageData(0, 0, 1, 1).data);
-  }, `data:image/png;base64,${bytes.toString("base64")}`);
+    return points.map(([x, y]) => {
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= image.naturalWidth || y >= image.naturalHeight) throw new Error("Pixel probe lies outside the complete viewport PNG");
+      context.clearRect(0, 0, 1, 1);
+      context.drawImage(image, x, y, 1, 1, 0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data);
+    });
+  }, { png: `data:image/png;base64,${bytes.toString("base64")}`, points });
 }
 
 async function scrollingFooterAvatar(page, reduced) {
@@ -51,19 +56,19 @@ async function scrollingFooterAvatar(page, reduced) {
   assert.equal(geometry.background === "none", reduced);
   assert.equal(geometry.pointerEvents, "none", "The blur material cannot intercept input");
   assert.ok(geometry.opacities.every((opacity) => opacity === "1"), "Footer text and all its ancestors remain fully opaque");
-  const actual = await paintedPixel(page, geometry.x, geometry.y);
-  const edge = await paintedPixel(page, geometry.edgeX, geometry.y);
+  const points = [[geometry.x, geometry.y], [geometry.edgeX, geometry.y]];
+  const [actual, edge] = await paintedPixels(page, points);
   let withoutAvatar;
   let edgeWithoutAvatar;
   await avatar.evaluate((image) => { image.style.visibility = "hidden"; });
   try {
-    withoutAvatar = await paintedPixel(page, geometry.x, geometry.y);
-    edgeWithoutAvatar = await paintedPixel(page, geometry.edgeX, geometry.y);
+    [withoutAvatar, edgeWithoutAvatar] = await paintedPixels(page, points);
   } finally {
     await avatar.evaluate((image) => { image.style.removeProperty("visibility"); });
   }
   const differences = actual.slice(0, 3).map((channel, index) => Math.abs(channel - withoutAvatar[index]));
   const edgeDifferences = edge.slice(0, 3).map((channel, index) => Math.abs(channel - edgeWithoutAvatar[index]));
+  console.log(JSON.stringify({ check: "footer-avatar-pixels", capture: "full-viewport-png", points, theme: await page.locator("html").getAttribute("class"), reduced, center: actual, centerWithoutAvatar: withoutAvatar, outsideEdge: edge, outsideEdgeWithoutAvatar: edgeWithoutAvatar }));
   if (reduced) {
     assert.ok(differences.every((difference) => difference <= 1), `Opaque reduced-transparency footer hides the same scrolled avatar: ${actual} / ${withoutAvatar}`);
     assert.ok(edgeDifferences.every((difference) => difference <= 1), "The opaque fallback also removes all colored blur beyond the avatar edge");
@@ -71,7 +76,6 @@ async function scrollingFooterAvatar(page, reduced) {
     assert.ok(Math.max(...differences) >= 4 && differences.reduce((sum, value) => sum + value, 0) >= 7, `Rendered footer pixels mix the real avatar into the material: ${actual} / ${withoutAvatar}`);
     assert.ok(Math.max(...edgeDifferences) >= 1 && edgeDifferences.reduce((sum, value) => sum + value, 0) >= 2, `Blur spreads avatar color 4px beyond its original edge instead of only reducing opacity: ${edge} / ${edgeWithoutAvatar}`);
   }
-  console.log(JSON.stringify({ check: "footer-avatar-pixels", theme: await page.locator("html").getAttribute("class"), reduced, center: actual, centerWithoutAvatar: withoutAvatar, outsideEdge: edge, outsideEdgeWithoutAvatar: edgeWithoutAvatar }));
 }
 
 async function footerLastRow(page) {
