@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { access, mkdir, mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, writeFile, readFile, realpath } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -70,7 +70,7 @@ async function main() {
   assert.ok(_electron?.launch, 'The configured Playwright module must provide _electron.launch');
   const executablePath = process.env.ELECTRON_PATH || require('electron');
   assert.equal(typeof executablePath, 'string', 'Resolve a normally installed Electron binary or set ELECTRON_PATH');
-  const temporary = await mkdtemp(path.join(os.tmpdir(), 'bb-lorca-electron-smoke-'));
+  const temporary = await realpath(await mkdtemp(path.join(os.tmpdir(), 'bb-lorca-electron-smoke-')));
   const home = path.join(temporary, 'lorca-fixture');
   const token = randomBytes(32).toString('base64url');
   const server = createServer((_request, response) => { response.writeHead(404); response.end(); });
@@ -145,9 +145,13 @@ async function main() {
     const env = {};
     for (const key of ['PATH', 'DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'SystemRoot']) if (process.env[key]) env[key] = process.env[key];
     Object.assign(env, { HOME: temporary, USERPROFILE: temporary, XDG_CONFIG_HOME: path.join(temporary, 'config'), XDG_CACHE_HOME: path.join(temporary, 'cache'), LORCA_HOME: home, LORCA_ENDPOINT: endpoint, LORCA_ALLOW_LEGACY: '0' });
-    const args = [path.join(appDirectory, 'native', 'main.cjs')];
+    const isolatedPaths = Object.fromEntries(['userData', 'sessionData', 'logs', 'crashDumps'].map(name => [name, path.join(temporary, name)]));
+    const entry = path.join(temporary, 'electron-fixture-main.cjs');
+    await writeFile(entry, `const { app } = require('electron');\nconst { mkdirSync } = require('node:fs');\nfor (const [name, directory] of Object.entries(${JSON.stringify(isolatedPaths)})) { mkdirSync(directory, { recursive: true }); app.setPath(name, directory); }\nrequire(${JSON.stringify(path.join(appDirectory, 'native/main.cjs'))});\n`);
+    const args = [entry];
     application = await _electron.launch({ executablePath, args, cwd: appDirectory, env, chromiumSandbox: true, timeout: 30_000 });
     assert.equal(await application.evaluate(({ app }) => app.commandLine.hasSwitch("no-sandbox")), false);
+    assert.deepEqual(await application.evaluate(({ app }) => Object.fromEntries(['userData', 'sessionData', 'logs', 'crashDumps'].map(name => [name, app.getPath(name)]))), isolatedPaths);
     const page = await application.firstWindow();
     page.setDefaultTimeout(15_000);
     await page.getByText('已连接', { exact: true }).first().waitFor();
@@ -168,7 +172,7 @@ async function main() {
     assert.equal(renderer.platform, process.platform);
     assert.equal(renderer.status.status, 'connected'); assert.equal(renderer.status.authMode, 'token');
     assert.equal(JSON.stringify(renderer).includes(token), false); assert.equal(JSON.stringify(renderer).includes(home), false);
-    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'openPairing', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setWatchingChat', 'settingsAction']);
+    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onAttachmentImport', 'onAttachmentText', 'onEvent', 'onStatus', 'openPairing', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setAttachmentScope', 'setWatchingChat', 'settingsAction']);
     const avatar = await page.evaluate(async () => {
       const current = await window.lorca.request('bootstrap', {});
       return window.lorca.getBotAvatar('bot-smoke', current.bots[0].avatar_version);

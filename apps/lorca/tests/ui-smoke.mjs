@@ -1493,7 +1493,7 @@ try {
           "Incoming handoff and completed outgoing message_bot rows resolve known counterpart avatars without recoloring bot PNGs",
           "2048px wide and 760px reading columns align tools and composer, preserve anchors and keep Jump-to-latest outside the transcript",
           "Consecutive tool groups preserve expansion through updates, live additions and historical prepends while errors remain visible",
-          "All pairing blockers are shown together and neither token nor HTTPS restrictions can be bypassed",
+          "Reported pairing blockers are shown together without claiming missing backend RPCs",
           "Settings description contrast is at least 4.5:1 in light and dark themes",
           "Custom pink PNG source pixels and unfiltered display stay unchanged",
           "No console errors",
