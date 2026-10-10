@@ -62,7 +62,7 @@ async function clickClosesWindow(application, page, button, channel, verifyCompl
   assert.equal(page.isClosed(), false);
   const handle = await application.browserWindow(page);
   const senderId = await handle.evaluate(window => window.webContents.id); await handle.dispose();
-  const dispatches = () => application.evaluate(senderId => globalThis.inspectorSecureDispatches.filter(value => value.senderId === senderId), senderId);
+  const dispatches = () => application.evaluate((_electron, senderId) => globalThis.inspectorSecureDispatches.filter(value => value.senderId === senderId), senderId);
   assert.deepEqual(await dispatches(), []);
   const closed = page.waitForEvent('close', { timeout: 15_000 }).then(() => ({ closed: true }), error => ({ error }));
   const clicked = await button.click().then(() => ({}), error => ({ error }));
