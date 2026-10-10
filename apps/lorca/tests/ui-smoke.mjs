@@ -298,8 +298,8 @@ async function checkCrossAgentRows() {
   const rows = page.locator(".lorca-cross-agent");
   await rows.nth(1).waitFor();
   assert.equal(await rows.count(), 2, "Only the incoming handoff and completed message_bot send become cross-agent rows");
-  assert.match(await rows.nth(0).locator("summary").innerText(), /来自.*合成研究助手/);
-  assert.match(await rows.nth(1).locator("summary").innerText(), /已发消息给.*合成研究助手/);
+  assert.match(await rows.nth(0).locator("summary").innerText(), /来自\s*合成研究助手/);
+  assert.match(await rows.nth(1).locator("summary").innerText(), /已发消息给\s*合成研究助手/);
   assert.equal(await page.locator(".lorca-cross-agent").filter({ hasText: "Synthetic failed message" }).count(), 0, "A failed send never claims outgoing success");
   for (const row of [rows.nth(0), rows.nth(1)]) {
     const avatar = row.locator('[data-avatar-bot="cross-photo"] img');
