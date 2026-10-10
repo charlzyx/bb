@@ -86,7 +86,7 @@ test('secure editor permits only its fixed Ghost image without directory, query,
     const html = await readFile(new URL(pageURL), 'utf8');
     assert.match(html, /<img class="brand-icon" src="\.\.\/public\/app-icon\/64\.png" alt="" width="32" height="32">/);
     const policy = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];
-    assert.equal(policy, "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self'; font-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'");
+    assert.equal(policy, "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self' data:; font-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'");
     const iconURL = new URL('../public/app-icon/64.png', pageURL).href;
     const icon = await readFile(new URL(iconURL));
     assert.deepEqual([...icon.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
@@ -137,4 +137,31 @@ test('an idle expired secure editor closes and clears input storage without any 
   context.mock.timers.tick(1000); await rejection;
   assert.equal(child.destroyed, true); assert.equal(child.webContents.session.clears, 2);
   context.mock.timers.tick(5000); assert.equal(child.webContents.session.clears, 2);
+});
+
+test('an avatar preview resource is exact, session-bound and revoked when the isolated window closes', async () => {
+  const ctx = setup();
+  const bytes = await readFile(new URL('../public/app-icon/64.png', import.meta.url));
+  const preview = { dataUrl: `data:image/png;base64,${bytes.toString('base64')}`, width: 64, height: 64, alt: 'Synthetic preview' };
+  const pending = ctx.manager.edit({ ...spec, preview }, () => {}, (value: unknown) => value);
+  const child = ctx.child();
+  const permits = (url: string) => { let permitted = false; child.webContents.session.request?.({ url }, value => { permitted = !value.cancel; }); return permitted; };
+  assert.equal(permits(preview.dataUrl), true);
+  for (const url of ['data:image/svg+xml,<svg/>', 'data:image/png;base64,AA==', `${preview.dataUrl}#fragment`, 'https://example.invalid/avatar.png']) assert.equal(permits(url), false);
+  assert.throws(() => ctx.invoke('init', ctx.parent));
+  ctx.invoke('cancel', child); assert.equal(await pending, null);
+  assert.equal(permits(preview.dataUrl), false, 'The settled session cannot reload its old preview');
+  const next = ctx.manager.edit(spec, () => {}, (value: unknown) => value);
+  const replacement = ctx.child(); let cancelled = false;
+  replacement.webContents.session.request?.({ url: preview.dataUrl }, value => { cancelled = value.cancel; }); assert.equal(cancelled, true);
+  ctx.invoke('cancel', replacement); await next;
+});
+
+test('malformed or mismatched preview metadata cannot create an isolated window', async () => {
+  for (const preview of [null, { dataUrl: 'https://example.invalid/photo.png', width: 64, height: 64, alt: '' }, { dataUrl: 'data:image/png;base64,AA==', width: 64, height: 64, alt: '' }]) {
+    const ctx = setup();
+    await assert.rejects(ctx.manager.edit({ ...spec, preview }, () => {}, () => true));
+    assert.equal(FakeWindow.instances.length, 1);
+    assert.equal(ctx.bridge.listenerCount('event'), 0);
+  }
 });

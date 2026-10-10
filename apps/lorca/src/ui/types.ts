@@ -19,6 +19,7 @@ export interface LorcaBotAppearance {
 }
 
 export interface LorcaConversation {
+  botIds?: string[];
   kind?: "dm" | "group";
   id: string;
   title: string;
@@ -211,6 +212,7 @@ export interface LorcaShellState {
 }
 
 export interface LorcaShellActions {
+  onRefreshData?: () => Promise<void>;
   onConversationVisibility?: (id: string | null) => void;
   onSelectConversation: (id: string) => void;
   onNewConversation: () => void;

@@ -10,6 +10,9 @@ const { applicationMenuTemplate } = require('./menu.cjs');
 const { APP_NAME, configureApplicationName, configureApplicationBranding } = require('./branding.cjs');
 const { SettingsInventory, sanitizeRendererEvent, sanitizeRendererResult, safeRendererError } = require('./settings.cjs');
 const { SettingsEditor } = require('./settings-editor.cjs');
+const { AgentDetails } = require('./agent-details.cjs');
+const { AgentCapabilities } = require('./agent-capabilities.cjs');
+const { createAgentDetailsUI } = require('./agent-details-ui.cjs');
 const { createSecureSettingsEditor } = require('./secure-settings.cjs');
 const { createPairingFlow } = require('./pairing.cjs');
 
@@ -51,6 +54,14 @@ let applicationIcon;
 const attachments = new AttachmentSession({ selections, bridge, inventory: settings, chooseFiles: () => dialog.showOpenDialog(window, { title: '向 dots 添加附件', buttonLabel: '添加附件', properties: ['openFile', 'multiSelections'] }) });
 const secureSettings = createSecureSettingsEditor({ BrowserWindow, ipcMain, bridge, getParent: () => window, getIcon: () => applicationIcon });
 const pairing = createPairingFlow({ BrowserWindow, ipcMain, dialog, bridge, inventory: settings, getParent: () => window, getIcon: () => applicationIcon });
+const agentDetailsUI = createAgentDetailsUI({ secureSettings, dialog, getParent: () => window, getDetails: () => agentDetails });
+const agentDetails = new AgentDetails(bridge, settings, {
+  nativeImage,
+  chooseAvatar: async guard => { guard(); const result = await dialog.showOpenDialog(window, { title: '选择智能体头像', buttonLabel: '预览头像', properties: ['openFile'], filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] }); guard(); return result; },
+  reviewAvatar: agentDetailsUI.reviewAvatar,
+  confirm: agentDetailsUI.confirm,
+});
+const agentCapabilities = new AgentCapabilities(bridge, settings, { confirm: agentDetailsUI.confirm });
 settings.editor = new SettingsEditor(bridge, settings, {
   openSecureEditor: secureSettings.edit,
   confirm: async (spec, guard) => {
@@ -116,14 +127,46 @@ ipcMain.handle('lorca:get-settings', async (event, params = {}) => {
 });
 ipcMain.handle('lorca:open-pairing', async (event, mode) => {
   ensureSender(event);
-  if (settings.editor.busy) throw new Error('请先关闭当前设置流程。');
+  if (settings.editor.busy || agentDetails.busy || agentCapabilities.busy || agentDetailsUI.isActive()) throw new Error('请先关闭当前设置流程。');
   try { return await pairing.open(mode, () => ensureSender(event)); }
   catch { throw new Error('无法打开设备配对，请检查本地令牌连接并刷新设备列表。'); }
 });
 ipcMain.handle('lorca:settings-action', async (event, action) => {
   ensureSender(event);
-  if (pairing.isActive()) throw new Error('设备配对仍在处理，请先核对其结果。');
+  if (pairing.isActive() || agentDetails.busy || agentCapabilities.busy || agentDetailsUI.isActive()) throw new Error('配对或智能体编辑仍在处理，请先核对其结果。');
   return settings.editor.apply(action, () => ensureSender(event));
+});
+function ensureAgentFlowAvailable(event) {
+  ensureSender(event);
+  if (pairing.isActive() || settings.editor.busy || agentDetailsUI.isActive()) throw new Error('请先关闭当前设置或配对流程。');
+}
+ipcMain.handle('lorca:get-agent-details', (event, params = {}) => {
+  ensureAgentFlowAvailable(event);
+  return agentDetails.get(params, () => ensureSender(event));
+});
+ipcMain.handle('lorca:close-agent-details', event => { ensureSender(event); agentDetails.invalidate(); agentCapabilities.invalidate(); return null; });
+ipcMain.handle('lorca:get-agent-memory-summary', async (event, params) => {
+  ensureAgentFlowAvailable(event);
+  const result = await agentDetails.getMemory(params, () => ensureSender(event));
+  return { status: 'ready', lines: result.lines, bytes: result.bytes, maxLines: result.maxLines, maxBytes: result.maxBytes, topicCount: result.topics.length, logCount: result.logs.length, canEdit: true };
+});
+ipcMain.handle('lorca:open-agent-memory', (event, params) => {
+  ensureAgentFlowAvailable(event);
+  if (agentCapabilities.busy) throw new Error('例行任务或插件编辑仍在进行，请等待结果。');
+  if (!params || typeof params !== 'object' || Array.isArray(params) || Object.keys(params).length !== 1 || typeof params.revision !== 'string') throw new Error('记忆编辑参数无效。');
+  return agentDetailsUI.openMemory(params.revision, () => ensureSender(event));
+});
+ipcMain.handle('lorca:agent-details-action', (event, action) => {
+  ensureAgentFlowAvailable(event);
+  if (!action || !['profile.save', 'agent.create', 'avatar.replace', 'avatar.remove'].includes(action.kind)) throw new Error('智能体编辑操作无效。');
+  if (agentCapabilities.busy) throw new Error('例行任务或插件编辑仍在进行，请等待结果。');
+  return agentDetails.apply(action, () => ensureSender(event));
+});
+ipcMain.handle('lorca:get-agent-capabilities', (event, params) => { ensureAgentFlowAvailable(event); return agentCapabilities.get(params, () => ensureSender(event)); });
+ipcMain.handle('lorca:agent-capabilities-action', (event, action) => {
+  ensureAgentFlowAvailable(event);
+  if (agentDetails.busy) throw new Error('智能体资料编辑仍在进行，请等待结果。');
+  return agentCapabilities.apply(action, () => ensureSender(event));
 });
 ipcMain.handle('lorca:request', async (event, method, params) => {
   ensureSender(event);
@@ -172,7 +215,7 @@ function createWindow() {
   const contents = window.webContents;
   contents.on('render-process-gone', () => { watching.select(null); watching.setForeground(false); void attachments.invalidate(); bridge.close(); });
   contents.on('did-start-navigation', (event, _url, inPlace, isMainFrame) => {
-    if ((event.isMainFrame ?? isMainFrame) && !(event.isSameDocument ?? inPlace)) void attachments.invalidate();
+    if ((event.isMainFrame ?? isMainFrame) && !(event.isSameDocument ?? inPlace)) { void attachments.invalidate(); agentDetails.invalidate(); agentCapabilities.invalidate(); }
   });
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   contents.on('will-navigate', event => event.preventDefault());
@@ -198,7 +241,7 @@ function createWindow() {
     const connect = devURL ? 'http://127.0.0.1:5178 ws://127.0.0.1:5178' : "'none'";
     callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ${connect}; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'`] } });
   });
-  window.on('closed', () => { window = null; watching.setForeground(false); watching.select(null); void attachments.invalidate(); bridge.close(); });
+  window.on('closed', () => { window = null; agentDetails.invalidate(); agentCapabilities.invalidate(); watching.setForeground(false); watching.select(null); void attachments.invalidate(); bridge.close(); });
   if (devURL) void window.loadURL(devURL); else void window.loadFile(indexPath);
 }
 app.whenReady().then(() => {
@@ -214,8 +257,8 @@ app.on('before-quit', event => {
   event.preventDefault();
   if (quitting) return;
   quitting = true;
-  watching.dispose(); avatars.dispose(); secureSettings.close(); pairing.close(); bridge.close();
+  watching.dispose(); avatars.dispose(); const agentCleanup = agentDetails.dispose(); agentCapabilities.dispose(); secureSettings.close(); pairing.close(); bridge.close();
   if (window && !window.isDestroyed()) window.destroy();
-  void attachments.shutdown().catch(() => {}).finally(() => { readyToQuit = true; app.quit(); });
+  void Promise.allSettled([attachments.shutdown(), agentCleanup]).finally(() => { readyToQuit = true; app.quit(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

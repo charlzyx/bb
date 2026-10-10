@@ -1,0 +1,215 @@
+import assert from "node:assert/strict";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { installInspectorFixture } from "./inspector-ui-fixture.mjs";
+
+let playwright;
+try { playwright = await import("playwright"); }
+catch { if (!process.env.PLAYWRIGHT_MODULE) throw new Error("Install Playwright normally or provide PLAYWRIGHT_MODULE."); playwright = await import(process.env.PLAYWRIGHT_MODULE); }
+const base = process.env.LORCA_UI_URL || "http://127.0.0.1:5178";
+const target = new URL(base);
+if (!['http:', 'https:'].includes(target.protocol) || !['localhost', '127.0.0.1', '[::1]'].includes(target.hostname) || target.username || target.password) throw new Error("Inspector smoke requires a local fixture app URL.");
+const output = process.env.LORCA_SCREENSHOT_DIR || fileURLToPath(new URL("../../../docs/lorca-screenshots/", import.meta.url));
+mkdirSync(output, { recursive: true });
+const browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined), chromiumSandbox: true, args: ["--enable-automation"] });
+const failures = [];
+let failurePage;
+const settle = async page => { await page.evaluate(() => document.fonts.ready); await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))); };
+async function screenshot(page, name) {
+  await settle(page);
+  await page.waitForFunction(() => [...document.querySelectorAll('img[data-app-mark="ghost"], .lorca-agent-inspector img[data-avatar-image]')].every(image => image.complete && image.naturalWidth > 0));
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${name}: no horizontal document overflow`);
+  assert.equal(await page.locator(".lorca-agent-inspector").evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `${name}: inspector contents fit their column`);
+  await page.screenshot({ path: path.join(output, `${name}.png`), animations: "disabled" });
+}
+try {
+  const session = await browser.newBrowserCDPSession(), command = await session.send("Browser.getBrowserCommandLine"); await session.detach();
+  assert.equal(command.arguments.includes("--no-sandbox"), false, "The smoke runs with Chromium sandboxing enabled");
+  for (const theme of ["light", "dark"]) {
+    const context = await browser.newContext({ viewport: { width: 1240, height: 820 }, deviceScaleFactor: 1, timezoneId: "Asia/Shanghai" });
+    const page = await context.newPage(); failurePage = page; page.setDefaultTimeout(10_000);
+    page.on("pageerror", error => failures.push(error.message));
+    page.on("console", message => { if (message.type() === "error") failures.push(message.text()); });
+    await page.addInitScript(installInspectorFixture, { theme });
+    await page.goto(base, { waitUntil: "networkidle" });
+    const sidebar = page.locator(".lorca-chat-list"), inspector = page.getByRole("complementary", { name: "智能体详情", exact: true });
+    const composer = page.getByRole("textbox", { name: "给 dots 发消息", exact: true });
+    const profile = inspector.locator(".lorca-inspector-profile"), name = profile.getByRole("textbox", { name: "名称", exact: true });
+    const capabilityEditor = inspector.locator(".lorca-inspector-inline-editor");
+    const routine = id => inspector.locator(`[data-inspector-routine="${id}"]`);
+    const calls = method => page.evaluate(method => window.__inspectorUiTest.calls.filter(call => call.method === method), method);
+    const ready = async expected => {
+      await page.waitForFunction(expected => { const input = document.querySelector('.lorca-inspector-profile input'); return input && input.value === expected && !input.matches(':disabled') && document.querySelector('.lorca-inspector-capabilities'); }, expected);
+      await settle(page);
+    };
+    const openRoutine = async id => { if (await routine(id).getAttribute("open") === null) await routine(id).locator("summary").click(); };
+    const refresh = async expected => { await inspector.getByRole("button", { name: "刷新智能体详情", exact: true }).click(); await ready(expected); };
+    const selectChat = async title => { await sidebar.locator(".lorca-chat-item").filter({ hasText: title }).click(); await page.locator(".lorca-header-chat-title").filter({ hasText: title }).waitFor(); };
+    await selectChat("合成检查器私聊");
+    await composer.fill(`合成 ${theme} 正文草稿`);
+    await page.getByRole("button", { name: "查看智能体详情", exact: true }).click();
+    await ready("合成研究助手");
+    assert.equal(await inspector.locator('.lorca-inspector-agents button').count(), 1, "A DM offers only its actual bot");
+    assert.match(await profile.innerText(), /所有使用此智能体的聊天.*更换 Runner 不会迁移/);
+    await page.waitForFunction(() => document.querySelector('.lorca-inspector-avatar-row img')?.naturalWidth === 32);
+    assert.equal(await inspector.locator('.lorca-inspector-avatar-row img').getAttribute("src"), await page.evaluate(() => window.__inspectorUiTest.avatar));
+    const main = page.locator(".lorca-scroll"), sideScroll = inspector.locator(".lorca-inspector-scroll");
+    await main.evaluate(element => { element.scrollTop = element.scrollHeight / 2; element.dispatchEvent(new Event('scroll')); });
+    await settle(page); const mainPosition = await main.evaluate(element => element.scrollTop);
+    await sideScroll.evaluate(element => { element.scrollTop = 0; }); await sideScroll.hover(); await page.mouse.wheel(0, 600);
+    await page.waitForFunction(() => (document.querySelector(".lorca-inspector-scroll")?.scrollTop ?? 0) > 100); await settle(page);
+    assert.ok(mainPosition > 100); assert.ok(await sideScroll.evaluate(element => element.scrollTop) > 100);
+    assert.ok(Math.abs(await main.evaluate(element => element.scrollTop) - mainPosition) <= 1, "Scrolling the inspector preserves the transcript reading position");
+    assert.equal(await composer.inputValue(), `合成 ${theme} 正文草稿`);
+    await sideScroll.evaluate(element => { element.scrollTop = 0; });
+    assert.ok(Math.abs((await inspector.boundingBox()).width - 360) <= 1, "The desktop inspector retains its independent 360px column");
+    await screenshot(page, `desktop-inspector-profile-${theme}`);
+    await profile.getByRole("combobox", { name: "模型", exact: true }).selectOption("synthetic-two");
+    assert.equal(await profile.getByRole("combobox", { name: "思考", exact: true }).inputValue(), "", "Changing model resets an unsupported thinking level");
+    await profile.getByRole("button", { name: "取消", exact: true }).click();
+
+    await name.fill("尚未保存的合成名称");
+    await inspector.getByRole("button", { name: "关闭智能体详情", exact: true }).click();
+    const discard = inspector.getByRole("group", { name: "放弃未保存更改", exact: true }); await discard.waitFor();
+    await discard.getByRole("button", { name: "继续编辑", exact: true }).click();
+    assert.equal(await name.inputValue(), "尚未保存的合成名称"); assert.equal((await calls("agentDetailsAction")).length, 0);
+    await profile.getByRole("button", { name: "取消", exact: true }).click(); assert.equal(await name.inputValue(), "合成研究助手");
+    await name.fill("合成已确认名称");
+    await page.evaluate(() => window.__inspectorUiTest.setNextOutcome("cancelled"));
+    await profile.getByRole("button", { name: "保存更改", exact: true }).click();
+    await profile.getByText("已取消保存，草稿仍保留。", { exact: true }).waitFor();
+    assert.equal(await name.inputValue(), "合成已确认名称");
+    assert.equal((await calls("agentDetailsAction")).length, 1);
+    await profile.getByRole("button", { name: "保存更改", exact: true }).click();
+    await ready("合成已确认名称");
+    assert.deepEqual((await calls("agentDetailsAction")).at(-1).params.patch, { name: "合成已确认名称" });
+    assert.equal(await composer.inputValue(), `合成 ${theme} 正文草稿`);
+
+    await name.fill("合成未知结果名称");
+    await page.evaluate(() => window.__inspectorUiTest.setNextOutcome("unknownOutcome", true));
+    await profile.getByRole("button", { name: "保存更改", exact: true }).click();
+    await profile.getByText("保存结果尚不确定。请先核对当前配置；操作未自动重发，草稿仍保留。", { exact: true }).waitFor();
+    assert.equal(await name.inputValue(), "合成未知结果名称");
+    assert.equal(await profile.getByRole("button", { name: "保存更改", exact: true }).isDisabled(), true);
+    assert.equal(await profile.getByRole("button", { name: "放弃草稿并采用当前配置", exact: true }).isDisabled(), true);
+    await screenshot(page, `desktop-inspector-unknown-outcome-${theme}`);
+    const unknownCount = (await calls("agentDetailsAction")).length;
+    await inspector.getByRole("button", { name: "刷新智能体详情", exact: true }).click();
+    const adopt = profile.getByRole("button", { name: "放弃草稿并采用当前配置", exact: true });
+    await page.waitForFunction(() => [...document.querySelectorAll('.lorca-inspector-profile button')].some(button => button.textContent === '放弃草稿并采用当前配置' && !button.disabled));
+    assert.equal(await name.isDisabled(), true, "Refresh alone does not release the uncertain draft lock");
+    await adopt.click(); await ready("合成未知结果名称"); assert.equal((await calls("agentDetailsAction")).length, unknownCount, "Refresh/adopt never replay an uncertain edit");
+
+    const memory = inspector.locator('.lorca-inspector-section').filter({ has: page.getByRole('heading', { name: '记忆', exact: true }) });
+    await memory.getByRole("button", { name: "编辑…", exact: true }).click(); await ready("合成未知结果名称");
+    assert.equal((await calls("openAgentMemory")).length, 1);
+    assert.deepEqual(Object.keys((await calls("openAgentMemory"))[0].params), ["revision"]);
+    await inspector.getByRole("button", { name: "修改头像", exact: true }).click(); await ready("合成未知结果名称");
+    assert.equal((await calls("agentDetailsAction")).at(-1).params.kind, "avatar.replace");
+    assert.deepEqual(Object.keys((await calls("agentDetailsAction")).at(-1).params).sort(), ["kind", "revision"]);
+    assert.equal(await inspector.locator('input[type="file"]').count(), 0, "Renderer callbacks cannot browse arbitrary paths");
+    assert.equal(await inspector.getByRole("textbox").count(), 2, "Memory content is not loaded into the main renderer");
+
+    const firstRoutine = "inspector-alpha-routine-0";
+    await openRoutine(firstRoutine);
+    await routine(firstRoutine).getByRole("checkbox", { name: "启用例行任务 合成例行任务 1", exact: true }).uncheck();
+    await page.waitForFunction(id => document.querySelector(`[data-inspector-routine="${id}"] summary`)?.textContent.includes('已暂停'), firstRoutine);
+    await openRoutine(firstRoutine); await routine(firstRoutine).getByRole("button", { name: "编辑任务", exact: true }).click();
+    await capabilityEditor.getByRole("textbox", { name: "任务内容", exact: true }).fill("合成修改后的任务正文");
+    await capabilityEditor.getByRole("button", { name: "保存并确认…", exact: true }).click(); await capabilityEditor.waitFor({ state: "hidden" });
+    const edited = (await calls("agentCapabilitiesAction")).at(-1).params;
+    assert.equal(edited.kind, "routine.edit"); assert.deepEqual(edited.patch, { prompt: "合成修改后的任务正文" }); assert.equal('enabled' in edited.patch, false);
+    await openRoutine(firstRoutine); await routine(firstRoutine).getByRole("button", { name: "立即运行", exact: true }).click();
+    await inspector.getByText("已请求运行，请查看任务的后端状态。", { exact: true }).waitFor();
+    assert.match(await routine(firstRoutine).locator('summary').innerText(), /运行中/);
+    assert.equal(await routine(firstRoutine).getByRole("button", { name: "立即运行", exact: true }).isDisabled(), true);
+    assert.equal(await inspector.getByText("已完成", { exact: true }).count(), 0);
+    await openRoutine("inspector-alpha-routine-3");
+    assert.equal(await routine("inspector-alpha-routine-3").getByRole("button", { name: "编辑任务", exact: true }).isDisabled(), true);
+    await inspector.getByRole("button", { name: "添加例行任务", exact: true }).click();
+    await capabilityEditor.getByRole("textbox", { name: "任务名称", exact: true }).fill("合成新增计划");
+    await capabilityEditor.getByRole("textbox", { name: "任务内容", exact: true }).fill("仅处理合成数据");
+    await capabilityEditor.getByRole("textbox", { name: "计划表达式", exact: true }).fill("every 30m");
+    await capabilityEditor.getByRole("textbox", { name: "时区", exact: true }).fill("Asia/Shanghai");
+    assert.equal(await capabilityEditor.getByRole("checkbox", { name: "创建后启用计划", exact: true }).isChecked(), false);
+    await screenshot(page, `desktop-inspector-routine-editor-${theme}`);
+    await capabilityEditor.getByRole("button", { name: "保存并确认…", exact: true }).click(); await capabilityEditor.waitFor({ state: "hidden" });
+    const createdRoutine = inspector.locator('[data-inspector-routine]').filter({ has: page.locator('summary strong').filter({ hasText: "合成新增计划" }) });
+    await createdRoutine.locator('summary').click();
+    await createdRoutine.getByRole("button", { name: "删除任务…", exact: true }).click(); await createdRoutine.waitFor({ state: "detached" });
+
+    const plugin = inspector.locator('.lorca-inspector-plugin').filter({ hasText: "合成邮件插件" });
+    await plugin.getByRole("button", { name: "权限…", exact: true }).click();
+    await capabilityEditor.getByRole("checkbox", { name: "读取", exact: true }).uncheck();
+    await capabilityEditor.getByRole("checkbox", { name: "写入与外部操作", exact: true }).check();
+    await capabilityEditor.getByRole("checkbox", { name: "授权范围内的当前及未来工具", exact: true }).check();
+    await screenshot(page, `desktop-inspector-plugin-grants-${theme}`);
+    await capabilityEditor.getByRole("button", { name: "保存并确认…", exact: true }).click(); await capabilityEditor.waitFor({ state: "hidden" });
+    const pluginAction = (await calls("agentCapabilitiesAction")).at(-1).params;
+    assert.equal(pluginAction.kind, "plugin.setAccess"); assert.deepEqual(pluginAction.capabilities, ["write"]); assert.equal(pluginAction.tools, null);
+    assert.deepEqual(Object.keys(pluginAction).sort(), ["capabilities", "connectionId", "kind", "revision", "tools"], "Renderer sends one instance grant, never a replacement filesystem/shell/credentials policy");
+    assert.match(await plugin.innerText(), /写入与外部操作/); assert.doesNotMatch(await plugin.innerText(), /读取、/);
+    await plugin.getByRole("button", { name: "权限…", exact: true }).click();
+    await capabilityEditor.getByRole("checkbox", { name: "准备草稿", exact: true }).check();
+    await page.evaluate(() => window.__inspectorUiTest.setNextOutcome("unknownOutcome", true));
+    await capabilityEditor.getByRole("button", { name: "保存并确认…", exact: true }).click();
+    await inspector.getByText("结果尚不确定，请刷新核对；操作未自动重发。", { exact: true }).waitFor();
+    assert.equal(await capabilityEditor.getByRole("button", { name: "保存并确认…", exact: true }).isDisabled(), true);
+    const uncertainGrantCount = (await calls("agentCapabilitiesAction")).length;
+    await refresh("合成未知结果名称");
+    await inspector.getByRole("button", { name: "已核对，放弃草稿并继续", exact: true }).click();
+    await capabilityEditor.waitFor({ state: "hidden" });
+    assert.equal((await calls("agentCapabilitiesAction")).length, uncertainGrantCount, "Uncertain grants remain locked until an explicit refreshed-state adoption without replay");
+
+    await selectChat("合成检查器群聊"); await ready("合成未知结果名称");
+    assert.equal(await inspector.locator('.lorca-inspector-agents button').count(), 2);
+    await name.fill("成员切换前未保存草稿");
+    await inspector.locator('.lorca-inspector-agents').getByRole("button", { name: "合成核对助手", exact: true }).click();
+    await discard.waitFor(); assert.equal(await name.inputValue(), "成员切换前未保存草稿");
+    await discard.getByRole("button", { name: "放弃草稿并继续", exact: true }).click(); await ready("合成核对助手");
+    assert.equal(await page.locator('.lorca-header-chat-title').innerText(), "合成检查器群聊", "Inspecting another group member never navigates the chat");
+    await page.setViewportSize({ width: 900, height: 720 }); await screenshot(page, `desktop-inspector-group-900-${theme}`); await page.setViewportSize({ width: 1240, height: 820 });
+    await inspector.getByRole("button", { name: "新建智能体", exact: true }).click();
+    await inspector.getByRole("heading", { name: "新建智能体", exact: true }).waitFor();
+    await page.waitForFunction(() => document.querySelector('.lorca-inspector-profile input')?.value === '' && !document.querySelector('.lorca-inspector-profile input')?.matches(':disabled'));
+    const runner = profile.getByRole("combobox", { name: "Runner", exact: true });
+    assert.deepEqual(await runner.locator('option:not([disabled])').evaluateAll(options => options.map(option => option.value)), ["runner-mac", "runner-linux"]);
+    assert.doesNotMatch(await runner.innerText(), /手机/);
+    await name.fill("合成新增智能体"); assert.equal(await profile.getByRole("button", { name: "创建智能体", exact: true }).isDisabled(), true);
+    await runner.selectOption("runner-linux");
+    await profile.getByRole("button", { name: "创建智能体", exact: true }).click(); await ready("合成新增智能体");
+    const creation = (await calls("agentDetailsAction")).find(call => call.params.kind === 'agent.create'); assert.equal(creation.params.profile.runnerId, "runner-linux");
+    assert.equal(await page.locator('.lorca-header-chat-title').innerText(), "合成新增智能体");
+
+    await name.fill("账号一未保存草稿"); await page.evaluate(() => window.__inspectorUiTest.changeIdentity("synthetic-inspector-account-two"));
+    await page.waitForFunction(() => !document.querySelector('.lorca-agent-inspector[data-open="true"]'));
+    await selectChat("合成检查器私聊"); await page.getByRole("button", { name: "查看智能体详情", exact: true }).click(); await ready("合成研究助手 · 账号二");
+    assert.equal(await page.locator("input, textarea").evaluateAll(elements => elements.some(element => element.value === "账号一未保存草稿")), false);
+    await page.evaluate(() => window.__inspectorUiTest.setCapabilitiesFailure(true));
+    await inspector.getByRole("button", { name: "刷新智能体详情", exact: true }).click();
+    await inspector.getByText("无法读取例行任务与插件权限，请刷新后重试。", { exact: true }).waitFor();
+    assert.equal(await name.inputValue(), "合成研究助手 · 账号二");
+    assert.equal(await inspector.getByRole("button", { name: "添加例行任务", exact: true }).isDisabled(), true);
+    await page.evaluate(() => window.__inspectorUiTest.setCapabilitiesFailure(false)); await refresh("合成研究助手 · 账号二");
+    await page.evaluate(() => window.__inspectorUiTest.setConnected(false));
+    await page.waitForFunction(() => { const input = document.querySelector('.lorca-inspector-profile input'); return !input || input.matches(':disabled'); });
+    const callCount = (await calls("agentDetailsAction")).length;
+    assert.equal(await page.locator('.lorca-agent-inspector button').filter({ hasText: '保存更改' }).count(), 0);
+    assert.equal((await calls("agentDetailsAction")).length, callCount);
+    const all = await page.evaluate(() => window.__inspectorUiTest.calls);
+    assert.equal(all.some(call => call.method.startsWith('chats.') || call.method.startsWith('routines.') || call.method === 'bots.update' || call.method === 'bots.create'), false, "The renderer invokes dedicated bounded APIs rather than generic mutation RPCs");
+    assert.ok(all.filter(call => call.method === 'agentCapabilitiesAction').some(call => call.params.kind === 'routine.setEnabled'));
+    assert.ok(all.filter(call => call.method === 'agentCapabilitiesAction').some(call => call.params.kind === 'routine.delete'));
+    await context.close();
+  }
+  assert.deepEqual(failures, []);
+  console.log("Inspector synthetic browser smoke passed: scoped DM/group selection, independent scrolling, profile cancel/save/unknown/readback, native memory/avatar callbacks, Runner-only creation, routine operations, independent plugin grants, account/offline boundaries, light/dark and 900px layouts.");
+} catch (error) {
+  if (failurePage && !failurePage.isClosed()) {
+    await failurePage.screenshot({ path: path.join(output, "inspector-synthetic-failure.png"), animations: "disabled", timeout: 5000 }).catch(() => undefined);
+    const calls = await failurePage.evaluate(() => window.__inspectorUiTest?.calls).catch(() => null);
+    writeFileSync(path.join(output, "inspector-synthetic-failure.json"), JSON.stringify({ calls, failures, error: String(error) }, null, 2));
+  }
+  throw error;
+} finally { await browser.close(); }

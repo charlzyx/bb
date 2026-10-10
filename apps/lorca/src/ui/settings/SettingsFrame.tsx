@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useRef, type ReactNode } from "react";
 import { settingsZh } from "../../locale/settings.zh-CN";
 import { editorZh } from "../../locale/editor.zh-CN";
 import { Button } from "@bb/shared-ui/button";
@@ -47,6 +47,8 @@ export function SettingsFrame({
 }) {
   const compact = useIsCompactViewport();
   const desktopRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
   const { isContentRealized } = useResponsiveDrawerRealization({
     open,
@@ -57,6 +59,17 @@ export function SettingsFrame({
     panelRef: desktopRef,
     requestClose: close,
   });
+  useLayoutEffect(() => {
+    const heading = headingRef.current;
+    const scroll = scrollRef.current;
+    if (!open || compact || !heading || !scroll) return;
+    const update = () => scroll.style.setProperty("--lorca-settings-header-height", `${Math.ceil(heading.getBoundingClientRect().height)}px`);
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(heading);
+    return () => observer.disconnect();
+  }, [open, compact]);
   const current = pages.find((candidate) => candidate.id === page) ?? pages[0];
   const navigation = (
     <nav
@@ -79,22 +92,18 @@ export function SettingsFrame({
     </nav>
   );
   const heading = (
-    <header className="lorca-settings-page-header">
-      <div>
+    <header ref={headingRef} className="lorca-settings-page-header">
+      <div className="lorca-settings-topbar">
+        <Button variant="ghost" className="lorca-settings-back" onClick={close}>
+          <Icon name="ChevronLeft" />
+          <span>{settingsZh.backToChat}</span>
+        </Button>
+        <div className="lorca-settings-header-controls">{deviceControl}</div>
+      </div>
+      <div className="lorca-settings-page-heading">
         <span className="lorca-field-caption">{settingsZh.settings}</span>
         <h1 id="lorca-settings-page-title">{current.label}</h1>
         <p>{current.description}</p>
-      </div>
-      <div className="lorca-settings-header-controls">
-      {deviceControl}
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={settingsZh.closeSettings}
-        onClick={close}
-      >
-        <Icon name="X" />
-      </Button>
       </div>
     </header>
   );
@@ -137,10 +146,6 @@ export function SettingsFrame({
       tabIndex={-1}
     >
       <aside className="lorca-settings-sidebar">
-        <Button variant="ghost" className="lorca-settings-back" onClick={close}>
-          <Icon name="ChevronLeft" />
-          <span>{settingsZh.backToChat}</span>
-        </Button>
         <h2>{settingsZh.settings}</h2>
         {navigation}
         <footer>
@@ -148,7 +153,7 @@ export function SettingsFrame({
         </footer>
       </aside>
       <div className="lorca-settings-desktop-main">
-        <div className="lorca-settings-scroll">
+        <div ref={scrollRef} className="lorca-settings-scroll">
           {heading}
           <div className="lorca-settings-reading-width">
             {notice}

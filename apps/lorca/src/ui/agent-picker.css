@@ -20,3 +20,6 @@
 @media (prefers-reduced-motion: reduce) {
   .lorca-agent-picker-popover { animation: none; transition: none; }
 }
+
+.lorca-agent-picker-search { min-height: 36px; padding: 0 12px; }
+.lorca-agent-picker-search input { height: 36px; }

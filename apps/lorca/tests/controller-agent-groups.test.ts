@@ -111,3 +111,16 @@ test("Group namespaces distinguish daemon destinations even when identity identi
   assert.notEqual(controller.getSnapshot().localGroupNamespace, original);
   controller.dispose();
 });
+
+
+test("Recent activity uses the newest known message even when older events arrive late", async context => {
+  const bridge = new Fixture(), controller = new LorcaController(bridge);
+  context.after(() => controller.dispose());
+  await controller.start();
+  const emit = (id: string, created_at: number) => {
+    for (const callback of bridge.events) callback({ event: "message.added", data: { chat_id: "dm-alpha", message: { id, chat_id: "dm-alpha", author: { kind: "you" }, body: { kind: "text", text: "Synthetic activity" }, state: { kind: "complete" }, created_at } } });
+  };
+  emit("newer", 200);
+  emit("older-late", 100);
+  assert.equal(controller.getSnapshot().conversations[0].updatedAt, new Date(200_000).toISOString());
+});

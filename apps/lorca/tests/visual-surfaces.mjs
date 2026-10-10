@@ -120,7 +120,7 @@ async function checkScrollingFooter({ browser, base, screenshot, openConnectionS
       await waitForSettings(page);
       await chooseSettingsPage(page, "通用");
       await page.getByRole("button", { name: theme === "dark" ? "深色" : "浅色", exact: true }).click();
-      await page.getByRole("button", { name: "关闭设置", exact: true }).click();
+      await page.getByRole("button", { name: "返回聊天", exact: true }).click();
       await page.mouse.move(900, 400);
       await page.getByRole("textbox", { name: "给 dots 发消息" }).focus();
       await scrollingFooterAvatar(page, false);
@@ -261,7 +261,7 @@ export async function checkVisualSurfaces({ browser, base, screenshot, openConne
     await waitForSettings(page);
     await chooseSettingsPage(page, "通用");
     await page.getByRole("button", { name: theme === "dark" ? "深色" : "浅色", exact: true }).click();
-    await page.getByRole("button", { name: "关闭设置", exact: true }).click();
+    await page.getByRole("button", { name: "返回聊天", exact: true }).click();
     await page.keyboard.press("Control+n");
     await page.mouse.move(900, 400);
     await page.getByRole("textbox", { name: "给 dots 发消息" }).focus();
@@ -342,6 +342,6 @@ export async function checkVisualSurfaces({ browser, base, screenshot, openConne
     await page.getByRole("button", { name: "连接本次会话", exact: true }).click();
     await page.locator(".lorca-field-error").waitFor();
     await screenshot(page, `desktop-settings-connection-error-${theme}`);
-    await page.getByRole("button", { name: "关闭设置", exact: true }).click();
+    await page.getByRole("button", { name: "返回聊天", exact: true }).click();
   }
 }

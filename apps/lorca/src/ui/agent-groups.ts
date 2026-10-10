@@ -26,7 +26,7 @@ export type AgentGroupsMutation = { ok: true; state: AgentGroupsState } | { ok: 
 export type AgentGroupsLoad = { ok: true; state: AgentGroupsState; source: "empty" | "saved" } | { ok: false; state: AgentGroupsState; error: AgentGroupsError; message: string };
 export type AgentGroupsSave = { ok: true } | { ok: false; error: AgentGroupsError; message: string };
 
-export const AGENT_GROUP_LIMITS = Object.freeze({ groups: 64, membersPerGroup: 512, totalMembers: 4096, primaryPerGroup: 2, nameLength: 80, idLength: 256, storageBytes: 65536 });
+export const AGENT_GROUP_LIMITS = Object.freeze({ groups: 64, membersPerGroup: 512, totalMembers: 4096, primaryPerGroup: 1, nameLength: 80, idLength: 256, storageBytes: 65536 });
 
 const messages: Record<AgentGroupsError, string> = {
   "missing-account": "尚未确认账号，未读取或保存本地分组。",
@@ -40,7 +40,7 @@ const messages: Record<AgentGroupsError, string> = {
   "group-not-found": "此分组已不存在，请刷新后重试。",
   "group-limit": "本地分组最多 64 个。",
   "member-limit": "分组成员数量或本地分组数据大小已达上限。",
-  "primary-limit": "每个分组最多设置 2 个主力智能体。",
+  "primary-limit": "每个分组最多设置 1 个主力智能体。",
   "primary-membership": "主力只能选择当前分组的智能体，不能选择群聊或重复选择。",
 };
 
@@ -74,7 +74,7 @@ export function parseAgentGroups(value: unknown): AgentGroupsState | null {
   const groupIds = new Set<string>(), memberIds = new Set<string>();
   const groups: AgentGroup[] = [];
   for (const group of value.groups) {
-    if (!record(group) || !keys(group, ["id", "name", "collapsed", "memberIds", "primaryIds"]) || !idValue(group.id) || groupIds.has(group.id) || !nameValue(group.name) || typeof group.collapsed !== "boolean" || !entities(group.memberIds, AGENT_GROUP_LIMITS.membersPerGroup) || !identifiers(group.primaryIds, AGENT_GROUP_LIMITS.primaryPerGroup)) return null;
+    if (!record(group) || !keys(group, ["id", "name", "collapsed", "memberIds", "primaryIds"]) || !idValue(group.id) || groupIds.has(group.id) || !nameValue(group.name) || typeof group.collapsed !== "boolean" || !entities(group.memberIds, AGENT_GROUP_LIMITS.membersPerGroup) || !identifiers(group.primaryIds, 2)) return null;
     const members = group.memberIds;
     if (group.primaryIds.some(id => !members.some(member => member.kind === "bot" && member.id === id)) || members.some(member => memberIds.has(agentGroupEntityKey(member)))) return null;
     groupIds.add(group.id);
@@ -83,7 +83,9 @@ export function parseAgentGroups(value: unknown): AgentGroupsState | null {
     groups.push({ id: group.id, name: group.name, collapsed: group.collapsed, memberIds: group.memberIds.map(member => ({ ...member })), primaryIds: [...group.primaryIds] });
   }
   const state: AgentGroupsState = { version: 1, groups };
-  return byteLength(JSON.stringify(state)) <= AGENT_GROUP_LIMITS.storageBytes ? state : null;
+  return byteLength(JSON.stringify(state)) <= AGENT_GROUP_LIMITS.storageBytes
+    ? { version: 1, groups: groups.map(group => ({ ...group, primaryIds: group.primaryIds.slice(0, AGENT_GROUP_LIMITS.primaryPerGroup) })) }
+    : null;
 }
 
 function change(state: AgentGroupsState, edit: (groups: MutableGroup[]) => AgentGroupsError | null): AgentGroupsMutation {

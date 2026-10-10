@@ -9,6 +9,7 @@ import "./styles.css";
 import "./ui/tool-groups.css";
 import "./ui/agent-groups.css";
 import "./ui/agent-picker.css";
+import "./ui/inspector/inspector.css";
 import { appZh } from "./locale/app.zh-CN";
 
 const demo = new URLSearchParams(location.search).get("demo") === "1";

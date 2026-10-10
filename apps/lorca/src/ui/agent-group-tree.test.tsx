@@ -15,7 +15,7 @@ const agents: AgentGroupTreeProps["agents"] = [
 const configured: AgentGroupsState = {
   version: 1,
   groups: [
-    { id: "work", name: "日常工作", collapsed: false, memberIds: [{ kind: "bot", id: "writer" }, { kind: "bot", id: "code" }], primaryIds: ["writer", "code"] },
+    { id: "work", name: "日常工作", collapsed: false, memberIds: [{ kind: "bot", id: "writer" }, { kind: "bot", id: "code" }], primaryIds: ["writer"] },
     { id: "check", name: "交叉核对", collapsed: false, memberIds: [{ kind: "bot", id: "review" }], primaryIds: [] },
   ],
 };
@@ -32,16 +32,16 @@ function fixture(state: AgentGroupsState = configured) {
   return { render, reads, writes, selections };
 }
 
-test("Agent groups render exactly two levels, named primaries and every ungrouped agent without starting a chat", () => {
+test("Agent groups render exactly two levels, one named primary and every ungrouped agent without starting a chat", () => {
   const f = fixture();
   const html = f.render({ selectedAgentId: "writer" });
   assert.match(html, /aria-label="智能体与群聊分组"/);
   assert.match(html, /data-agent-group="work"/);
   assert.match(html, /data-agent-group="check"/);
   for (const agent of agents) assert.equal(html.split(`data-agent-select="${agent.id}"`).length - 1, 1);
-  assert.equal((html.match(/class="lorca-agent-primary"/g) ?? []).length, 2);
+  assert.equal((html.match(/class="lorca-agent-primary"/g) ?? []).length, 1);
   assert.match(html, /未设主力/);
-  assert.match(html, /aria-label="未分组项目"/);
+  assert.match(html, /aria-label="未分组智能体"/);
   assert.match(html, /data-agent-select="writer" aria-current="page"/);
   assert.match(html, /未分类 &lt;script&gt;智能体&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<script>/);
@@ -77,7 +77,7 @@ test("Default groups are never invented and missing agents cannot appear as prim
   for (const agent of agents) assert.match(html, new RegExp(`data-agent-select="${agent.id}"`));
   const fresh = fixture({ version: 1, groups: [] }).render();
   assert.doesNotMatch(fresh, /data-agent-group=/);
-  assert.match(fresh, /aria-label="未分组项目"/);
+  assert.match(fresh, /aria-label="未分组智能体"/);
 });
 
 test("No account namespace means no local storage access and no enabled grouping controls", () => {
@@ -179,4 +179,59 @@ test("Group styling confines its controls and removes the closing popover intera
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(css, /:focus-visible/);
   assert.doesNotMatch(css, /@scope|filter:|\.lorca-avatar\s*\{|#[0-9a-f]{3,8}\b/i);
+});
+
+
+test("Group headers use the actual primary avatar before the name and put the chevron last", () => {
+  const html = fixture().render();
+  const header = html.match(/<div class="lorca-agent-group-heading"[\s\S]*?<\/div>/)?.[0] ?? "";
+  assert.match(header, /data-group-primary="writer"/);
+  assert.ok(header.indexOf(`src="${image}"`) < header.indexOf("日常工作"));
+  assert.ok(header.lastIndexOf("data-icon-root") > header.indexOf("2 个项目"));
+  const missing = fixture({ version: 1, groups: [{ id: "empty", name: "未指定主力", memberIds: [], primaryIds: [], collapsed: false }] }).render();
+  assert.match(missing, /title="未设主力智能体"[\s\S]*?data-avatar-fallback/);
+  assert.doesNotMatch(missing, /data-group-primary=/);
+});
+
+test("Only identified sessions expose internal dragging and an explicit ungrouped target", () => {
+  const html = fixture().render();
+  assert.match(html, /data-group-drop-target="work"/);
+  assert.match(html, /data-group-drop-target="ungrouped-bot"/);
+  assert.equal((html.match(/draggable="true"/g) ?? []).length, agents.length);
+  assert.doesNotMatch(fixture().render({ namespace: undefined }), /draggable="true"/);
+  assert.match(html, /仅用于本地整理/);
+});
+
+test("Group destination controls share the BB Popover and drag clicks require new deliberate input", () => {
+  const source = readFileSync(new URL("./AgentGroupTree.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /<select|<option/);
+  assert.match(source, /className="lorca-group-destination-popover"/);
+  assert.match(source, /event\.nativeEvent\.isComposing \|\| event\.keyCode === 229/);
+  assert.match(source, /primary \? \[entity\.id\] : others/);
+  assert.match(source, /suppressDragClick\.current = true/);
+  assert.match(source, /onPointerDown=\{\(\) => \{ suppressDragClick\.current = false;/);
+  assert.match(source, /if \(suppressDragClick\.current && !\(event\.nativeEvent\.isTrusted && event\.detail === 0\)\) \{ event\.preventDefault\(\); return;/);
+  assert.match(source, /useEffect\(\(\) => \(\) => drag\.dispose\(\), \[drag\]\)/);
+  const css = readFileSync(new URL("./agent-groups.css", import.meta.url), "utf8");
+  assert.match(css, /\.lorca-agent-group-title \{[^}]*font-size: var\(--text-sm\);[^}]*line-height: 1\.5;/);
+  assert.match(css, /--radix-popover-content-available-height/);
+});
+
+
+test("Teams and Solo separate unassigned group chats from individual agents", () => {
+  const html = fixture({ version: 1, groups: [] }).render({ conversations: [{ kind: "group", id: "room", title: "合成未分类群聊", updatedAt: "2026-10-10", status: "idle" }], onSelectConversation() {} });
+  assert.match(html, /<h2>团队<\/h2>/);
+  assert.match(html, /<h3>Solo/);
+  const solo = html.match(/<section class="lorca-agent-ungrouped"[\s\S]*?<\/section>/)?.[0] ?? "";
+  assert.match(solo, /data-agent-select=/);
+  assert.doesNotMatch(solo, /data-group-chat-select=/);
+  assert.match(html, /aria-label="未分组群聊"[\s\S]*?data-group-chat-select="room"/);
+  assert.match(html, /data-group-drop-target="ungrouped-chat"/);
+});
+
+
+test("Global conversation matches suppress an unrelated empty tree search notice", () => {
+  const f = fixture();
+  assert.doesNotMatch(f.render({ search: "conversation-only-title", hasOtherSearchResults: true }), /没有匹配的分组、智能体或群聊/);
+  assert.match(f.render({ search: "conversation-only-title" }), /没有匹配的分组、智能体或群聊/);
 });

@@ -139,7 +139,7 @@ async function checkWidthAndStatus({ browser, base, screenshot, chooseChat, capt
     await screenshot(page, `desktop-connection-status-${theme}`);
     await page.keyboard.press("Enter");
     await page.getByRole("heading", { name: "高级", exact: true }).waitFor();
-    await page.getByRole("button", { name: "关闭设置", exact: true }).click();
+    await page.getByRole("button", { name: "返回聊天", exact: true }).click();
     assert.equal(await composer.inputValue(), "Synthetic popover draft");
     assert.ok(Math.abs(await page.locator(".lorca-scroll").evaluate((element) => element.scrollTop) - before.scroll) <= 1, "Keyboard status-to-settings navigation preserves the reading position");
     await trigger.press("Enter");

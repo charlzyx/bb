@@ -1218,6 +1218,8 @@ select:focus-visible {
   color: var(--muted-foreground);
 }
 :where(.lorca-settings-drawer) {
+  --lorca-settings-control-height: 36px;
+  --lorca-settings-control-padding: 12px;
   max-width: 600px;
   left: 50%;
   right: auto;
@@ -1691,6 +1693,9 @@ select:focus-visible {
 }
 
 :where(.lorca-settings-desktop) {
+  --lorca-settings-control-height: 36px;
+  --lorca-settings-control-padding: 12px;
+  --lorca-settings-gutter: clamp(24px, 2.5vw, 48px);
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -1714,9 +1719,8 @@ select:focus-visible {
   background: var(--sidebar);
   border-right: 1px solid var(--border-seam);
 }
-:where(.lorca-settings-desktop) .lorca-settings-back {
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-settings-back {
   justify-content: flex-start;
-  padding-left: 9px;
   font-weight: 400;
   color: var(--muted-foreground);
 }
@@ -1744,7 +1748,7 @@ select:focus-visible {
 }
 :where(.lorca-settings-desktop, .lorca-settings-drawer)
   .lorca-settings-nav-item {
-  height: 37px;
+  height: var(--lorca-settings-control-height, 36px);
   padding: 0 11px;
   gap: 10px;
 }
@@ -1768,9 +1772,10 @@ select:focus-visible {
 :where(.lorca-settings-desktop, .lorca-settings-drawer)
   .lorca-settings-page-header {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
   flex-shrink: 0;
 }
 :where(.lorca-settings-desktop) .lorca-settings-page-header {
@@ -1793,25 +1798,43 @@ select:focus-visible {
   font-size: var(--text-sm);
   line-height: 1.6;
 }
-:where(.lorca-settings-desktop) .lorca-settings-header-controls > button {
-  margin-top: 1px;
-  color: var(--subtle-foreground);
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-settings-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  width: 100%;
+  gap: 10px 16px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-settings-page-heading {
+  min-width: 0;
+  width: 100%;
 }
 :where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-settings-header-controls {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 :where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-settings-device-control {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-settings-device-control > .lorca-settings-select {
   width: 180px;
   min-width: 0;
+  flex: 1 1 180px;
 }
 :where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-settings-device-control select {
   font-size: var(--text-xs);
 }
-:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-device-pairing-compact {
-  margin-top: 6px;
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-settings-device-control .lorca-device-pairing-compact {
+  margin-top: 0;
   align-items: flex-end;
 }
 :where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-device-pairing-compact button {
@@ -1832,9 +1855,9 @@ select:focus-visible {
   scrollbar-color: var(--border) transparent;
 }
 :where(.lorca-settings-desktop) .lorca-settings-reading-width {
-  max-width: 840px;
+  width: 100%;
   padding: 25px 40px 40px;
-  margin: 0 auto;
+  margin: 0;
 }
 :where(.lorca-settings-desktop, .lorca-settings-drawer)
   .lorca-settings-section-content {
@@ -2234,12 +2257,43 @@ select:focus-visible {
   select {
   width: 100%;
   appearance: none;
-  padding: 8px 34px 8px 11px;
+  padding: 0 34px 0 var(--lorca-settings-control-padding, 12px);
   border: 1px solid var(--input);
   border-radius: 6px;
   color: var(--foreground);
   background: var(--background);
   font-size: var(--text-sm);
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) :is(input:not([type="checkbox"]):not([type="radio"]), select, button:not(.lorca-device-name)) {
+  box-sizing: border-box;
+  height: var(--lorca-settings-control-height, 36px);
+  min-height: var(--lorca-settings-control-height, 36px);
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1.25;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) :is(input:not([type="checkbox"]):not([type="radio"]), button:not(.lorca-device-name)) {
+  padding-left: var(--lorca-settings-control-padding, 12px);
+  padding-right: var(--lorca-settings-control-padding, 12px);
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) button:not(.lorca-device-name):has(> [data-icon-root]:only-child) {
+  width: var(--lorca-settings-control-height, 36px);
+  min-width: var(--lorca-settings-control-height, 36px);
+  padding: 0;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) button:not(.lorca-device-name) [data-icon-root] {
+  width: 16px;
+  height: 16px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-theme-switch {
+  height: var(--lorca-settings-control-height, 36px);
+  border: 0;
+  padding: 0;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-theme-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 :where(.lorca-settings-desktop, .lorca-settings-drawer)
   .lorca-settings-select
@@ -2248,10 +2302,15 @@ select:focus-visible {
   right: 11px;
   top: 50%;
   transform: translateY(-50%);
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   color: var(--subtle-foreground);
   pointer-events: none;
+}
+@media (max-width: 767px) and (pointer: coarse) {
+  :where(.lorca-settings-drawer) {
+    --lorca-settings-control-height: 44px;
+  }
 }
 :where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-mcp-server {
   width: 100%;
@@ -2761,13 +2820,12 @@ select:focus-visible {
     z-index: 2;
     isolation: isolate;
     width: 100%;
-    max-width: 840px;
-    margin: 0 auto;
-    padding: 20px 32px 16px;
+    margin: 0;
+    padding: 16px var(--lorca-settings-gutter) 16px;
     border: 0;
   }
   :where(.lorca-settings-desktop) .lorca-settings-scroll {
-    scroll-padding-top: 224px;
+    scroll-padding-top: calc(var(--lorca-settings-header-height, 224px) + 16px);
     scroll-padding-bottom: 128px;
   }
   :where(.lorca-app) .lorca-header::before,
@@ -2787,7 +2845,7 @@ select:focus-visible {
     font-size: var(--text-xl);
   }
   :where(.lorca-settings-desktop) .lorca-settings-reading-width {
-    padding: 8px 32px 28px;
+    padding: 8px var(--lorca-settings-gutter) 28px;
   }
   :where(.lorca-settings-desktop) .lorca-settings-section-content,
   :where(.lorca-settings-desktop) .lorca-auto-review-panel {
@@ -2907,3 +2965,14 @@ select:focus-visible {
     padding-left: 88px;
   }
 }
+
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-view-switch { display: flex; align-items: center; gap: 2px; margin: 2px 16px 12px; padding: 3px; border-radius: 8px; background: var(--surface-recessed); }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-view-switch button { flex: 1; height: 28px; border: 0; border-radius: 5px; background: transparent; color: var(--muted-foreground); font-size: var(--text-xs); cursor: pointer; }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-view-switch button[aria-pressed=true] { color: var(--foreground); background: var(--state-active); }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-view-switch button:focus-visible, :where(.lorca-app, .lorca-mobile-sidebar) .lorca-recent-bucket-toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-recent-bucket-toggle { width: 100%; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; margin: 0 0 4px; border: 0; background: transparent; color: var(--muted-foreground); font-size: var(--text-xs); text-align: left; cursor: pointer; }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-recent-bucket-count { margin-left: auto; font-size: var(--text-2xs); }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-recent-bucket-toggle > [data-icon-root] { width: 12px; height: 12px; transition: transform 150ms ease; }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-recent-bucket-toggle[aria-expanded=true] > [data-icon-root] { transform: rotate(90deg); }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-preference-note, :where(.lorca-app, .lorca-mobile-sidebar) .lorca-sidebar-search-empty { padding: 8px 20px; color: var(--muted-foreground); font-size: var(--text-xs); }
+@media (prefers-reduced-motion: reduce) { :where(.lorca-app, .lorca-mobile-sidebar) .lorca-recent-bucket-toggle > [data-icon-root] { transition: none; } }

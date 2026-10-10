@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { installSettingsFixture } from "./settings-ui-fixture.mjs";
 import { installAvatarFixture } from "./avatar-ui-fixture.mjs";
 import { checkVisualSurfaces } from "./visual-surfaces.mjs";
+import { checkSettingsLayoutSurfaces } from "./settings-layout-surfaces.mjs";
+import { checkSidebarViewSurfaces } from "./sidebar-view-surfaces.mjs";
 import { checkLayoutToolsSurfaces } from "./layout-tools-surfaces.mjs";
 
 let playwright;
@@ -256,7 +258,7 @@ async function checkDevicePairing() {
     await page.getByText("配对窗口未能打开，请查看设备页的禁用原因。若上次结果未知，请先在官方客户端核对设备。", { exact: true }).waitFor();
     assert.doesNotMatch(await page.content(), /synthetic-private-native-error/, "Native rejection details never appear anywhere in the rendered document");
     await noSuccessClaim(page);
-    await page.getByRole("button", { name: "关闭设置", exact: true }).click();
+    await page.getByRole("button", { name: "返回聊天", exact: true }).click();
     await openConnectionSettings(page);
     await waitForSettings(page);
     await chooseSettingsPage(page, "设备");
@@ -572,7 +574,7 @@ try {
       { exact: true },
     )
     .waitFor();
-  await desktop.getByRole("button", { name: "关闭设置" }).click();
+  await desktop.getByRole("button", { name: "返回聊天" }).click();
   await openConnectionSettings(desktop);
   assert.equal(
     await desktop
@@ -583,23 +585,23 @@ try {
   );
   assert.equal(await desktop.locator(".lorca-field-error").count(), 0);
   for (let repeat = 0; repeat < 2; repeat++) {
-    await desktop.getByRole("button", { name: "关闭设置", exact: true }).click();
+    await desktop.getByRole("button", { name: "返回聊天", exact: true }).click();
     const after = await desktop.evaluate(() => ({ draft: document.querySelector("#lorca-composer").value, scroll: document.querySelector(".lorca-scroll").scrollTop }));
     assert.deepEqual(after, connectionRoundTrip, "Repeated status-to-settings round trips preserve the draft and reading position");
     await openConnectionSettings(desktop);
     assert.equal(await desktop.getByRole("textbox", { name: "WebSocket 连接地址" }).inputValue(), savedEndpoint);
   }
-  await desktop.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await desktop.getByRole("button", { name: "返回聊天", exact: true }).click();
   await desktop.waitForFunction(() => document.querySelector(".lorca-header-status") === document.activeElement);
   await openConnectionSettings(desktop);
   await chooseSettingsPage(desktop, "通用");
   await desktop.getByRole("button", { name: "深色", exact: true }).click();
-  await desktop.getByRole("button", { name: "关闭设置" }).click();
+  await desktop.getByRole("button", { name: "返回聊天" }).click();
   await screenshot(desktop, "desktop-conversation-dark");
   await openConnectionSettings(desktop);
   await chooseSettingsPage(desktop, "通用");
   await desktop.getByRole("button", { name: "浅色", exact: true }).click();
-  await desktop.getByRole("button", { name: "关闭设置" }).click();
+  await desktop.getByRole("button", { name: "返回聊天" }).click();
   const preview = desktop
     .locator(".lorca-chat-item")
     .filter({ hasText: "Approval and activity preview" });
@@ -663,7 +665,7 @@ try {
   await screenshot(mobile, "mobile-settings-light");
   await chooseSettingsPage(mobile, "通用");
   await mobile.getByRole("button", { name: "深色", exact: true }).click();
-  await mobile.getByRole("button", { name: "关闭设置" }).click();
+  await mobile.getByRole("button", { name: "返回聊天" }).click();
   await screenshot(mobile, "mobile-conversation-dark");
 
   const settingsDesktop = await browser.newPage({
@@ -1107,7 +1109,7 @@ try {
     0,
     "Rejected endpoint connection never reports success",
   );
-  await controlled.getByRole("button", { name: "关闭设置" }).click();
+  await controlled.getByRole("button", { name: "返回聊天" }).click();
   await controlled.waitForFunction(() => window.__lorcaUiTest.watching.at(-1) === "fixture-two");
   await controlled.keyboard.press("Control+n");
   await controlled
@@ -1199,7 +1201,7 @@ try {
   assert.equal(await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).inputValue(), "Read only the synthetic fixture", "Same policy with a new ticket preserves the dirty draft");
   assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isEnabled(), true, "Ticket renewal alone never creates a configuration conflict");
   assert.equal(await settingsInteraction.getByRole("alert").filter({ hasText: "服务端配置已更新" }).count(), 0);
-  await settingsInteraction.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await settingsInteraction.getByRole("button", { name: "返回聊天", exact: true }).click();
   await openConnectionSettings(settingsInteraction);
   await waitForSettings(settingsInteraction);
   await chooseSettingsPage(settingsInteraction, "自动审查");
@@ -1246,7 +1248,7 @@ try {
   assert.equal(await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).inputValue(), "Read only the synthetic fixture", "Explicit refresh preserves unknown-result draft");
   await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).waitFor();
   assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), afterUnknown);
-  await settingsInteraction.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await settingsInteraction.getByRole("button", { name: "返回聊天", exact: true }).click();
   await openConnectionSettings(settingsInteraction);
   await waitForSettings(settingsInteraction);
   await chooseSettingsPage(settingsInteraction, "自动审查");
@@ -1351,7 +1353,7 @@ try {
   await waitForSettings(avatars);
   await chooseSettingsPage(avatars, "通用");
   await avatars.getByRole("button", { name: "深色", exact: true }).click();
-  await avatars.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await avatars.getByRole("button", { name: "返回聊天", exact: true }).click();
   await screenshot(avatars, "desktop-avatars-dark");
   await chooseChat(avatars, "合成头像 · 群组");
   assert.equal(await avatars.locator(".lorca-header-title .lorca-avatar-stack .lorca-avatar").count(), 2);
@@ -1364,7 +1366,7 @@ try {
   await waitForSettings(avatars);
   await chooseSettingsPage(avatars, "通用");
   await avatars.getByRole("button", { name: "浅色", exact: true }).click();
-  await avatars.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await avatars.getByRole("button", { name: "返回聊天", exact: true }).click();
   await assertNeutralAvatarFallbacks(avatars);
   await screenshot(avatars, "desktop-avatar-fallbacks-light");
   await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').dispatchEvent("error");
@@ -1408,10 +1410,11 @@ try {
   await screenshot(nativeLayout, "desktop-macos-layout-light");
   await openConnectionSettings(nativeLayout);
   await waitForSettings(nativeLayout);
-  assert.ok(await nativeLayout.locator(".lorca-settings-back").evaluate((element) => element.getBoundingClientRect().top) >= 44, "Settings navigation stays below native traffic lights");
-  assert.equal(await nativeLayout.getByRole("button", { name: "关闭设置", exact: true }).evaluate((element) => getComputedStyle(element).getPropertyValue("-webkit-app-region")), "no-drag");
+  assert.equal(await nativeLayout.locator(".lorca-settings-back").evaluate((element) => { const rect = element.getBoundingClientRect(); return rect.right <= 0 || rect.left >= 88 || rect.bottom <= 0 || rect.top >= 40; }), true, "Content return action clears the native traffic-light rectangle");
+  assert.ok(await nativeLayout.locator(".lorca-settings-sidebar .lorca-settings-nav-item").first().evaluate((element) => element.getBoundingClientRect().top) >= 44, "Settings sidebar navigation remains below the traffic lights");
+  assert.equal(await nativeLayout.getByRole("button", { name: "返回聊天", exact: true }).evaluate((element) => getComputedStyle(element).getPropertyValue("-webkit-app-region")), "no-drag");
   await screenshot(nativeLayout, "desktop-macos-settings-layout");
-  await nativeLayout.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await nativeLayout.getByRole("button", { name: "返回聊天", exact: true }).click();
   await nativeLayout.setViewportSize({ width: 760, height: 520 });
   await nativeLayout.waitForFunction(() => !document.querySelector(".lorca-sidebar"));
   const minimumLayout = await nativeLayout.evaluate(() => ({
@@ -1429,7 +1432,7 @@ try {
   await nativeLayout.getByRole("textbox", { name: "给 dots 发消息" }).fill("Synthetic minimum-window draft");
   await openConnectionSettings(nativeLayout);
   await waitForSettings(nativeLayout);
-  await nativeLayout.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await nativeLayout.getByRole("button", { name: "返回聊天", exact: true }).click();
   assert.equal(await nativeLayout.getByRole("textbox", { name: "给 dots 发消息" }).inputValue(), "Synthetic minimum-window draft", "Compact native settings can be opened and closed without losing the draft");
   failurePage = avatars;
   await avatars.evaluate(() => window.__avatarUiTest.loseIdentity());
@@ -1440,6 +1443,8 @@ try {
   await checkSharedDeviceScope();
   await runLayoutToolsDiagnostics();
   await checkVisualSurfaces({ browser, base, screenshot, openConnectionSettings, chooseSettingsPage, waitForSettings, chooseChat, captureErrors, setFailurePage: (page) => { failurePage = page; } });
+  await checkSettingsLayoutSurfaces({ browser, base, screenshot, captureErrors, setFailurePage: (page) => { failurePage = page; } });
+  await checkSidebarViewSurfaces({ browser, base, screenshot, captureErrors, setFailurePage: (page) => { failurePage = page; } });
   assert.deepEqual(
     failures,
     [],

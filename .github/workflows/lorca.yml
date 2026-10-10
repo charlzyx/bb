@@ -58,6 +58,7 @@ jobs:
           node apps/lorca/tests/ui-smoke.mjs
           node apps/lorca/tests/attachment-ui-smoke.mjs
           node apps/lorca/tests/group-ui-smoke.mjs
+          node apps/lorca/tests/inspector-ui-smoke.mjs
       - name: Install Electron runtime
         run: node apps/lorca/toolchain/node_modules/electron/install.js
       - name: Synthetic Electron bridge smoke
@@ -66,6 +67,7 @@ jobs:
         run: |
           xvfb-run -a node apps/lorca/tests/electron-smoke.mjs
           xvfb-run -a node apps/lorca/tests/electron-attachment-smoke.mjs
+          xvfb-run -a node apps/lorca/tests/electron-inspector-smoke.mjs
       - name: Synthetic screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

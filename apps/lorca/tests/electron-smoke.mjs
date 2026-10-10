@@ -23,6 +23,11 @@ async function until(check, label) {
     await new Promise(resolve => setTimeout(resolve, 25));
   }
 }
+async function assertNativeControlGeometry(page) {
+  const sizes = await page.evaluate(() => Array.from(document.querySelectorAll('input:not([type=checkbox]):not([type=radio]), select, button')).filter(element => element.getBoundingClientRect().height > 0).map(element => ({ tag: element.tagName, height: element.getBoundingClientRect().height })));
+  assert.ok(sizes.length > 0, 'The secure window contains visible controls');
+  assert.equal(sizes.every(control => Math.abs(control.height - 36) <= 1), true, `Native single-line controls share 36px height: ${JSON.stringify(sizes)}`);
+}
 async function loadPlaywright() {
   try { return await import('playwright'); }
   catch (error) {
@@ -172,7 +177,7 @@ async function main() {
     assert.equal(renderer.platform, process.platform);
     assert.equal(renderer.status.status, 'connected'); assert.equal(renderer.status.authMode, 'token');
     assert.equal(JSON.stringify(renderer).includes(token), false); assert.equal(JSON.stringify(renderer).includes(home), false);
-    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onAttachmentImport', 'onAttachmentText', 'onEvent', 'onStatus', 'openPairing', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setAttachmentScope', 'setWatchingChat', 'settingsAction']);
+    assert.deepEqual(renderer.keys, ['agentCapabilitiesAction', 'agentDetailsAction', 'closeAgentDetails', 'connect', 'copyText', 'getAgentCapabilities', 'getAgentDetails', 'getAgentMemorySummary', 'getBotAvatar', 'getSettings', 'getStatus', 'onAttachmentImport', 'onAttachmentText', 'onEvent', 'onStatus', 'openAgentMemory', 'openPairing', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setAttachmentScope', 'setWatchingChat', 'settingsAction']);
     const avatar = await page.evaluate(async () => {
       const current = await window.lorca.request('bootstrap', {});
       return window.lorca.getBotAvatar('bot-smoke', current.bots[0].avatar_version);
@@ -287,6 +292,7 @@ async function main() {
     securePage.setDefaultTimeout(15_000);
     await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).waitFor();
     assert.equal(await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).inputValue(), '');
+    await assertNativeControlGeometry(securePage);
     const secureLogo = securePage.locator('.brand .brand-icon');
     await secureLogo.waitFor({ state: 'visible' });
     assert.deepEqual(await secureLogo.evaluate(async image => {
@@ -334,6 +340,7 @@ async function main() {
     const pairingOutcome = page.evaluate(() => window.lorca.openPairing('invite')).then(value => ({ value }), error => ({ error }));
     const pairingPage = await pairingWindow;
     await pairingPage.getByRole('button', { name: '生成配对码', exact: true }).waitFor();
+    await assertNativeControlGeometry(pairingPage);
     const pairingFlags = await pairingPage.evaluate(() => ({ process: typeof window.process, require: typeof window.require, chatBridge: typeof window.lorca, api: Object.keys(window.dotsPairing).sort() }));
     assert.deepEqual(pairingFlags, { process: 'undefined', require: 'undefined', chatBridge: 'undefined', api: ['close', 'initialize', 'onState', 'submit'] });
     await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/secure-pairing.html')).webContents.openDevTools({ mode: 'detach' }));

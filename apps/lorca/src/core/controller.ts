@@ -448,6 +448,7 @@ export class LorcaController {
       conversations: [...this.model.chats.values()]
         .map((c): LorcaConversation => ({
           id: c.id,
+          botIds: [...c.bot_ids],
           kind: c.kind === "group" ? "group" as const : c.kind === "dm" ? "dm" as const : undefined,
           avatars: c.bot_ids.flatMap(id => {
             const appearance = this.appearance(id);
@@ -460,7 +461,7 @@ export class LorcaController {
               .join(", ") ||
             "对话",
           updatedAt: new Date(
-            (c.messages.at(-1)?.created_at ?? c.created_at) * 1000,
+            c.messages.reduce((latest, message) => Math.max(latest, message.created_at), c.created_at) * 1000,
           ).toISOString(),
           status: c.messages.some(
             (m) =>
@@ -947,6 +948,7 @@ export class LorcaController {
     }
   }
   actions: LorcaShellActions = {
+    onRefreshData: () => this.refresh(),
     onConversationVisibility: (id) => {
       this.visibleChatId = id !== null && id === this.activeId && this.model.chats.has(id) ? id : null;
       this.syncWatching();

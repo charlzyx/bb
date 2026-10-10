@@ -36,6 +36,14 @@ export function installGroupFixture({ theme = "light" } = {}) {
   window.__groupUiTest = {
     requests,
     avatar,
+    chatMembers: () => chats.filter(chat => chat.kind === "group").map(chat => ({ id: chat.id, botIds: [...chat.bot_ids] })),
+    seedLegacyPrimary(name, primaryIds) {
+      for (const key of Object.keys(localStorage).filter(key => key.startsWith("dots.agent-groups.v1:"))) {
+        const state = JSON.parse(localStorage.getItem(key));
+        const group = state.groups.find(group => group.name === name);
+        if (group) { group.primaryIds = [...primaryIds]; localStorage.setItem(key, JSON.stringify(state)); }
+      }
+    },
     blockStorage(value) { blockStorage = value; },
     changeIdentity(value) {
       identity = value;

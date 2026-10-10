@@ -123,6 +123,8 @@ function EndpointForm({
 }
 
 export function Settings({
+  onCreateAgent,
+  requestedDevice,
   open,
   onOpenChange,
   page,
@@ -138,6 +140,8 @@ export function Settings({
   applying = false,
   error,
 }: {
+  onCreateAgent?: () => void;
+  requestedDevice?: { id: string; sequence: number };
   open: boolean;
   onOpenChange: (open: boolean) => void;
   page: SettingsPage;
@@ -154,13 +158,12 @@ export function Settings({
   error?: string | null;
 }) {
   const [selectedBotId, setSelectedBotId] = useState("");
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const selectedDevice = runtime?.devices.find((device) => device.id === selectedDeviceId)
-    ?? runtime?.devices.find((device) => device.isThisDevice)
-    ?? runtime?.devices[0];
-  if (runtime && selectedDeviceId !== null && selectedDevice?.id !== selectedDeviceId) {
-    setSelectedDeviceId(selectedDevice?.id ?? null);
-  }
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(requestedDevice?.id ?? null);
+  const [appliedDeviceRequest, setAppliedDeviceRequest] = useState(requestedDevice);
+  if (requestedDevice !== appliedDeviceRequest) { setAppliedDeviceRequest(requestedDevice); if (requestedDevice) setSelectedDeviceId(requestedDevice.id); }
+  const selectedDevice = selectedDeviceId === null
+    ? runtime?.devices.find(device => device.isThisDevice) ?? runtime?.devices[0]
+    : runtime?.devices.find(device => device.id === selectedDeviceId);
   const connected = demo || connection.status === "connected";
   const disabled = !connected || loading || applying;
   const autoReviewDraft = useAutoReviewDraft({ editor: runtime?.editor, disabled, onAction: actions.onSettingsAction });
@@ -181,8 +184,9 @@ export function Settings({
   const deviceControl = (
     <div className="lorca-settings-device-control">
       <div className="lorca-settings-select">
-        <select aria-label={settingsZh.viewDevice} title={settingsZh.viewDeviceHelp} value={selectedDevice?.id ?? ""} disabled={!runtime?.devices.length} onChange={(event) => changeDevice(event.target.value)}>
-          {!runtime?.devices.length && <option value="">{settingsZh.selectDevice}</option>}
+        <select aria-label={settingsZh.viewDevice} title={settingsZh.viewDeviceHelp} value={selectedDeviceId ?? selectedDevice?.id ?? ""} disabled={!runtime?.devices.length || loading} onChange={(event) => changeDevice(event.target.value)}>
+          {selectedDeviceId !== null && !selectedDevice && <option value={selectedDeviceId} disabled>{loading ? "正在读取指定设备…" : "指定设备不可用"}</option>}
+          {!runtime?.devices.length && selectedDeviceId === null && <option value="">{settingsZh.selectDevice}</option>}
           {runtime?.devices.map((device) => <option key={device.id} value={device.id}>{device.name || settingsZh.unnamedDevice}{device.isThisDevice ? ` · ${settingsZh.thisDevice}` : ""}</option>)}
         </select>
         <Icon name="ChevronDown" />
@@ -362,6 +366,7 @@ export function Settings({
         />
       )}
       {page === "providers" && (runtime ? <ProvidersPanel runtime={runtime} disabled={disabled} onAction={actions.onSettingsAction} /> : <InventoryEmpty icon="Info" title={settingsZh.noRuntimeDetails} detail={editorZh.unsupported} />)}
+      {page === "models" && onCreateAgent && <Button type="button" disabled={disabled} onClick={onCreateAgent}>新建智能体</Button>}
       {page === "models" && (runtime && selectedDevice?.role === "runner" ? <BotSettingsPanel key={`${open}:${selectedDevice.id}`} runtime={runtime} disabled={disabled} onAction={actions.onSettingsAction} selectedBotId={selectedBotId} onSelectBot={setSelectedBotId} deviceId={selectedDevice.id} /> : <InventoryEmpty icon="Info" title={selectedDevice?.role === "device" ? settingsZh.requiresRunner : settingsZh.unknownRunnerRole} detail={settingsZh.chooseRunnerForSettings} />)}
       <div hidden={page !== "approvals"}>
         <AutoReviewPanel draft={autoReviewDraft} />

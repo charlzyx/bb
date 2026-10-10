@@ -151,6 +151,33 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
   let nativeAvatars: any;
   let nativeBridge: any;
   let nativeAttachmentSession: any;
+  let agentUIActive = false;
+  let agentInvalidations = 0, capabilityInvalidations = 0;
+  let agentDispose = () => Promise.resolve();
+  const agentCalls: { operation: string; value?: unknown }[] = [];
+  const agentUI = {
+    isActive: () => agentUIActive,
+    openMemory: (revision: string, guard: () => void) => { guard(); agentCalls.push({ operation: "openMemory", value: revision }); return { status: "cancelled", botId: "bot-demo" }; },
+    reviewAvatar() {}, confirm() {},
+  };
+  class FixtureAgentDetails {
+    busy = false;
+    get(value: unknown, guard: () => void) { guard(); agentCalls.push({ operation: "get", value }); return { revision: "synthetic-profile-ticket" }; }
+    async getMemory(value: unknown, guard: () => void) {
+      guard(); agentCalls.push({ operation: "getMemory", value });
+      return { text: "SYNTHETIC_PRIVATE_MEMORY", path: "/synthetic-private-memory-path", lines: 300, bytes: 10000, maxLines: 200, maxBytes: 24000, topics: ["private-topic"], logs: ["private-log"] };
+    }
+    apply(value: unknown, guard: () => void) { guard(); agentCalls.push({ operation: "apply", value }); return { status: "applied", botId: "bot-demo" }; }
+    invalidate() { agentInvalidations++; }
+    dispose() { return agentDispose(); }
+  }
+  class FixtureAgentCapabilities {
+    busy = false;
+    get(value: unknown, guard: () => void) { guard(); agentCalls.push({ operation: "capabilities.get", value }); return { revision: "synthetic-capabilities-ticket" }; }
+    apply(value: unknown, guard: () => void) { guard(); agentCalls.push({ operation: "capabilities.apply", value }); return { status: "applied", botId: "bot-demo" }; }
+    invalidate() { capabilityInvalidations++; }
+    dispose() {}
+  }
   let pickerCalls = 0, quitAttempts = 0, allowedQuits = 0;
   const nativeCalls: { method: string; params: Record<string, unknown> }[] = [];
   class NativeBridge extends EventEmitter {
@@ -214,7 +241,10 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
       if (name === "./menu.cjs") return { applicationMenuTemplate: () => [] };
       if (name === "./secure-settings.cjs") return { createSecureSettingsEditor: () => ({ edit() {}, close() {} }) };
       if (name === "./pairing.cjs") return { createPairingFlow: () => ({ capabilities: () => ({ invite: false, join: false }), isActive: () => false, close() {} }) };
-      if (name === "./settings-editor.cjs") return { SettingsEditor: class {} };
+      if (name === "./settings-editor.cjs") return { SettingsEditor: class { apply() { agentCalls.push({ operation: "settingsAction" }); } } };
+      if (name === "./agent-details.cjs") return { AgentDetails: FixtureAgentDetails };
+      if (name === "./agent-capabilities.cjs") return { AgentCapabilities: FixtureAgentCapabilities };
+      if (name === "./agent-details-ui.cjs") return { createAgentDetailsUI: () => agentUI };
       if (name === "./settings.cjs") return { ...require("../native/settings.cjs"), sanitizeRendererResult: (_method: string, value: unknown) => value };
       return require(name);
     },
@@ -228,6 +258,40 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
   assert.equal(preferences.contextIsolation, true); assert.equal(preferences.nodeIntegration, false); assert.equal(preferences.sandbox, true);
   assert.equal(preferences.webSecurity, true); assert.equal(preferences.allowRunningInsecureContent, false); assert.equal(preferences.webviewTag, false);
   const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame };
+  const agentEntrypoints = [
+    ["lorca:get-agent-details", { botId: "bot-demo" }],
+    ["lorca:get-agent-memory-summary", { revision: "synthetic-profile-ticket" }],
+    ["lorca:open-agent-memory", { revision: "synthetic-profile-ticket" }],
+    ["lorca:agent-details-action", { kind: "avatar.replace", revision: "synthetic-profile-ticket" }],
+    ["lorca:get-agent-capabilities", { botId: "bot-demo" }],
+    ["lorca:agent-capabilities-action", { kind: "routine.run", revision: "synthetic-capabilities-ticket", routineId: "synthetic-routine" }],
+  ] as const;
+  for (const badEvent of [{ ...event, senderFrame: { ...event.senderFrame } }, { ...event, sender: new Contents() }]) {
+    for (const [channel, params] of agentEntrypoints) await assert.rejects(Promise.resolve().then(() => handlers.get(channel)!(badEvent, params)), /来源不可信/);
+    assert.throws(() => handlers.get("lorca:close-agent-details")!(badEvent), /来源不可信/);
+  }
+  assert.equal(agentCalls.length, 0); assert.equal(agentInvalidations, 0); assert.equal(capabilityInvalidations, 0);
+  agentUIActive = true;
+  for (const [channel, params] of [...agentEntrypoints, ["lorca:open-pairing", "invite"], ["lorca:settings-action", { kind: "bot.update" }]] as const) {
+    await assert.rejects(Promise.resolve().then(() => handlers.get(channel)!(event, params)), /请先关闭|仍在处理/);
+  }
+  assert.equal(agentCalls.length, 0); assert.equal(pickerCalls, 0); assert.equal(nativeCalls.length, 0);
+  assert.equal(handlers.get("lorca:close-agent-details")!(event), null);
+  assert.equal(agentInvalidations, 1); assert.equal(capabilityInvalidations, 1);
+  agentUIActive = false;
+  await handlers.get("lorca:get-agent-details")!(event, { botId: "bot-demo" });
+  const memorySummary = await handlers.get("lorca:get-agent-memory-summary")!(event, { revision: "synthetic-profile-ticket" });
+  assert.deepEqual(JSON.parse(JSON.stringify(memorySummary)), { status: "ready", lines: 300, bytes: 10000, maxLines: 200, maxBytes: 24000, topicCount: 1, logCount: 1, canEdit: true });
+  assert.doesNotMatch(JSON.stringify(memorySummary), /SYNTHETIC_PRIVATE_MEMORY|private-memory-path|private-topic|private-log/);
+  await handlers.get("lorca:open-agent-memory")!(event, { revision: "synthetic-profile-ticket" });
+  await handlers.get("lorca:agent-details-action")!(event, { kind: "profile.save", revision: "synthetic-profile-ticket", patch: { name: "Synthetic name" } });
+  await handlers.get("lorca:get-agent-capabilities")!(event, { botId: "bot-demo" });
+  await handlers.get("lorca:agent-capabilities-action")!(event, { kind: "routine.run", revision: "synthetic-capabilities-ticket", routineId: "synthetic-routine" });
+  assert.deepEqual(agentCalls.map(value => value.operation), ["get", "getMemory", "openMemory", "apply", "capabilities.get", "capabilities.apply"]);
+  for (const action of [{ kind: "memory.save", revision: "synthetic-memory-ticket", text: "SYNTHETIC_PRIVATE_MEMORY" }, { kind: "arbitrary.rpc" }, null]) {
+    assert.throws(() => handlers.get("lorca:agent-details-action")!(event, action), /智能体编辑操作无效/);
+  }
+  assert.equal(agentCalls.length, 6);
   let attachmentScope = "", attachmentTicket = "";
   const nativePick = async () => {
     attachmentScope = `g${nativeBridge.status.generation}:a0:n0`;
@@ -251,8 +315,12 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
     ["lorca:import-attachments", [attachmentInput]], ["lorca:pick-attachments", []], ["lorca:send-attachments", [attachmentParams]],
   ] as const) await assert.rejects(handlers.get(channel)!(event, attachmentScope, "0".repeat(64), ...args), /所属草稿、账号或连接已变化/);
   assert.equal(pickerCalls, 1); assert.equal(nativeCalls.length, 0); assert.equal(nativeRegistry.files.size, 1);
+  const beforeNavigation = agentInvalidations, beforeCapabilityNavigation = capabilityInvalidations;
+  window.webContents.emit("did-start-navigation", { isMainFrame: false, isSameDocument: false });
+  window.webContents.emit("did-start-navigation", {}, "file:///synthetic-child", false, false);
   window.webContents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: true });
   window.webContents.emit("did-start-navigation", {}, "file:///synthetic#composer", true, true);
+  assert.equal(agentInvalidations, beforeNavigation); assert.equal(capabilityInvalidations, beforeCapabilityNavigation);
   assert.equal(nativeRegistry.files.size, 1);
   await handlers.get("lorca:connect")!(event, "ws://localhost:4862/ws");
   assert.equal(nativeRegistry.files.size, 1);
@@ -264,7 +332,10 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
   await handlers.get("lorca:release-attachments")!(event, [unused.id]); assert.equal(nativeRegistry.files.size, 0);
   await nativePick();
   window.webContents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+  assert.equal(agentInvalidations, beforeNavigation + 1); assert.equal(capabilityInvalidations, beforeCapabilityNavigation + 1);
   assert.equal(nativeRegistry.files.size, 0);
+  window.webContents.emit("did-start-navigation", {}, "file:///synthetic-reload", false, true);
+  assert.equal(agentInvalidations, beforeNavigation + 2); assert.equal(capabilityInvalidations, beforeCapabilityNavigation + 2);
   await nativePick();
   await handlers.get("lorca:connect")!(event, "ws://localhost:4863/ws");
   assert.equal(nativeRegistry.files.size, 0); assert.equal(nativeBridge.status.generation, 2);
@@ -317,12 +388,16 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
   assert.equal(nativeAvatars.bots.get("bot-demo").id, "att-different-snapshot");
   assert.equal(nativeAvatars.bots.get("bot-demo").version, newestRoster.data.bots[0].avatar_version);
   handlers.get("lorca:set-watching-chat")!(event, "chat-demo"); await tick();
+  const beforeClose = agentInvalidations, beforeCapabilityClose = capabilityInvalidations;
   window.emit("closed"); await tick();
+  assert.equal(agentInvalidations, beforeClose + 1); assert.equal(capabilityInvalidations, beforeCapabilityClose + 1);
   assert.equal(nativeBridge.closes, 1);
   assert.deepEqual(nativeCalls.slice(-1).map(item => [item.method, item.params.chat_id]), [["ui.watching", null]]);
   assert.throws(() => handlers.get("lorca:set-watching-chat")!(event, "chat-demo"), /来源不可信/);
   const shutdown = deferred<void>(); nativeAttachmentSession.shutdown = () => shutdown.promise;
+  const agentShutdown = deferred<void>(); agentDispose = () => agentShutdown.promise;
   electron.app.quit(); electron.app.quit();
   assert.equal(quitAttempts, 2); assert.equal(allowedQuits, 0);
-  shutdown.resolve(); await tick(); assert.equal(allowedQuits, 1); assert.equal(quitAttempts, 3);
+  shutdown.resolve(); await tick(); assert.equal(allowedQuits, 0);
+  agentShutdown.resolve(); await tick(); assert.equal(allowedQuits, 1); assert.equal(quitAttempts, 3);
 });

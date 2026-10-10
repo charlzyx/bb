@@ -81,16 +81,17 @@ test("moving to a missing or full target does not detach the original membership
   assert.deepEqual(full.state, original);
 });
 
-test("primary status is visual membership metadata with zero allowed and a hard maximum of two", () => {
-  const original = state(group("one", { memberIds: ["a", "b", "c"].map(bot) }));
-  const two = applied(setAgentGroupPrimary(original, "one", ["b", "a"]));
-  assert.deepEqual(two.groups[0].primaryIds, ["b", "a"]);
-  failed(setAgentGroupPrimary(two, "one", ["a", "b", "c"]), "primary-limit");
-  failed(setAgentGroupPrimary(two, "one", ["a", "a"]), "primary-membership");
-  failed(setAgentGroupPrimary(two, "one", ["outside"]), "primary-membership");
-  assert.deepEqual(applied(setAgentGroupPrimary(two, "one", [])).groups[0].primaryIds, []);
-  assert.deepEqual(two.groups[0].memberIds, original.groups[0].memberIds);
-  assert.equal(Object.hasOwn(two.groups[0], "announcement"), false);
+test("primary status allows zero or one and choosing a new bot replaces the previous primary", () => {
+  const original = state(group("one", { memberIds: ["a", "b", "c"].map(bot), primaryIds: ["a"] }));
+  const selected = applied(setAgentGroupPrimary(original, "one", ["b"]));
+  assert.deepEqual(selected.groups[0].primaryIds, ["b"]);
+  assert.deepEqual(original.groups[0].primaryIds, ["a"]);
+  failed(setAgentGroupPrimary(selected, "one", ["a", "b"]), "primary-limit");
+  failed(setAgentGroupPrimary(selected, "one", ["a", "a"]), "primary-limit");
+  failed(setAgentGroupPrimary(selected, "one", ["outside"]), "primary-membership");
+  assert.deepEqual(applied(setAgentGroupPrimary(selected, "one", [])).groups[0].primaryIds, []);
+  assert.deepEqual(selected.groups[0].memberIds, original.groups[0].memberIds);
+  assert.equal(Object.hasOwn(selected.groups[0], "announcement"), false);
 });
 
 test("collapse changes only display state and deleting a group never deletes agents", () => {
@@ -281,13 +282,13 @@ test("a failed write preserves the previous saved account state", () => {
 });
 
 test("assign then primary can be composed transactionally without mutating or partially saving", () => {
-  const storage = new MemoryStorage(), original = state(group("one", { memberIds: ["a"].map(bot), primaryIds: ["a"] }), group("two", { memberIds: ["b", "c"].map(bot), primaryIds: ["b", "c"] }));
+  const storage = new MemoryStorage(), original = state(group("one", { memberIds: ["a"].map(bot), primaryIds: ["a"] }), group("two", { memberIds: ["b", "c"].map(bot), primaryIds: ["b"] }));
   saveAgentGroups("account", original, storage);
   const moved = applied(assignAgentGroup(original, bot("a"), "two"));
   const rejected = setAgentGroupPrimary(moved, "two", ["a", "b", "c"]);
   failed(rejected, "primary-limit");
   assert.deepEqual(loadAgentGroups("account", storage).state, original);
-  const accepted = applied(setAgentGroupPrimary(moved, "two", ["a", "b"]));
+  const accepted = applied(setAgentGroupPrimary(moved, "two", ["a"]));
   assert.deepEqual(saveAgentGroups("account", accepted, storage), { ok: true });
   assert.deepEqual(loadAgentGroups("account", storage).state, accepted);
   assert.equal(storage.writes.length, 2);
@@ -375,4 +376,58 @@ test("typed membership changes accept only ID references and never persist entit
   assert.equal(saveAgentGroups("account", assigned, storage).ok, true);
   assert.doesNotMatch(storage.writes[0].value, /Synthetic title|SYNTHETIC_SECRET|botIds|label/);
   assert.deepEqual(entity.botIds, ["a", "b"]);
+});
+
+test("existing v1 two-primary storage keeps the first primary and every member without automatic writes", () => {
+  const storage = new MemoryStorage();
+  saveAgentGroups("existing-account", emptyAgentGroups(), storage);
+  const key = storage.writes[0].key;
+  const existing = state(
+    group("work", { name: "Existing work", collapsed: true, memberIds: [bot("a"), chat("a"), bot("b"), bot("c")], primaryIds: ["b", "a"] }),
+    group("other", { memberIds: [chat("room"), bot("d")], primaryIds: [] }),
+  );
+  const raw = JSON.stringify(existing);
+  storage.values.set(key, raw);
+  const loaded = loadAgentGroups("existing-account", storage);
+  assert.equal(loaded.ok, true);
+  if (loaded.ok) assert.equal(loaded.source, "saved");
+  assert.deepEqual(loaded.state.groups, [{ ...existing.groups[0], primaryIds: ["b"] }, existing.groups[1]]);
+  assert.equal(storage.values.get(key), raw);
+  assert.equal(storage.writes.length, 1);
+  assert.deepEqual(existing.groups[0].primaryIds, ["b", "a"]);
+  const renamed = applied(renameAgentGroup(loaded.state, "other", "Renamed"));
+  assert.equal(saveAgentGroups("existing-account", renamed, storage).ok, true);
+  assert.deepEqual(loadAgentGroups("existing-account", storage).state, renamed);
+  assert.deepEqual(renamed.groups[0].memberIds, existing.groups[0].memberIds);
+});
+
+test("v1 migration is stable and validates both old primary references before normalizing", () => {
+  const existing = state(group("one", { memberIds: [bot("a"), bot("b"), chat("room")], primaryIds: ["b", "a"] }));
+  const normalized = parseAgentGroups(existing)!;
+  assert.deepEqual(normalized.groups[0].primaryIds, ["b"]);
+  assert.deepEqual(parseAgentGroups(normalized), normalized);
+  assert.equal(parseAgentGroups(state(group("one", { memberIds: existing.groups[0].memberIds, primaryIds: ["a", "room"] }))), null);
+  assert.equal(parseAgentGroups(state(group("one", { memberIds: existing.groups[0].memberIds, primaryIds: ["a", "a"] }))), null);
+  assert.equal(parseAgentGroups(state(group("one", { memberIds: [bot("a"), bot("b"), bot("c")], primaryIds: ["a", "b", "c"] }))), null);
+  const projection = projectAgentGroups(existing, agents.filter(agent => agent.id !== "b"));
+  assert.deepEqual(projection.groups[0].primaryIds, [], "A missing first primary is not silently replaced by the previous second one");
+  assert.deepEqual(projection.groups[0].members, [agents[0]]);
+});
+
+test("missing identity and failed persistence never reset or rewrite preexisting two-primary data", () => {
+  const storage = new MemoryStorage();
+  saveAgentGroups("existing-account", emptyAgentGroups(), storage);
+  const key = storage.writes[0].key;
+  const existing = state(group("one", { memberIds: [bot("a"), bot("b")], primaryIds: ["a", "b"] }));
+  const raw = JSON.stringify(existing);
+  storage.values.set(key, raw);
+  storage.reads = [];
+  assert.equal(loadAgentGroups(undefined, storage).ok, false);
+  assert.equal(saveAgentGroups(undefined, existing, storage).ok, false);
+  assert.deepEqual(storage.reads, []);
+  assert.equal(storage.writes.length, 1);
+  const loaded = loadAgentGroups("existing-account", storage);
+  const failing = { getItem: (key: string) => storage.getItem(key), setItem() { throw new Error("quota"); } };
+  assert.equal(saveAgentGroups("existing-account", loaded.state, failing).ok, false);
+  assert.equal(storage.values.get(key), raw);
 });

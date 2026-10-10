@@ -1,4 +1,4 @@
-:root { --canvas: #f3f3ef; --ink: #242422; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; color: var(--ink); background: var(--canvas); color-scheme: light; }
+:root { --control-height: 36px; --control-padding: 12px; --canvas: #f3f3ef; --ink: #242422; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; color: var(--ink); background: var(--canvas); color-scheme: light; }
 * { box-sizing: border-box; }
 body { margin: 0; }
 main { max-width: 760px; padding: 28px 32px; margin: auto; }
@@ -11,6 +11,8 @@ label { display: block; font-size: 14px; margin: 18px 0 7px; }
 input, select, textarea { width: 100%; padding: 10px 12px; font: inherit; font-size: 14px; color: inherit; background: color-mix(in oklch, var(--canvas), white 70%); border: 1px solid color-mix(in oklch, var(--ink) 30%, var(--canvas)); border-radius: 7px; }
 textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
 textarea[readonly] { min-height: 360px; white-space: pre-wrap; }
+.avatar-preview { display: block; width: min(256px, 100%); height: auto; object-fit: contain; margin: 20px auto; }
+#memory { min-height: 360px; line-height: 1.5; white-space: pre-wrap; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 .actions { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 16px 0; background: var(--canvas); }
 button { padding: 9px 18px; font: inherit; font-size: 14px; border-radius: 7px; border: 1px solid color-mix(in oklch, var(--ink) 30%, var(--canvas)); background: var(--canvas); color: inherit; cursor: pointer; }
@@ -18,3 +20,5 @@ button[type=submit] { color: var(--canvas); background: var(--ink); border-color
 button:disabled { opacity: .5; cursor: default; }
 #error { color: #9d2525; min-height: 20px; }
 .footnote { color: color-mix(in oklch, var(--ink) 65%, var(--canvas)); font-size: 12px; }
+
+input:not([type=checkbox]):not([type=radio]), select, button { height: var(--control-height); min-height: var(--control-height); padding-top: 0; padding-bottom: 0; padding-left: var(--control-padding); padding-right: var(--control-padding); line-height: 20px; }

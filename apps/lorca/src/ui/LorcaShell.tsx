@@ -1,3 +1,6 @@
+import { bucketConversations, readSidebarPreferences, writeSidebarPreferences, type SidebarPreferences, type SidebarView } from "./sidebar-preferences";
+import { AgentInspector } from "./inspector/AgentInspector";
+import { AgentInspectorSession } from "../core/agent-inspector";
 import { AgentPicker } from "./AgentPicker";
 import { AgentGroupTree } from "./AgentGroupTree";
 import { zhCN } from "../locale/zh-CN";
@@ -7,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type FormEvent,
   type RefObject,
 } from "react";
@@ -43,18 +47,6 @@ import type {
   LorcaShellState,
 } from "./types";
 
-function conversationGroup(updatedAt: string): string {
-  const updated = new Date(updatedAt);
-  if (!Number.isFinite(updated.getTime())) return zhCN.chat.conversations;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const difference = today.getTime() - updated.getTime();
-  if (difference <= 0) return zhCN.chat.today;
-  if (difference < 86400000) return zhCN.chat.yesterday;
-  if (difference < 604800000) return zhCN.chat.previousWeek;
-  return zhCN.chat.earlier;
-}
-
 function Sidebar({
   state,
   actions,
@@ -78,18 +70,71 @@ function Sidebar({
         .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
     [state.conversations, search],
   );
-  const groups = useMemo(() => {
-    const result = new Map<string, LorcaConversation[]>();
-    for (const conversation of filtered) {
-      const label = search
-        ? zhCN.chat.searchResults
-        : conversationGroup(conversation.updatedAt);
-      const group = result.get(label) ?? [];
-      group.push(conversation);
-      result.set(label, group);
-    }
-    return Array.from(result);
-  }, [filtered, search]);
+  const [preferenceState, setPreferenceState] = useState(() => ({ namespace: state.localGroupNamespace, value: readSidebarPreferences(state.localGroupNamespace) }));
+  const [preferenceError, setPreferenceError] = useState(false);
+  if (preferenceState.namespace !== state.localGroupNamespace) {
+    setPreferenceState({ namespace: state.localGroupNamespace, value: readSidebarPreferences(state.localGroupNamespace) });
+    setPreferenceError(false);
+  }
+  const preferences = preferenceState.value;
+  const listRef = useRef<HTMLElement>(null);
+  const scrollPositions = useRef<Record<SidebarView, number>>({ recent: 0, teams: 0 });
+  const [calendarNow, setCalendarNow] = useState(() => new Date());
+  useEffect(() => {
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const timer = setTimeout(() => setCalendarNow(new Date()), next.getTime() - now.getTime() + 20);
+    return () => clearTimeout(timer);
+  }, [calendarNow]);
+  const groups = useMemo(() => bucketConversations(filtered, calendarNow), [filtered, calendarNow]);
+  const savePreferences = (value: SidebarPreferences) => {
+    setPreferenceState({ namespace: state.localGroupNamespace, value });
+    setPreferenceError(Boolean(state.localGroupNamespace) && !writeSidebarPreferences(state.localGroupNamespace, value));
+  };
+  const selectView = (view: SidebarView) => {
+    if (view === preferences.view) return;
+    scrollPositions.current[preferences.view] = listRef.current?.scrollTop ?? 0;
+    savePreferences({ ...preferences, view });
+  };
+  useLayoutEffect(() => { scrollPositions.current = { recent: 0, teams: 0 }; if (listRef.current) listRef.current.scrollTop = 0; }, [state.localGroupNamespace]);
+  useLayoutEffect(() => { if (listRef.current) listRef.current.scrollTop = scrollPositions.current[preferences.view]; }, [preferences.view]);
+
+  const renderConversation = (conversation: LorcaConversation) => (
+              <button
+                key={conversation.id}
+                className={`lorca-chat-item${state.activeConversationId === conversation.id ? " lorca-chat-item-active" : ""}`}
+                aria-current={
+                  state.activeConversationId === conversation.id
+                    ? "page"
+                    : undefined
+                }
+                onClick={() => {
+                  actions.onSelectConversation(conversation.id);
+                  onNavigate();
+                }}
+              >
+                <ConversationAvatars avatars={conversation.avatars} />
+                <span className="lorca-chat-item-title">{conversation.title || zhCN.chat.untitledChat}</span>
+                {conversation.status !== "idle" && (
+                  <span
+                    className={`lorca-thread-state lorca-thread-state-${conversation.status}`}
+                    aria-label={
+                      zhCN.chat.conversationStatus[conversation.status]
+                    }
+                  >
+                    <Icon
+                      name={
+                        conversation.status === "running"
+                          ? "Loading"
+                          : conversation.status === "waiting"
+                            ? "Circle"
+                            : "AlertCircle"
+                      }
+                    />
+                  </span>
+                )}
+              </button>
+  );
 
   return (
     <div className="lorca-sidebar-content">
@@ -125,7 +170,13 @@ function Sidebar({
           <kbd>⌘ K</kbd>
         </div>
       </div>
-      <nav className="lorca-chat-list" aria-label={zhCN.chat.chats}>
+      <div className="lorca-sidebar-view-switch" role="group" aria-label="侧栏视图">
+        <button type="button" aria-pressed={preferences.view === "recent"} onClick={() => selectView("recent")}>最近</button>
+        <button type="button" aria-pressed={preferences.view === "teams"} onClick={() => selectView("teams")}>团队</button>
+      </div>
+      {preferenceError && <p className="lorca-sidebar-preference-note" role="status">视图偏好暂未保存，仅本窗口生效。</p>}
+      <nav ref={listRef} className="lorca-chat-list" aria-label={zhCN.chat.chats}>
+        {(preferences.view === "teams" || Boolean(search)) && <>
         <AgentGroupTree
           key={state.localGroupNamespace ?? "unavailable"}
           namespace={state.localGroupNamespace}
@@ -134,6 +185,7 @@ function Sidebar({
           selectedConversationId={state.activeConversationId}
           onSelectConversation={(id) => { actions.onSelectConversation(id); onNavigate(); }}
           search={search}
+          hasOtherSearchResults={Boolean(search && filtered.some(chat => chat.kind !== "group"))}
           selectedAgentId={state.selectedAgentId}
           onSelectAgent={(id) => {
             if (actions.onOpenAgentChat) actions.onOpenAgentChat(id);
@@ -141,47 +193,17 @@ function Sidebar({
             onNavigate();
           }}
         />
-        {groups.map(([label, conversations]) => (
-          <section className="lorca-chat-group" key={label}>
-            <h2 className={CHROME_SECTION_LABEL_CLASS}>{label}</h2>
-            {conversations.map((conversation) => (
-              <button
-                key={conversation.id}
-                className={`lorca-chat-item${state.activeConversationId === conversation.id ? " lorca-chat-item-active" : ""}`}
-                aria-current={
-                  state.activeConversationId === conversation.id
-                    ? "page"
-                    : undefined
-                }
-                onClick={() => {
-                  actions.onSelectConversation(conversation.id);
-                  onNavigate();
-                }}
-              >
-                <ConversationAvatars avatars={conversation.avatars} />
-                <span className="lorca-chat-item-title">{conversation.title || zhCN.chat.untitledChat}</span>
-                {conversation.status !== "idle" && (
-                  <span
-                    className={`lorca-thread-state lorca-thread-state-${conversation.status}`}
-                    aria-label={
-                      zhCN.chat.conversationStatus[conversation.status]
-                    }
-                  >
-                    <Icon
-                      name={
-                        conversation.status === "running"
-                          ? "Loading"
-                          : conversation.status === "waiting"
-                            ? "Circle"
-                            : "AlertCircle"
-                      }
-                    />
-                  </span>
-                )}
-              </button>
-            ))}
-          </section>
-        ))}
+        </>}
+        {preferences.view === "recent" && !search && groups.map(group => {
+          const expanded = Boolean(search) || !preferences.collapsed.includes(group.id);
+          return <section className="lorca-chat-group" key={group.id} data-recent-bucket={group.id}>
+            <button type="button" className="lorca-recent-bucket-toggle" aria-expanded={expanded} title={group.detail} disabled={Boolean(search)} onClick={() => savePreferences({ ...preferences, collapsed: expanded ? [...preferences.collapsed, group.id] : preferences.collapsed.filter(id => id !== group.id) })}>
+              <span>{group.label}</span><span className="lorca-recent-bucket-count">{group.conversations.length}</span><Icon name="ChevronRight" />
+            </button>
+            {expanded && group.conversations.map(renderConversation)}
+          </section>;
+        })}
+        {search && filtered.some(chat => chat.kind !== "group") && <section className="lorca-chat-group"><h2 className={CHROME_SECTION_LABEL_CLASS}>聊天搜索结果</h2>{filtered.filter(chat => chat.kind !== "group").map(renderConversation)}</section>}
         {!search && !state.conversations.length && !state.agents.length && (
           <div className="lorca-sidebar-empty">
             <Icon name={search ? "Search" : "MessageSquare"} />
@@ -270,6 +292,29 @@ export function LorcaShell(props: LorcaShellProps) {
 
 function LorcaShellSession({ state, actions }: LorcaShellProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsRequestedDevice, setSettingsRequestedDevice] = useState<{ id: string; sequence: number }>();
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorId, setInspectorId] = useState<string | null>(state.selectedAgentId);
+  const [inspectorCreating, setInspectorCreating] = useState(false);
+  const [inspectorDirty, setInspectorDirty] = useState(false);
+  const [inspectorCreationBlocked, setInspectorCreationBlocked] = useState(false);
+  const [inspector] = useState(() => new AgentInspectorSession(typeof window === "undefined" ? {} : window.lorca ?? {}));
+  const inspectorState = useSyncExternalStore(inspector.subscribe, inspector.getSnapshot, inspector.getSnapshot);
+  const inspectorTrigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => () => inspector.dispose(), [inspector]);
+  useEffect(() => { inspector.select(state.localGroupNamespace, inspectorId, inspectorOpen && !settingsOpen); }, [inspector, inspectorId, inspectorOpen, settingsOpen, state.localGroupNamespace]);
+  const [inspectorPendingFollow, setInspectorPendingFollow] = useState(false);
+  const [inspectorNavigation, setInspectorNavigation] = useState({ chatId: state.activeConversationId, agentId: state.selectedAgentId });
+  if (inspectorNavigation.chatId !== state.activeConversationId || inspectorNavigation.agentId !== state.selectedAgentId) {
+    setInspectorNavigation({ chatId: state.activeConversationId, agentId: state.selectedAgentId });
+    if (inspectorDirty) setInspectorPendingFollow(true);
+    else if (!inspectorCreating) setInspectorId(state.selectedAgentId);
+  }
+  if (inspectorPendingFollow && !inspectorDirty && !inspectorCreating) { setInspectorPendingFollow(false); setInspectorId(state.selectedAgentId); }
+  const beginCreateAgent = () => { setInspectorCreationBlocked(false); setInspectorPendingFollow(false); setSettingsOpen(false); setInspectorCreating(true); setInspectorId(null); setInspectorOpen(true); };
+  const createAgent = () => { if (inspectorDirty) { setSettingsOpen(false); setInspectorOpen(true); setInspectorCreationBlocked(true); return; } beginCreateAgent(); };
+  const closeInspector = () => { setInspectorPendingFollow(false); setInspectorOpen(false); setInspectorDirty(false); setInspectorCreating(false); inspectorTrigger.current?.focus({ preventScroll: true }); };
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [contentWidth, setContentWidth] = useState(readContentWidthPreference);
   const [{ theme, persistent: themePersistent }, setAppearance] = useState(
@@ -565,6 +610,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
             )}
           </div>
           <div className="lorca-header-actions">
+            <Button ref={inspectorTrigger} variant="ghost" size="icon" aria-label="查看智能体详情" aria-pressed={inspectorOpen} onClick={() => { if (!inspectorOpen) { setInspectorCreating(false); setInspectorId(state.selectedAgentId); setInspectorOpen(true); } else document.querySelector<HTMLElement>(".lorca-agent-inspector")?.focus({ preventScroll: true }); }}><Icon name="PanelRight" /></Button>
             <div className="lorca-content-width" role="group" aria-label={zhCN.chat.contentWidth} title={zhCN.chat.contentWidthHelp}>
               <Button variant="ghost" size="sm" aria-pressed={contentWidth === "wide"} onClick={() => changeContentWidth("wide")}>{zhCN.chat.wideContent}</Button>
               <Button variant="ghost" size="sm" aria-pressed={contentWidth === "reading"} onClick={() => changeContentWidth("reading")}>{zhCN.chat.readingContent}</Button>
@@ -825,7 +871,37 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
           </div>
         </div>
       </main>
+      {inspectorOpen && <AgentInspector
+        open={inspectorOpen && !settingsOpen}
+        scope={state.localGroupNamespace ?? state.draftScope ?? 0}
+        agentId={inspectorId}
+        agents={state.agents.filter(agent => (inspectorDirty && agent.id === inspectorId) || !activeConversation || (activeConversation.botIds ?? activeConversation.avatars?.map(avatar => avatar.botId) ?? []).includes(agent.id))}
+        details={inspectorState.details}
+        memory={inspectorState.memory}
+        capabilities={inspectorState.capabilities}
+        capabilitiesLoading={inspectorState.capabilitiesLoading}
+        capabilitiesError={inspectorState.capabilitiesError}
+        contextNotice={inspectorCreationBlocked && inspectorDirty ? "请先保存或取消当前草稿，再创建智能体。" : inspectorPendingFollow ? "当前显示的是另一聊天中的智能体，保存或取消草稿后会跟随当前聊天。" : undefined}
+        onCapabilitiesAction={inspector.applyCapabilities}
+        loading={inspectorState.loading}
+        applying={inspectorState.applying}
+        error={inspectorState.error}
+        disabled={!state.localGroupNamespace || state.loading || state.demo}
+        onClose={closeInspector}
+        onCreate={beginCreateAgent}
+        onDirtyChange={setInspectorDirty}
+        onSelectAgent={id => { setInspectorPendingFollow(false); setInspectorCreating(false); setInspectorId(id); }}
+        onRefresh={() => { void inspector.refresh(); }}
+        onAction={async action => { const result = await inspector.apply(action); if (result.status === "applied") { await actions.onRefreshData?.(); if (result.chatId) { setInspectorCreating(false); setInspectorId(result.botId); actions.onSelectConversation(result.chatId); } } return result; }}
+        onOpenMemory={async () => inspector.openMemory()}
+        onEditAvatar={async () => { const result = await inspector.editAvatar(); if (result.status === "applied") await actions.onRefreshData?.(); return result; }}
+        onRemoveAvatar={async () => { const result = await inspector.removeAvatar(); if (result.status === "applied") await actions.onRefreshData?.(); return result; }}
+        onOpenProvider={async () => { openSettings("providers"); }}
+        onOpenPlugins={runnerId => { setSettingsRequestedDevice(previous => ({ id: runnerId, sequence: (previous?.sequence ?? 0) + 1 })); setSettingsPage("mcp"); setSettingsOpen(true); actions.onRefreshSettings(runnerId); }}
+      />}
       <Settings
+        onCreateAgent={createAgent}
+        requestedDevice={settingsRequestedDevice}
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         page={settingsPage}

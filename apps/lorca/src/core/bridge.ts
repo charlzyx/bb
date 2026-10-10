@@ -1,3 +1,4 @@
+import type { AgentCapabilitiesAction } from "../ui/inspector/types";
 import type { SettingsAction } from "../ui/types";
 export interface BridgeStatus {
   status: "disconnected" | "connecting" | "connected" | "error";
@@ -29,6 +30,13 @@ export interface LorcaBridge {
   getBotAvatar?(botId: string, expectedAvatarVersion: string): Promise<string | null>;
   openPairing?(mode: "invite" | "join"): Promise<unknown>;
   settingsAction?(action: SettingsAction): Promise<unknown>;
+  getAgentCapabilities?(params: { botId: string }): Promise<unknown>;
+  agentCapabilitiesAction?(action: AgentCapabilitiesAction): Promise<unknown>;
+  getAgentDetails?(params: { botId?: string }): Promise<unknown>;
+  getAgentMemorySummary?(params: { revision: string }): Promise<unknown>;
+  openAgentMemory?(params: { revision: string }): Promise<unknown>;
+  closeAgentDetails?(): Promise<unknown>;
+  agentDetailsAction?(action: unknown): Promise<unknown>;
   getSettings?(options: { runnerId?: string; includeMcp?: boolean }): Promise<unknown>;
   copyText?(text: string): Promise<void>;
   pickAttachments?(): Promise<PickedAttachment[]>;
