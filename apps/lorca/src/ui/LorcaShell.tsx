@@ -180,7 +180,7 @@ function Sidebar({
           <span className="lorca-workspace-icon">
             <Icon name="ComputerTerminal01" />
           </span>
-          <span>
+          <span className="lorca-workspace-summary" title={`${zhCN.chat.workspace} · ${state.demo ? zhCN.chat.demo : state.connection.status === "connected" ? zhCN.chat.connected : state.connection.status === "connecting" ? zhCN.chat.connecting : zhCN.chat.offline}`}>
             <strong>{zhCN.chat.workspace}</strong>
             <small>
               <ConnectionLabel state={state} />

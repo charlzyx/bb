@@ -54,6 +54,12 @@ async function screenshot(page, name) {
       document.querySelector(".lorca-composer")?.getBoundingClientRect().right >
       innerWidth + 1,
   }));
+  const footerInline = await page.evaluate(() => Array.from(document.querySelectorAll(".lorca-workspace")).every((workspace) => {
+    const name = workspace.querySelector("strong")?.getBoundingClientRect();
+    const status = workspace.querySelector("small")?.getBoundingClientRect();
+    return !name?.height || !status?.height || Math.abs(name.top + name.height / 2 - status.top - status.height / 2) <= 1;
+  }));
+  assert.equal(footerInline, true, `${name}: sidebar brand and status share one row`);
   assert.equal(overflow.page, false, `${name}: horizontal page overflow`);
   assert.equal(overflow.composer, false, `${name}: composer overflow`);
 }
