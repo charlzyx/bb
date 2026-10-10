@@ -1,0 +1,264 @@
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Menu, nativeImage } = require('electron');
+const path = require('node:path');
+const { pathToFileURL, fileURLToPath } = require('node:url');
+const { LorcaBridge, isTrustedSender, validateCopyText } = require('./bridge.cjs');
+const { AttachmentSelections } = require('./attachments.cjs');
+const { AttachmentSession } = require('./attachment-session.cjs');
+const { BotAvatars } = require('./bot-avatars.cjs');
+const { WatchingChat } = require('./watching.cjs');
+const { applicationMenuTemplate } = require('./menu.cjs');
+const { APP_NAME, configureApplicationName, configureApplicationBranding } = require('./branding.cjs');
+const { SettingsInventory, sanitizeRendererEvent, sanitizeRendererResult, safeRendererError } = require('./settings.cjs');
+const { SettingsEditor } = require('./settings-editor.cjs');
+const { AgentDetails } = require('./agent-details.cjs');
+const { AgentCapabilities } = require('./agent-capabilities.cjs');
+const { createAgentDetailsUI } = require('./agent-details-ui.cjs');
+const { createSecureSettingsEditor } = require('./secure-settings.cjs');
+const { createPairingFlow } = require('./pairing.cjs');
+
+configureApplicationName(app);
+const distDirectory = path.resolve(__dirname, '../dist');
+const indexPath = path.join(distDirectory, 'index.html');
+const devURL = process.env.LORCA_DEV_URL;
+if (devURL && !/^http:\/\/127\.0\.0\.1:5178\/$/.test(devURL)) throw new Error('LORCA_DEV_URL 必须为 http://127.0.0.1:5178/');
+const trustedURL = devURL || pathToFileURL(indexPath).href;
+const bridge = new LorcaBridge({ endpoint: process.env.LORCA_ENDPOINT ?? `ws://127.0.0.1:${process.env.LORCA_PORT ?? '4862'}/ws` });
+const selections = new AttachmentSelections();
+const settings = new SettingsInventory(bridge);
+const avatars = new BotAvatars(bridge, nativeImage);
+const watching = new WatchingChat(bridge);
+let pendingRoster = null;
+let pairingCapabilities = { invite: false, join: false };
+let observedGeneration = bridge.getStatus().generation;
+let attachmentIdentity;
+settings.onSnapshot = snapshot => {
+  const identity = `${snapshot.has_identity}:${snapshot.identity_id ?? ''}`;
+  if (attachmentIdentity !== undefined && identity !== attachmentIdentity) void attachments.invalidate();
+  attachmentIdentity = identity;
+  pairingCapabilities = pairing.capabilities(snapshot);
+  avatars.observeSnapshot(snapshot);
+  watching.observeSnapshot(snapshot);
+  if (pendingRoster) {
+    const generation = bridge.getStatus().generation, epoch = avatars.epoch, scope = avatars.identity;
+    queueMicrotask(() => {
+      if (!pendingRoster || bridge.getStatus().generation !== generation || avatars.epoch !== epoch || avatars.identity !== scope) return;
+      const roster = pendingRoster; pendingRoster = null;
+      avatars.observeBots(roster.data.bots);
+      watching.observeChats(roster.data.chats);
+      send('lorca:event', sanitizeRendererEvent(roster, scope));
+    });
+  }
+};
+let window = null;
+let applicationIcon;
+const attachments = new AttachmentSession({ selections, bridge, inventory: settings, chooseFiles: () => dialog.showOpenDialog(window, { title: '向 dots 添加附件', buttonLabel: '添加附件', properties: ['openFile', 'multiSelections'] }) });
+const secureSettings = createSecureSettingsEditor({ BrowserWindow, ipcMain, bridge, getParent: () => window, getIcon: () => applicationIcon });
+const pairing = createPairingFlow({ BrowserWindow, ipcMain, dialog, bridge, inventory: settings, getParent: () => window, getIcon: () => applicationIcon });
+const agentDetailsUI = createAgentDetailsUI({ secureSettings, dialog, getParent: () => window, getDetails: () => agentDetails });
+const agentDetails = new AgentDetails(bridge, settings, {
+  nativeImage,
+  chooseAvatar: async guard => { guard(); const result = await dialog.showOpenDialog(window, { title: '选择智能体头像', buttonLabel: '预览头像', properties: ['openFile'], filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] }); guard(); return result; },
+  reviewAvatar: agentDetailsUI.reviewAvatar,
+  confirm: agentDetailsUI.confirm,
+});
+const agentCapabilities = new AgentCapabilities(bridge, settings, { confirm: agentDetailsUI.confirm });
+settings.editor = new SettingsEditor(bridge, settings, {
+  openSecureEditor: secureSettings.edit,
+  confirm: async (spec, guard) => {
+    guard();
+    const needsReview = spec.detail.length > 2500;
+    if (needsReview) {
+      const reviewed = await secureSettings.edit({ title: '复核设置变更', description: spec.message, review: true, fields: [{ key: 'review', label: '完整变更范围', type: 'review', value: spec.detail }] }, guard, input => {
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 0) throw new Error('复核参数无效');
+        return true;
+      });
+      guard(); if (reviewed !== true) return false;
+    }
+    const result = await dialog.showMessageBox(window, { type: 'warning', title: spec.title, message: spec.message, detail: needsReview ? '完整变更已在隔离复核窗口展示。应用后将修改该账号或执行器的配置；不会自动重发失败的操作。' : spec.detail, buttons: ['取消', '应用变更'], defaultId: 0, cancelId: 0, noLink: true });
+    guard(); return result.response === 1;
+  },
+});
+function ensureSender(event) {
+  if (!window || window.isDestroyed() || !isTrustedSender(event, window.webContents, trustedURL)) throw new Error('Lorca 请求来源不可信');
+}
+function send(channel, value) {
+  if (window && !window.isDestroyed()) window.webContents.send(channel, value);
+}
+function updateForeground() {
+  watching.setForeground(Boolean(window && !window.isDestroyed() && window.isFocused() && window.isVisible() && !window.isMinimized()));
+}
+bridge.on('event', value => {
+  if (value.event === 'identity.changed') { void attachments.invalidate(); attachmentIdentity = undefined; pendingRoster = null; }
+  try {
+    const projected = sanitizeRendererEvent(value, settings.identity ?? '');
+    if (value.event === 'roster.changed') {
+      if (avatars.identity === undefined) { pendingRoster = value; return; }
+      pendingRoster = null;
+      watching.observeChats(projected.data.chats);
+    }
+    if (value.event === 'chat.removed') watching.removeChat(projected.data.chat_id);
+    if (projected) send('lorca:event', projected);
+  } catch {
+    bridge.close();
+    send('lorca:status-update', { ...bridge.getStatus(), status: 'error', detail: 'Lorca 响应不兼容，请重新连接后重试' });
+  }
+});
+bridge.on('status', value => {
+  if (value.status !== 'connected' || value.generation !== observedGeneration) { void attachments.invalidate(); pendingRoster = null; }
+  observedGeneration = value.generation;
+  send('lorca:status-update', value);
+});
+ipcMain.handle('lorca:connect', async (event, endpoint) => { ensureSender(event); return bridge.connect(endpoint); });
+ipcMain.handle('lorca:set-watching-chat', (event, chatId) => { ensureSender(event); updateForeground(); watching.select(chatId); return null; });
+ipcMain.handle('lorca:bot-avatar', (event, botId, expectedAvatarVersion) => {
+  ensureSender(event);
+  const fence = settings.capture();
+  return avatars.get(botId, expectedAvatarVersion, () => { ensureSender(event); settings.check(fence); });
+});
+ipcMain.handle('lorca:copy-text', (event, text) => { ensureSender(event); clipboard.writeText(validateCopyText(text)); return null; });
+ipcMain.handle('lorca:status', event => { ensureSender(event); return bridge.getStatus(); });
+ipcMain.handle('lorca:get-settings', async (event, params = {}) => {
+  ensureSender(event);
+  const fence = settings.capture();
+  const result = await settings.get(params);
+  ensureSender(event);
+  settings.check(fence);
+  return { ...result, pairingCapabilities };
+});
+ipcMain.handle('lorca:open-pairing', async (event, mode) => {
+  ensureSender(event);
+  if (settings.editor.busy || agentDetails.busy || agentCapabilities.busy || agentDetailsUI.isActive()) throw new Error('请先关闭当前设置流程。');
+  try { return await pairing.open(mode, () => ensureSender(event)); }
+  catch { throw new Error('无法打开设备配对，请检查本地令牌连接并刷新设备列表。'); }
+});
+ipcMain.handle('lorca:settings-action', async (event, action) => {
+  ensureSender(event);
+  if (pairing.isActive() || agentDetails.busy || agentCapabilities.busy || agentDetailsUI.isActive()) throw new Error('配对或智能体编辑仍在处理，请先核对其结果。');
+  return settings.editor.apply(action, () => ensureSender(event));
+});
+function ensureAgentFlowAvailable(event) {
+  ensureSender(event);
+  if (pairing.isActive() || settings.editor.busy || agentDetailsUI.isActive()) throw new Error('请先关闭当前设置或配对流程。');
+}
+ipcMain.handle('lorca:get-agent-details', (event, params = {}) => {
+  ensureAgentFlowAvailable(event);
+  return agentDetails.get(params, () => ensureSender(event));
+});
+ipcMain.handle('lorca:close-agent-details', event => { ensureSender(event); agentDetails.invalidate(); agentCapabilities.invalidate(); return null; });
+ipcMain.handle('lorca:get-agent-memory-summary', async (event, params) => {
+  ensureAgentFlowAvailable(event);
+  const result = await agentDetails.getMemory(params, () => ensureSender(event));
+  return { status: 'ready', lines: result.lines, bytes: result.bytes, maxLines: result.maxLines, maxBytes: result.maxBytes, topicCount: result.topics.length, logCount: result.logs.length, canEdit: true };
+});
+ipcMain.handle('lorca:open-agent-memory', (event, params) => {
+  ensureAgentFlowAvailable(event);
+  if (agentCapabilities.busy) throw new Error('例行任务或插件编辑仍在进行，请等待结果。');
+  if (!params || typeof params !== 'object' || Array.isArray(params) || Object.keys(params).length !== 1 || typeof params.revision !== 'string') throw new Error('记忆编辑参数无效。');
+  return agentDetailsUI.openMemory(params.revision, () => ensureSender(event));
+});
+ipcMain.handle('lorca:agent-details-action', (event, action) => {
+  ensureAgentFlowAvailable(event);
+  if (!action || !['profile.save', 'agent.create', 'avatar.replace', 'avatar.remove'].includes(action.kind)) throw new Error('智能体编辑操作无效。');
+  if (agentCapabilities.busy) throw new Error('例行任务或插件编辑仍在进行，请等待结果。');
+  return agentDetails.apply(action, () => ensureSender(event));
+});
+ipcMain.handle('lorca:get-agent-capabilities', (event, params) => { ensureAgentFlowAvailable(event); return agentCapabilities.get(params, () => ensureSender(event)); });
+ipcMain.handle('lorca:agent-capabilities-action', (event, action) => {
+  ensureAgentFlowAvailable(event);
+  if (agentDetails.busy) throw new Error('智能体资料编辑仍在进行，请等待结果。');
+  return agentCapabilities.apply(action, () => ensureSender(event));
+});
+ipcMain.handle('lorca:request', async (event, method, params) => {
+  ensureSender(event);
+  const fence = settings.capture();
+  try {
+    const result = await bridge.request(method, params);
+    ensureSender(event);
+    const projected = settings.projectResult(method, result, fence);
+    if (method === 'chats.create') watching.observeCreated(projected.chat);
+    return projected;
+  } catch (error) { throw safeRendererError(error); }
+});
+ipcMain.handle('lorca:set-attachment-scope', async (event, scope) => {
+  ensureSender(event);
+  try { return await attachments.setScope(scope, () => ensureSender(event)); } catch (error) { throw safeRendererError(error); }
+});
+ipcMain.handle('lorca:import-attachments', async (event, scope, ticket, value) => {
+  ensureSender(event);
+  try { return await attachments.stage(scope, ticket, value, () => ensureSender(event)); } catch (error) { throw safeRendererError(error); }
+});
+ipcMain.handle('lorca:pick-attachments', async (event, scope, ticket) => {
+  ensureSender(event);
+  try { return await attachments.pick(scope, ticket, () => ensureSender(event)); } catch (error) { throw safeRendererError(error); }
+});
+ipcMain.handle('lorca:release-attachments', async (event, ids) => { ensureSender(event); await attachments.release(ids, () => ensureSender(event)); return null; });
+ipcMain.handle('lorca:send-attachments', async (event, scope, ticket, params) => {
+  ensureSender(event);
+  const fence = settings.capture();
+  try {
+    const result = await attachments.send(scope, ticket, params, () => ensureSender(event));
+    ensureSender(event);
+    settings.check(fence);
+    return sanitizeRendererResult('chats.send', result);
+  } catch (error) { throw safeRendererError(error); }
+});
+
+function createWindow() {
+  window = new BrowserWindow({
+    width: 1240, height: 820, minWidth: 760, minHeight: 520, title: APP_NAME, icon: applicationIcon, backgroundColor: '#faf9f6',
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 } } : {}),
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, webviewTag: false, partition: 'bb-lorca' },
+  });
+  window.setMenuBarVisibility(false);
+  for (const event of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) window.on(event, updateForeground);
+  updateForeground();
+  const contents = window.webContents;
+  contents.on('render-process-gone', () => { watching.select(null); watching.setForeground(false); void attachments.invalidate(); bridge.close(); });
+  contents.on('did-start-navigation', (event, _url, inPlace, isMainFrame) => {
+    if ((event.isMainFrame ?? isMainFrame) && !(event.isSameDocument ?? inPlace)) { void attachments.invalidate(); agentDetails.invalidate(); agentCapabilities.invalidate(); }
+  });
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  contents.on('will-navigate', event => event.preventDefault());
+  contents.on('will-redirect', event => event.preventDefault());
+  contents.on('will-frame-navigate', event => event.preventDefault());
+  contents.on('will-attach-webview', event => event.preventDefault());
+  contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  contents.session.setPermissionCheckHandler(() => false);
+  contents.session.on('will-download', event => event.preventDefault());
+  contents.session.webRequest.onBeforeRequest((details, callback) => {
+    let allowed = false;
+    try {
+      const url = new URL(details.url);
+      if (devURL && (url.origin === new URL(devURL).origin || (url.protocol === 'ws:' && url.hostname === '127.0.0.1' && url.port === '5178'))) allowed = true;
+      else if (url.protocol === 'file:') {
+        const relative = path.relative(distDirectory, fileURLToPath(url));
+        allowed = relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+      } else if (url.protocol === 'data:' || url.protocol === 'blob:') allowed = true;
+    } catch {}
+    callback({ cancel: !allowed });
+  });
+  contents.session.webRequest.onHeadersReceived((details, callback) => {
+    const connect = devURL ? 'http://127.0.0.1:5178 ws://127.0.0.1:5178' : "'none'";
+    callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ${connect}; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'`] } });
+  });
+  window.on('closed', () => { window = null; agentDetails.invalidate(); agentCapabilities.invalidate(); watching.setForeground(false); watching.select(null); void attachments.invalidate(); bridge.close(); });
+  if (devURL) void window.loadURL(devURL); else void window.loadFile(indexPath);
+}
+app.whenReady().then(() => {
+  applicationIcon = configureApplicationBranding(app, nativeImage);
+  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate()));
+  createWindow();
+});
+app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+let quitting = false;
+let readyToQuit = false;
+app.on('before-quit', event => {
+  if (readyToQuit) return;
+  event.preventDefault();
+  if (quitting) return;
+  quitting = true;
+  watching.dispose(); avatars.dispose(); const agentCleanup = agentDetails.dispose(); agentCapabilities.dispose(); secureSettings.close(); pairing.close(); bridge.close();
+  if (window && !window.isDestroyed()) window.destroy();
+  void Promise.allSettled([attachments.shutdown(), agentCleanup]).finally(() => { readyToQuit = true; app.quit(); });
+});
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

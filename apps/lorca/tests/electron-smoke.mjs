@@ -1,0 +1,407 @@
+import assert from 'node:assert/strict';
+import { createHash, randomBytes } from 'node:crypto';
+import { once } from 'node:events';
+import { access, mkdir, mkdtemp, rm, writeFile, readFile, realpath } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { WebSocketServer } from 'ws';
+
+const require = createRequire(import.meta.url);
+const appDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+async function deadline(promise, milliseconds, label) {
+  let timer;
+  try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} timed out`)), milliseconds); })]); }
+  finally { clearTimeout(timer); }
+}
+async function until(check, label) {
+  const end = Date.now() + 5000;
+  while (!await check()) {
+    if (Date.now() >= end) throw new Error(`${label} timed out`);
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+}
+async function assertNativeControlGeometry(page) {
+  const sizes = await page.evaluate(() => Array.from(document.querySelectorAll('input:not([type=checkbox]):not([type=radio]), select, button')).filter(element => element.getBoundingClientRect().height > 0).map(element => ({ tag: element.tagName, height: element.getBoundingClientRect().height })));
+  assert.ok(sizes.length > 0, 'The secure window contains visible controls');
+  assert.equal(sizes.every(control => Math.abs(control.height - 36) <= 1), true, `Native single-line controls share 36px height: ${JSON.stringify(sizes)}`);
+}
+async function loadPlaywright() {
+  try { return await import('playwright'); }
+  catch (error) {
+    if (!process.env.PLAYWRIGHT_MODULE) throw new Error('Install Playwright for the smoke test, or supply PLAYWRIGHT_MODULE for an explicitly configured module.');
+    if (error.code !== 'ERR_MODULE_NOT_FOUND') throw error;
+    return import(process.env.PLAYWRIGHT_MODULE);
+  }
+}
+function pngWithText(bytes, text) {
+  const payload = Buffer.from(`Comment\0${text}`);
+  const chunk = Buffer.alloc(payload.length + 12);
+  chunk.writeUInt32BE(payload.length); chunk.write('tEXt', 4); payload.copy(chunk, 8);
+  let crc = 0xffffffff;
+  for (const byte of chunk.subarray(4, chunk.length - 4)) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  chunk.writeUInt32BE((crc ^ 0xffffffff) >>> 0, chunk.length - 4);
+  return Buffer.concat([bytes.subarray(0, bytes.length - 12), chunk, bytes.subarray(bytes.length - 12)]);
+}
+const epoch = 1791561600;
+const pairingPublic = Buffer.alloc(32, 7).toString('base64url');
+const pairingNonce = Buffer.alloc(16, 8).toString('base64url');
+const pairingCode = `lorca://pair?relay=${encodeURIComponent('https://relay.example.invalid/')}&id=${pairingPublic}&ek=${Buffer.alloc(32, 9).toString('base64url')}&n=${pairingNonce}`;
+const secretMarker = 'SYNTHETIC_SETTINGS_SECRET_MUST_NOT_REACH_RENDERER';
+const privateSettings = { env: { KEY: secretMarker }, headers: { Authorization: secretMarker }, oauth: { clientSecret: secretMarker }, args: [secretMarker], cwd: secretMarker, url: secretMarker };
+const message = (id, author, text, offset) => ({ id, chat_id: 'chat-smoke', author, body: { kind: 'text', text }, state: { kind: 'complete' }, created_at: epoch + offset });
+const snapshot = {
+  version: 'synthetic-electron-smoke', has_identity: true, is_identity_device: true,
+  identity_id: createHash('sha256').update(pairingPublic).digest('hex').slice(0, 16), this_device_id: 'runner-smoke', relay_connected: false,
+  relay_url: 'https://relay.example.invalid/', relay_update_required: false, relay_error: null,
+  bots: [{ id: 'bot-smoke', name: 'Fixture Bot', runner_id: 'runner-smoke', provider: 'fixture-provider', model: 'fixture-model', workdir: secretMarker }],
+  chats: [{ id: 'chat-smoke', kind: 'dm', title: null, bot_ids: ['bot-smoke'], created_at: epoch, has_more: false,
+    messages: [message('msg-fixture', { kind: 'bot', bot_id: 'bot-smoke' }, 'Synthetic Electron smoke fixture. No account or model is connected.', 0)] }],
+  running_turns: [], running_chat_ids: [],
+  devices: [{ id: 'runner-smoke', name: 'Synthetic Runner', os: 'linux', version: 'fixture', status: 'online', is_this_device: true, plugins: [{ id: 'plugin-smoke', name: 'Synthetic Plugin', state: 'ready', detail: secretMarker }] }],
+  routines: [], providers: [{ kind: 'fixture-provider', name: 'Synthetic Provider', is_connected: true, detail: secretMarker, base_url: secretMarker }, { kind: 'deepseek', name: 'Synthetic key provider', is_connected: true, detail: secretMarker }],
+  models: [{ provider: 'fixture-provider', id: 'fixture-model', name: 'Synthetic model', levels: [] }],
+  auto_review: { is_enabled: false, rules: [] },
+};
+
+async function main() {
+  await access(path.join(appDirectory, 'dist', 'index.html'));
+  const { _electron } = await loadPlaywright();
+  assert.ok(_electron?.launch, 'The configured Playwright module must provide _electron.launch');
+  const executablePath = process.env.ELECTRON_PATH || require('electron');
+  assert.equal(typeof executablePath, 'string', 'Resolve a normally installed Electron binary or set ELECTRON_PATH');
+  const temporary = await realpath(await mkdtemp(path.join(os.tmpdir(), 'bb-lorca-electron-smoke-')));
+  const home = path.join(temporary, 'lorca-fixture');
+  const token = randomBytes(32).toString('base64url');
+  const server = createServer((_request, response) => { response.writeHead(404); response.end(); });
+  const wss = new WebSocketServer({ noServer: true });
+  const requests = [];
+  const failures = [];
+  const authenticated = [];
+  let application;
+  try {
+    await mkdir(home, { recursive: true });
+    await writeFile(path.join(home, 'serve-token'), token, { mode: 0o600 });
+    const avatarBytes = pngWithText(await readFile(path.join(appDirectory, 'public/dots.png')), secretMarker);
+    await mkdir(path.join(home, 'files'));
+    await writeFile(path.join(home, 'files/att-smoke-avatar'), avatarBytes);
+    Object.assign(snapshot.bots[0], { symbol_name: 'sparkles', accent: 'teal', avatar: { id: 'att-smoke-avatar', name: 'synthetic.png', mime: 'image/png', size: avatarBytes.length, width: 256, height: 256, key: secretMarker } });
+    server.on('upgrade', (request, socket, head) => {
+      const valid = request.url === '/ws' && request.headers.origin === undefined && request.headers.authorization === `Bearer ${token}`;
+      authenticated.push(valid);
+      if (!valid) {
+        socket.on('error', error => { if (error.code !== 'ECONNRESET') failures.push(error.message); });
+        socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n', () => socket.destroy());
+        return;
+      }
+      wss.handleUpgrade(request, socket, head, client => wss.emit('connection', client));
+    });
+    wss.on('connection', socket => {
+      socket.on('error', error => failures.push(error.message));
+      socket.on('message', bytes => {
+        try {
+          const request = JSON.parse(bytes.toString()); requests.push(request);
+          const reply = result => socket.send(JSON.stringify({ id: request.id, result }));
+          const event = (name, data) => socket.send(JSON.stringify({ event: name, data }));
+          if (request.method === 'bootstrap') reply(snapshot);
+          else if (request.method === 'pair.start') reply({ nonce: pairingNonce, pairing_string: pairingCode });
+          else if (request.method === 'pair.status' && request.params.nonce === pairingNonce) reply({ state: 'waiting' });
+          else if (request.method === 'pair.cancel' && request.params.nonce === pairingNonce) reply(null);
+          else if (request.method === 'ui.watching' && (request.params.chat_id === null || request.params.chat_id === 'chat-smoke')) reply(null);
+          else if (request.method === 'chats.mark_read' && request.params.chat_id === 'chat-smoke') reply(null);
+          else if (request.method === 'mcp.list') {
+            reply({ path: secretMarker, error: null, servers: [{ name: 'Synthetic MCP', transport: 'http', enabled: true, tool_count: 3, problem: secretMarker, status: { id: 'mcp-smoke', name: 'Synthetic MCP', state: 'error', detail: secretMarker }, config: privateSettings }] });
+            event('roster.changed', snapshot);
+            event('relay.status', { connected: false, update_required: false, url: snapshot.relay_url, error: secretMarker });
+            event('provider.auth', { kind: 'fixture-provider', url: secretMarker });
+          }
+          else if (request.method === 'providers.api_key' && request.params.kind === 'deepseek') reply({ api_key: secretMarker, base_url: 'https://synthetic.example.invalid/v1' });
+          else if (request.method === 'providers.connect_deepseek') reply({ providers: snapshot.providers });
+          else if (request.method === 'bots.update') {
+            const bot = snapshot.bots.find(bot => bot.id === request.params.id);
+            if (!bot) throw new Error('Unexpected synthetic bot');
+            Object.assign(bot, request.params); reply({ bot });
+          }
+          else if (request.method === 'chats.search') socket.send(JSON.stringify({ id: request.id, error: { message: secretMarker } }));
+          else if (request.method === 'chats.messages') reply({ messages: snapshot.chats[0].messages, has_more: false });
+          else if (request.method === 'chats.send' && request.params.chat_id === 'chat-smoke' && request.params.text === 'Synthetic smoke message') {
+            const sent = message(request.params.message_id, { kind: 'you' }, request.params.text, 1);
+            const answer = message('msg-smoke-reply', { kind: 'bot', bot_id: 'bot-smoke' }, 'Synthetic native bridge reply received.', 2);
+            event('message.added', { chat_id: 'chat-smoke', message: sent });
+            reply({ message: sent });
+            event('job.started', { chat_id: 'chat-smoke', bot_id: 'bot-smoke', job_id: 'job-smoke' });
+            event('message.added', { chat_id: 'chat-smoke', message: answer });
+            event('job.finished', { chat_id: 'chat-smoke', bot_id: 'bot-smoke', job_id: 'job-smoke' });
+          } else {
+            failures.push(`Unexpected mock method: ${request.method}`);
+            socket.send(JSON.stringify({ id: request.id, error: { message: 'Unsupported synthetic smoke request' } }));
+          }
+        } catch (error) { failures.push(error.message); socket.close(); }
+      });
+    });
+    server.listen(0, '127.0.0.1'); await deadline(once(server, 'listening'), 5000, 'Mock server startup');
+    const address = server.address(); assert.ok(address && typeof address === 'object');
+    const endpoint = `ws://127.0.0.1:${address.port}/ws`;
+    const env = {};
+    for (const key of ['PATH', 'DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL', 'LD_LIBRARY_PATH', 'SystemRoot']) if (process.env[key]) env[key] = process.env[key];
+    Object.assign(env, { HOME: temporary, USERPROFILE: temporary, XDG_CONFIG_HOME: path.join(temporary, 'config'), XDG_CACHE_HOME: path.join(temporary, 'cache'), LORCA_HOME: home, LORCA_ENDPOINT: endpoint, LORCA_ALLOW_LEGACY: '0' });
+    const isolatedPaths = Object.fromEntries(['userData', 'sessionData', 'logs', 'crashDumps'].map(name => [name, path.join(temporary, name)]));
+    const entry = path.join(temporary, 'electron-fixture-main.cjs');
+    await writeFile(entry, `const { app } = require('electron');\nconst { mkdirSync } = require('node:fs');\nfor (const [name, directory] of Object.entries(${JSON.stringify(isolatedPaths)})) { mkdirSync(directory, { recursive: true }); app.setPath(name, directory); }\nrequire(${JSON.stringify(path.join(appDirectory, 'native/main.cjs'))});\n`);
+    const args = [entry];
+    application = await _electron.launch({ executablePath, args, cwd: appDirectory, env, chromiumSandbox: true, timeout: 30_000 });
+    assert.equal(await application.evaluate(({ app }) => app.commandLine.hasSwitch("no-sandbox")), false);
+    assert.deepEqual(await application.evaluate(({ app }) => Object.fromEntries(['userData', 'sessionData', 'logs', 'crashDumps'].map(name => [name, app.getPath(name)]))), isolatedPaths);
+    const page = await application.firstWindow();
+    page.setDefaultTimeout(15_000);
+    await page.getByText('已连接', { exact: true }).first().waitFor();
+    await page.locator('.lorca-chat-item').filter({ hasText: 'Fixture Bot' }).click();
+    await page.getByText('Synthetic Electron smoke fixture. No account or model is connected.', { exact: true }).waitFor();
+    await application.evaluate(({ app, BrowserWindow }) => { app.focus({ steal: true }); const window = BrowserWindow.getAllWindows()[0]; window.show(); window.focus(); });
+    await until(() => application.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows()[0]; return window.isFocused() && window.isVisible() && !window.isMinimized(); }), 'Native window foreground');
+    await until(() => requests.some(request => request.method === 'chats.mark_read' && request.params.chat_id === 'chat-smoke'), 'Foreground selected chat read');
+    const watchIndex = requests.findIndex(request => request.method === 'ui.watching' && request.params.chat_id === 'chat-smoke');
+    const readIndex = requests.findIndex(request => request.method === 'chats.mark_read' && request.params.chat_id === 'chat-smoke');
+    assert.ok(watchIndex >= 0 && readIndex > watchIndex, 'A foreground chat must be watched before marking it read');
+    const renderer = await page.evaluate(async () => ({
+      processType: typeof window.process, requireType: typeof window.require,
+      platform: document.documentElement.dataset.lorcaPlatform,
+      keys: Object.keys(window.lorca).sort(), status: await window.lorca.getStatus(),
+    }));
+    assert.equal(renderer.processType, 'undefined'); assert.equal(renderer.requireType, 'undefined');
+    assert.equal(renderer.platform, process.platform);
+    assert.equal(renderer.status.status, 'connected'); assert.equal(renderer.status.authMode, 'token');
+    assert.equal(JSON.stringify(renderer).includes(token), false); assert.equal(JSON.stringify(renderer).includes(home), false);
+    assert.deepEqual(renderer.keys, ['agentCapabilitiesAction', 'agentDetailsAction', 'closeAgentDetails', 'connect', 'copyText', 'getAgentCapabilities', 'getAgentDetails', 'getAgentMemorySummary', 'getBotAvatar', 'getSettings', 'getStatus', 'onAttachmentImport', 'onAttachmentText', 'onEvent', 'onStatus', 'openAgentMemory', 'openPairing', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setAttachmentScope', 'setWatchingChat', 'settingsAction']);
+    const avatar = await page.evaluate(async () => {
+      const current = await window.lorca.request('bootstrap', {});
+      return window.lorca.getBotAvatar('bot-smoke', current.bots[0].avatar_version);
+    });
+    assert.match(avatar, /^data:image\/png;base64,/);
+    assert.equal(Buffer.from(avatar.split(',')[1], 'base64').includes(Buffer.from(secretMarker)), false);
+    assert.notEqual(avatar, `data:image/png;base64,${avatarBytes.toString('base64')}`);
+    const decodedAvatar = await application.evaluate(({ nativeImage }, value) => nativeImage.createFromDataURL(value).getSize(), avatar);
+    assert.deepEqual(decodedAvatar, { width: 256, height: 256 });
+    assert.equal(requests.some(request => request.method === 'files.path'), false);
+    assert.equal(await page.evaluate(() => window.lorca.getBotAvatar('unknown-bot', '0'.repeat(24))), null);
+    const inventory = await page.evaluate(async () => {
+      const events = [];
+      const unsubscribe = window.lorca.onEvent(event => events.push(event));
+      const bootstrap = await window.lorca.request('bootstrap', {});
+      const settings = await window.lorca.getSettings({});
+      let remoteError;
+      try { await window.lorca.request('chats.search', { query: 'synthetic error fixture' }); } catch (error) { remoteError = error.message; }
+      unsubscribe();
+      return { bootstrap, settings, events, remoteError };
+    });
+    assert.equal(inventory.settings.mcp.status, 'ready');
+    assert.equal(inventory.settings.mcp.servers[0].name, 'Synthetic MCP');
+    assert.equal(inventory.settings.mcp.servers[0].toolCount, 3);
+    assert.equal(inventory.settings.mcp.servers[0].hasError, true);
+    assert.equal(inventory.settings.devices[0].name, 'Synthetic Runner');
+    assert.equal(JSON.stringify(inventory).includes(secretMarker), false);
+    assert.equal(JSON.stringify(inventory).includes('att-smoke-avatar'), false);
+    assert.equal(inventory.bootstrap.bots[0].has_avatar, true);
+    assert.match(inventory.bootstrap.bots[0].avatar_version, /^[a-f0-9]{24}$/);
+    assert.equal(inventory.events.some(event => event.event === 'provider.auth'), false);
+    assert.ok(inventory.events.some(event => event.event === 'roster.changed'));
+    assert.match(inventory.remoteError, /未被自动重发/);
+    const preferences = await application.evaluate(({ BrowserWindow }) => {
+      const prefs = BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();
+      return { contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration, sandbox: prefs.sandbox };
+    });
+    assert.deepEqual(preferences, { contextIsolation: true, nodeIntegration: false, sandbox: true });
+    if (process.platform === 'darwin') {
+      const controls = await application.evaluate(({ BrowserWindow }) => {
+        const window = BrowserWindow.getAllWindows()[0];
+        return { position: window.getWindowButtonPosition(), closable: window.isClosable(), minimizable: window.isMinimizable(), maximizable: window.isMaximizable(), fullscreenable: window.isFullScreenable() };
+      });
+      assert.deepEqual(controls, { position: { x: 16, y: 16 }, closable: true, minimizable: true, maximizable: true, fullscreenable: true });
+      assert.equal(await page.locator('.lorca-header').evaluate(node => getComputedStyle(node).getPropertyValue('-webkit-app-region')), 'drag');
+      assert.equal(await page.locator('.lorca-header-status').evaluate(node => getComputedStyle(node).getPropertyValue('-webkit-app-region')), 'no-drag');
+    }
+    const menus = await application.evaluate(({ Menu }) => Menu.getApplicationMenu().items.map(item => ({ label: item.label, roles: item.submenu?.items.map(child => child.role) ?? [] })));
+    assert.deepEqual(menus.map(item => item.label), ['应用', '编辑', '窗口']);
+    assert.ok(menus[1].roles.includes('copy'));
+    assert.ok(menus[1].roles.includes('paste'));
+    for (const role of ['close', 'minimize', 'zoom']) assert.ok(menus[2].roles.includes(role), role);
+    const brand = await application.evaluate(({ app, BrowserWindow, nativeImage }, iconPath) => {
+      const icon = nativeImage.createFromPath(iconPath);
+      return { name: app.getName(), title: BrowserWindow.getAllWindows()[0].getTitle(), iconEmpty: icon.isEmpty(), iconSize: icon.getSize() };
+    }, path.join(appDirectory, 'public/dots.png'));
+    assert.equal(brand.name, 'dots'); assert.equal(brand.title, 'dots');
+    assert.equal(brand.iconEmpty, false); assert.deepEqual(brand.iconSize, { width: 256, height: 256 });
+    const blocked = await page.evaluate(async () => {
+      try { await window.lorca.request('providers.api_key', { kind: 'deepseek' }); return false; } catch { return true; }
+    });
+    assert.equal(blocked, true);
+    assert.equal(await page.evaluate(async () => { try { await window.lorca.request('mcp.list', {}); return false; } catch { return true; } }), true);
+    for (const method of ['ui.watching', 'chats.mark_read']) assert.equal(await page.evaluate(async method => { try { await window.lorca.request(method, { chat_id: 'chat-smoke' }); return false; } catch { return true; } }, method), true);
+    await page.getByRole('textbox', { name: '给 dots 发消息', exact: true }).fill('Synthetic smoke message');
+    await page.getByRole('button', { name: '发送消息', exact: true }).click();
+    await page.getByText('Synthetic native bridge reply received.', { exact: true }).waitFor();
+    assert.equal(requests.filter(request => request.method === 'chats.send').length, 1);
+    assert.ok(authenticated.length > 0 && authenticated.every(Boolean));
+    assert.deepEqual(failures, []);
+    assert.equal((await page.content()).includes(token), false);
+    if (process.env.LORCA_SMOKE_SCREENSHOT) {
+      const destination = path.resolve(process.env.LORCA_SMOKE_SCREENSHOT);
+      await mkdir(path.dirname(destination), { recursive: true });
+      await page.screenshot({ path: destination, fullPage: true });
+    }
+    const beforeSettings = requests.length;
+    await page.locator('.lorca-workspace').click();
+    await until(() => requests.slice(beforeSettings).some(request => request.method === 'ui.watching' && request.params.chat_id === null), 'Settings page clears watching');
+    if (process.env.LORCA_SMOKE_SCREENSHOT) {
+      const destination = path.resolve(process.env.LORCA_SMOKE_SCREENSHOT);
+      await page.getByRole('button', { name: '插件', exact: true }).click();
+      await page.getByText('Synthetic MCP', { exact: true }).waitFor();
+      assert.equal((await page.content()).includes(secretMarker), false);
+      await page.screenshot({ path: destination.replace(/\.png$/i, '') + '-settings.png', fullPage: true });
+    }
+    await application.evaluate(({ dialog }) => {
+      globalThis.dotsConfirmations = [];
+      dialog.showMessageBox = async (_parent, options) => { globalThis.dotsConfirmations.push(options); return { response: 0, checkboxChecked: false }; };
+    });
+    const cancelResult = await page.evaluate(async () => {
+      const settings = await window.lorca.getSettings({});
+      return window.lorca.settingsAction({ kind: 'bot.update', revision: settings.editor.revision, botId: 'bot-smoke', model: '' });
+    });
+    assert.deepEqual(cancelResult, { status: 'cancelled' });
+    assert.equal(requests.filter(request => request.method === 'bots.update').length, 0);
+    await application.evaluate(({ dialog }) => {
+      dialog.showMessageBox = async (_parent, options) => { globalThis.dotsConfirmations.push(options); return { response: 1, checkboxChecked: false }; };
+    });
+    const applyResult = await page.evaluate(async () => {
+      const settings = await window.lorca.getSettings({});
+      return window.lorca.settingsAction({ kind: 'bot.update', revision: settings.editor.revision, botId: 'bot-smoke', model: '' });
+    });
+    assert.deepEqual(applyResult, { status: 'applied' });
+    assert.equal(requests.filter(request => request.method === 'bots.update').length, 1);
+    const secureWindow = application.waitForEvent('window');
+    const configure = page.evaluate(async () => {
+      const settings = await window.lorca.getSettings({});
+      return window.lorca.settingsAction({ kind: 'provider.configure', revision: settings.editor.revision, providerId: 'deepseek' });
+    }).then(value => ({ value }), error => ({ error }));
+    const securePage = await secureWindow;
+    securePage.setDefaultTimeout(15_000);
+    await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).waitFor();
+    assert.equal(await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).inputValue(), '');
+    await assertNativeControlGeometry(securePage);
+    const secureLogo = securePage.locator('.brand .brand-icon');
+    await secureLogo.waitFor({ state: 'visible' });
+    assert.deepEqual(await secureLogo.evaluate(async image => {
+      await image.decode();
+      return { src: image.currentSrc, width: image.naturalWidth, height: image.naturalHeight, displayWidth: image.width, displayHeight: image.height };
+    }), { src: pathToFileURL(path.join(appDirectory, 'public', 'app-icon', '64.png')).href, width: 64, height: 64, displayWidth: 32, displayHeight: 32 });
+    assert.equal(await securePage.evaluate(() => new Promise(resolve => {
+      const image = new Image();
+      image.onload = () => resolve(true); image.onerror = () => resolve(false);
+      image.src = '../public/dots.png';
+    })), false);
+    const secureState = await securePage.evaluate(async () => ({
+      processType: typeof window.process, requireType: typeof window.require, mainBridge: typeof window.lorca,
+      keys: Object.keys(window.dotsSecureSettings).sort(), spec: await window.dotsSecureSettings.initialize(),
+    }));
+    assert.equal(secureState.processType, 'undefined'); assert.equal(secureState.requireType, 'undefined'); assert.equal(secureState.mainBridge, 'undefined');
+    assert.equal(await securePage.evaluate(() => document.documentElement.dataset.lorcaPlatform), undefined);
+    assert.deepEqual(secureState.keys, ['cancel', 'initialize', 'submit']);
+    assert.equal(JSON.stringify(secureState).includes(secretMarker), false);
+    const securePreferences = await application.evaluate(async ({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/secure-editor.html'));
+      const prefs = window.webContents.getLastWebPreferences();
+      window.webContents.openDevTools({ mode: 'detach' });
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return { contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration, sandbox: prefs.sandbox, devToolsOpened: window.webContents.isDevToolsOpened(), pid: window.webContents.getOSProcessId() };
+    });
+    const { pid: securePid, ...secureFlags } = securePreferences;
+    assert.deepEqual(secureFlags, { contextIsolation: true, nodeIntegration: false, sandbox: true, devToolsOpened: false });
+    if (process.platform === 'linux') {
+      const kernelStatus = await readFile(`/proc/${securePid}/status`, 'utf8');
+      assert.match(kernelStatus, /^Seccomp:\s+2$/m, 'Secure renderer must run with a kernel seccomp filter');
+      assert.match(kernelStatus, /^NoNewPrivs:\s+1$/m, 'Secure renderer must not gain new privileges');
+    }
+    if (process.env.LORCA_SMOKE_SCREENSHOT) await securePage.screenshot({ path: path.resolve(process.env.LORCA_SMOKE_SCREENSHOT).replace(/\.png$/i, '') + '-secure-settings.png', fullPage: true });
+    await securePage.getByLabel('HTTPS 连接地址（留空保留原值）', { exact: true }).fill('https://synthetic.example.invalid/v1');
+    await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).fill('SYNTHETIC_REPLACEMENT_KEY');
+    await securePage.getByRole('button', { name: '继续', exact: true }).click();
+    const configureOutcome = await configure;
+    if (configureOutcome.error) throw configureOutcome.error;
+    assert.deepEqual(configureOutcome.value, { status: 'applied' });
+    const configured = requests.filter(request => request.method === 'providers.connect_deepseek');
+    assert.equal(configured.length, 1); assert.equal(configured[0].params.api_key, 'SYNTHETIC_REPLACEMENT_KEY');
+    assert.equal(configured[0].params.base_url, 'https://synthetic.example.invalid/v1');
+    const pairingWindow = application.waitForEvent('window');
+    const pairingOutcome = page.evaluate(() => window.lorca.openPairing('invite')).then(value => ({ value }), error => ({ error }));
+    const pairingPage = await pairingWindow;
+    await pairingPage.getByRole('button', { name: '生成配对码', exact: true }).waitFor();
+    await assertNativeControlGeometry(pairingPage);
+    const pairingFlags = await pairingPage.evaluate(() => ({ process: typeof window.process, require: typeof window.require, chatBridge: typeof window.lorca, api: Object.keys(window.dotsPairing).sort() }));
+    assert.deepEqual(pairingFlags, { process: 'undefined', require: 'undefined', chatBridge: 'undefined', api: ['close', 'initialize', 'onState', 'submit'] });
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/secure-pairing.html')).webContents.openDevTools({ mode: 'detach' }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const pairingPid = await application.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/secure-pairing.html'));
+      const prefs = window.webContents.getLastWebPreferences();
+      if (!prefs.sandbox || !prefs.contextIsolation || prefs.nodeIntegration || window.webContents.isDevToolsOpened()) throw new Error('Pairing renderer security preferences changed');
+      return window.webContents.getOSProcessId();
+    });
+    if (process.platform === 'linux') {
+      const status = await readFile(`/proc/${pairingPid}/status`, 'utf8');
+      assert.match(status, /^Seccomp:\s+2$/m); assert.match(status, /^NoNewPrivs:\s+1$/m);
+    }
+    await application.evaluate(({ dialog }) => { dialog.showMessageBox = async (_parent, options) => { globalThis.dotsConfirmations.push(options); return { response: 0 }; }; });
+    await pairingPage.getByRole('button', { name: '生成配对码', exact: true }).click();
+    await pairingPage.getByText('尚未生成配对码。', { exact: true }).waitFor();
+    assert.equal(requests.filter(request => request.method === 'pair.start').length, 0);
+    await application.evaluate(({ dialog }) => { dialog.showMessageBox = async (_parent, options) => { globalThis.dotsConfirmations.push(options); return { response: 1 }; }; });
+    await pairingPage.getByRole('button', { name: '生成配对码', exact: true }).click();
+    await until(async () => await pairingPage.locator('#generated-code').inputValue() === pairingCode, 'Synthetic invitation is isolated');
+    assert.equal((await page.content()).includes(pairingCode), false);
+    assert.equal(JSON.stringify(await page.evaluate(() => window.lorca.getSettings({}))).includes(pairingNonce), false);
+    if (process.env.LORCA_SMOKE_SCREENSHOT) await pairingPage.screenshot({ path: path.resolve(process.env.LORCA_SMOKE_SCREENSHOT).replace(/\.png$/i, '') + '-pairing.png', fullPage: true });
+    await pairingPage.locator('#close').click();
+    const pairingResult = await pairingOutcome;
+    if (pairingResult.error) throw pairingResult.error;
+    assert.equal(pairingResult.value.status, 'unknownOutcome');
+    await until(() => requests.some(request => request.method === 'pair.cancel'), 'Cancel only this synthetic invitation');
+    assert.equal(requests.filter(request => request.method === 'pair.start').length, 1);
+    assert.equal(requests.some(request => request.method === 'pair.accept' || request.method === 'pair.abort'), false);
+    const confirmations = await application.evaluate(() => globalThis.dotsConfirmations);
+    assert.ok(confirmations.some(value => value.detail.includes('synthetic.example.invalid')));
+    assert.equal(JSON.stringify(confirmations).includes(secretMarker), false);
+    assert.equal(JSON.stringify(confirmations).includes('SYNTHETIC_REPLACEMENT_KEY'), false);
+    assert.equal((await page.content()).includes('SYNTHETIC_REPLACEMENT_KEY'), false);
+    assert.deepEqual(failures, []);
+    process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, secureSettingsIsolated: true, secureLogoLoaded: true, nativeSettingsConfirmed: true, nativeWatching: true, pairingIsolated: true, menusLocalized: true, dotsBranding: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
+  } catch (error) {
+    process.stderr.write(`Electron smoke assertion: ${error.stack ?? error.message}\n`);
+    throw error;
+  } finally {
+    let shutdownFailure;
+    if (application) {
+      const child = application.process();
+      try { await deadline(application.close(), 10_000, 'Electron shutdown'); }
+      catch (error) { shutdownFailure = error; }
+      finally {
+        if (child.exitCode === null) {
+          child.kill('SIGTERM');
+          try { await deadline(once(child, 'exit'), 5000, 'Electron process exit'); }
+          catch (error) { shutdownFailure ??= error; child.kill('SIGKILL'); }
+        }
+      }
+    }
+    try {
+      for (const socket of wss.clients) socket.terminate();
+      await deadline(new Promise(resolve => wss.close(() => resolve())), 5000, 'Mock WebSocket shutdown');
+      if (server.listening) await deadline(new Promise(resolve => server.close(() => resolve())), 5000, 'Mock HTTP shutdown');
+    } finally { await rm(temporary, { recursive: true, force: true }); }
+    if (shutdownFailure) throw shutdownFailure;
+  }
+}
+main().catch(error => { process.stderr.write(`Electron smoke failed: ${error.message}\n`); process.exitCode = 1; });

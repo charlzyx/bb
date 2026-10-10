@@ -2134,3 +2134,7 @@ Settings. Search scope is remembered in browser local storage separately for
 new-thread and follow-up composers. Starred text and mentions persist in the
 plugin database. See the [Prompt Library skill](../plugins/prompt-library/skills/prompt-library/SKILL.md)
 for CLI and SDK commands.
+
+## Experimental Lorca desktop
+
+The additive `apps/lorca` client uses the existing local Lorca CLI. `LORCA_HOME` selects that CLI's existing data directory; `LORCA_PORT` selects its loopback port (4862 by default), and `LORCA_ENDPOINT` can explicitly select a validated `ws://127.0.0.1:<port>/ws` endpoint. `LORCA_ALLOW_LEGACY=1` explicitly opts into the older unauthenticated loopback protocol and displays a warning; it is never selected automatically. `LORCA_DEV_URL=http://127.0.0.1:5178/` is a development-only renderer URL. No relay or identity configuration is changed by this UI. See [the Lorca integration guide](../apps/lorca/README.md).

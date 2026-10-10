@@ -1,0 +1,67 @@
+{
+  "artwork": "Ghost — ipaslogo.com",
+  "original": "artwork/ghost-original.png",
+  "originalSha256": "4ab06f6c35f5ab49f1c0c6b406f225b3ded473dd1f1b1679e90a719a0a27cac3",
+  "mask": "artwork/macos-style-mask.svg",
+  "maskSha256": "c94f07d06c6260e0beaa00b109ba9d6bc97ee3be83ac2b123852ad6c583cac18",
+  "maskGenerator": {
+    "name": "figma-squircle",
+    "version": "1.1.0",
+    "width": 824,
+    "height": 824,
+    "cornerRadius": 184,
+    "cornerSmoothing": 0.6,
+    "preserveSmoothing": true,
+    "inset": 100,
+    "canvas": 1024
+  },
+  "renderer": {
+    "sharp": "0.35.4",
+    "vips": "8.18.6",
+    "rsvg": "2.62.91"
+  },
+  "images": [
+    {
+      "size": 16,
+      "path": "public/app-icon/16.png",
+      "sha256": "5046d1c122280c127730e2a17aaf1595fd77b3a8b62ee7b1f7d0e84479a47aea",
+      "pixelSha256": "4ac6a9e943d2ed0d72d94ec7506a297ee29d642d5440cf7952dbe1bc190218ff"
+    },
+    {
+      "size": 32,
+      "path": "public/app-icon/32.png",
+      "sha256": "e2ef93a81b6c372ca65af356928ff7b09667dba6b0b3f41bce5983a663827519",
+      "pixelSha256": "deecd6a7d37f2be07aaf3131a29716cdd6748f55d1bf7823db8bc171c468ffa4"
+    },
+    {
+      "size": 64,
+      "path": "public/app-icon/64.png",
+      "sha256": "df24e6ccf5ea0d8c8c73822b52350cb8f3282bd3724ac6e95f0dc4e2cff6ff3d",
+      "pixelSha256": "1025575bd7b8032127f082b812d6c92fb54424ef296cdfbe4da7f23ed1376e5a"
+    },
+    {
+      "size": 128,
+      "path": "public/app-icon/128.png",
+      "sha256": "75f028b09e116d6ed65e149aabd8aa74c9827a2fe4c6afcaf337eacc3b1c95a4",
+      "pixelSha256": "0d7d1c9c019b5266d40dcca0a0130189b60cf5ad1fde02186356b7ccc37beb57"
+    },
+    {
+      "size": 256,
+      "path": "public/dots.png",
+      "sha256": "baf232f8e8f217e3c910006432243f8f094509788135af5c811ad9449e6a6fb9",
+      "pixelSha256": "252dbd67da8cc22ead9a064d55c8941ac81c29acf357225fcc8b517557375d79"
+    },
+    {
+      "size": 512,
+      "path": "public/app-icon/512.png",
+      "sha256": "35f4aa51fff268e35cfd6345f279a201833fa0ababdcc6f21afcdda4b8e9ae59",
+      "pixelSha256": "9f462cee098b7fc2d98b32a5f30b8b0a88f37e8184f67cf0645706d9e65b93cc"
+    },
+    {
+      "size": 1024,
+      "path": "public/app-icon/1024.png",
+      "sha256": "925a530f89a9ea95ef275ace349926d6818d336da3ecfce0ff1c87ce0d00ebb7",
+      "pixelSha256": "63d919c5618706a762568db24cf413fedf2a25b1ad2aa12af3acf5a0034043eb"
+    }
+  ]
+}

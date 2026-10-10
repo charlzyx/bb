@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self' data:; font-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>dots · 安全设置</title>
+  <link rel="stylesheet" href="secure-editor.css">
+  <script src="secure-editor.js" defer></script>
+</head>
+<body>
+  <main>
+    <div class="brand"><img class="brand-icon" src="../public/app-icon/64.png" alt="" width="32" height="32"><span>dots / 安全设置</span></div>
+    <h1 id="title">正在打开设置</h1>
+    <p id="description"></p>
+    <form id="editor" autocomplete="off">
+      <div id="fields"></div>
+      <p id="error" role="alert" aria-live="polite"></p>
+      <div class="actions"><button id="cancel" type="button">取消</button><button id="submit" type="submit" disabled>继续</button></div>
+    </form>
+    <p class="footnote">此窗口与聊天界面隔离，关闭后清空输入。编辑授权最多五分钟，超时会关闭。保存可能启动已配置程序或连接指定服务，提交前仍需系统确认。</p>
+  </main>
+</body>
+</html>

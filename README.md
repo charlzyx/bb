@@ -1,3 +1,5 @@
+> **dots 中文桌面客户端（实验版）：** [运行说明](apps/lorca/README.zh-CN.md) · [Technical documentation](apps/lorca/README.md). [PC settings scope](docs/lorca-settings.md) · [Verification and synthetic screenshots](docs/lorca-verification.md). Upstream BB is preserved.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/e40bda56-54a4-47f8-a417-6bbadf2e5b40">

@@ -16,7 +16,45 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  fork-lorca-scope:
+    name: Check focused Lorca fork scope
+    if: ${{ github.repository == 'charlzyx/bb' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Check source files for literal NUL bytes
+        run: node scripts/check-source-nul.mjs
+      - name: Test focused scope guard
+        run: node --test .github/workflows/check-lorca-fork-scope.test.mjs
+      - name: Verify the focused scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          base=$(node scripts/ci-comparison-base.mjs "$BASE_SHA" "$PR_HEAD_SHA")
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            git fetch --no-tags --depth=1 origin "$DEFAULT_BRANCH"
+            base=$(git rev-parse FETCH_HEAD)
+          elif ! git cat-file -e "$base^{commit}"; then
+            git fetch --no-tags --depth=1 origin "$base"
+          fi
+          node .github/workflows/check-lorca-fork-scope.mjs "$base"
+          echo "Only focused Lorca coverage is configured for this fork; see the Lorca desktop integration workflow. No upstream full-stack or paid runner matrix was started." >> "$GITHUB_STEP_SUMMARY"
+
   plan:
+    if: ${{ github.repository != 'charlzyx/bb' }}
     name: Select CI checks
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
@@ -82,7 +120,7 @@ jobs:
 
   windows-foundation:
     needs: plan
-    if: ${{ fromJSON(needs.plan.outputs.selection).foundation }}
+    if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection).foundation }}
     name: Windows host packages (Node 22.x)
     runs-on: blacksmith-4vcpu-windows-2025
     timeout-minutes: 15
@@ -129,7 +167,7 @@ jobs:
 
   windows-app-smoke:
     needs: plan
-    if: ${{ fromJSON(needs.plan.outputs.selection).packaging }}
+    if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection).packaging }}
     name: Windows app smoke (Node 22.x)
     runs-on: blacksmith-4vcpu-windows-2025
     timeout-minutes: 40
@@ -187,7 +225,7 @@ jobs:
 
   windows-desktop-smoke:
     needs: plan
-    if: ${{ fromJSON(needs.plan.outputs.selection).packaging }}
+    if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection).packaging }}
     name: Windows desktop smoke (Node 22.x)
     runs-on: blacksmith-4vcpu-windows-2025
     timeout-minutes: 40
@@ -249,7 +287,7 @@ jobs:
   windows-tests:
     name: Windows tests (${{ matrix.shard }}, Node 22.x)
     needs: plan
-    if: ${{ fromJSON(needs.plan.outputs.selection)['windows-tests'].include[0] != null }}
+    if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection)['windows-tests'].include[0] != null }}
     runs-on: blacksmith-4vcpu-windows-2025
     timeout-minutes: 30
     permissions:
@@ -344,7 +382,7 @@ jobs:
   static-checks:
     name: Lint and typecheck (ubuntu-latest, Node 22.x)
     needs: plan
-    if: ${{ fromJSON(needs.plan.outputs.selection).staticNeeded }}
+    if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection).staticNeeded }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     permissions:
@@ -392,7 +430,7 @@ jobs:
 
   checks:
     needs: plan
-    if: ${{ fromJSON(needs.plan.outputs.selection).buildNeeded }}
+    if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection).buildNeeded }}
     name: Checks (ubuntu-latest, Node 22.x)
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
@@ -443,14 +481,14 @@ jobs:
       # Measured pinned to 4 CPUs, two rounds each: 96 s / 110 s at the
       # default vs 90 s / 58 s at four.
       - name: Build plugin SDK for version validation
-        if: ${{ fromJSON(needs.plan.outputs.selection).sdkBuild }}
+        if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection).sdkBuild }}
         run: pnpm exec turbo run build --filter=@get-bb/plugin-sdk --cache-dir="${TURBO_CACHE_DIR:-.turbo/cache}" --output-logs=new-only --concurrency=4
 
       # A published version whose packed files or consumer-facing manifest
       # fields changed is a hard failure; an unreachable registry or a failed
       # local pack (exit 2) is infrastructure, not a finding.
       - name: Check plugin SDK npm version guard
-        if: ${{ fromJSON(needs.plan.outputs.selection).sdkBuild }}
+        if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection).sdkBuild }}
         run: |
           # +e so the exit code can be inspected: GitHub's default shell runs
           # with -e, which would abort the step before the exit-2 check.
@@ -472,7 +510,7 @@ jobs:
       # editor, diff and math code reaches those paths through barrel
       # re-exports, which typecheck and lint cannot see.
       - name: Check app bundle budgets
-        if: ${{ fromJSON(needs.plan.outputs.selection).appBuild }}
+        if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection).appBuild }}
         run: node apps/app/scripts/check-bundle-budget.mjs
 
       # Exceeding the Actions cache quota is silent: GitHub evicts entries
@@ -492,7 +530,7 @@ jobs:
   tests:
     name: Tests (${{ matrix.shard }}, ubuntu-latest, Node 22.x)
     needs: plan
-    if: ${{ fromJSON(needs.plan.outputs.selection)['tests'].include[0] != null }}
+    if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection)['tests'].include[0] != null }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
 
@@ -580,7 +618,7 @@ jobs:
   # TODO: cover the npm build, macOS, and the full `test:integration` suite.
   plugin-forks:
     needs: plan
-    if: ${{ fromJSON(needs.plan.outputs.selection).forks }}
+    if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection).forks }}
     name: Plugin Fork Check (${{ matrix.shard }}, ubuntu-latest, Node 22.x)
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
@@ -666,7 +704,7 @@ jobs:
 
     # Fork pull requests cannot read secrets, so the probe would fail
     # unauthenticated for reasons unrelated to bb.
-    if: ${{ fromJSON(needs.plan.outputs.selection).providers && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection).providers && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
 
     steps:
       - name: Checkout repository
@@ -734,7 +772,7 @@ jobs:
 
   package-smoke:
     needs: plan
-    if: ${{ fromJSON(needs.plan.outputs.selection).packaging }}
+    if: ${{ github.repository != 'charlzyx/bb' && fromJSON(needs.plan.outputs.selection).packaging }}
     name: Package Smoke (${{ matrix.os }}, Node ${{ matrix.node-version }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -805,7 +843,7 @@ jobs:
 
   node-compat-smoke:
     name: Node Compatibility Smoke (${{ matrix.os }}, Node ${{ matrix.node-version }})
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.repository != 'charlzyx/bb' && github.event_name != 'pull_request' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:

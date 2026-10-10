@@ -211,3 +211,7 @@ new turns, and `bb provider enable ID` to restore it (enabling its plugin if
 needed). These preserve the CLI and thread history. Individual opt-outs survive
 plugin off/on. Install provider plugins in Settings → Plugins; configure custom
 ACP agents in the ACP providers plugin settings.
+
+## Experimental Lorca client in this fork
+
+`apps/lorca` is an additive desktop client for an existing local Lorca CLI. Its bridge/command surface is separate from BB server commands; use `apps/lorca/README.md` for launch and protocol commands. It does not create identities, configure a relay, or migrate BB host-daemon state. Launch-time configuration is documented in `docs/configuration.md`.
