@@ -1,5 +1,20 @@
 import assert from "node:assert/strict";
 
+async function setMaterialPreference(page, session, headerSelector, reduced, reduceMotion = false) {
+  const features = reduced ? [{ name: "prefers-reduced-transparency", value: "reduce" }] : [];
+  if (reduceMotion) features.push({ name: "prefers-reduced-motion", value: "reduce" });
+  await session.send("Emulation.setEmulatedMedia", { features });
+  await page.waitForFunction(({ headerSelector, reduced, reduceMotion }) => {
+    const header = document.querySelector(headerSelector);
+    if (!header || header.getBoundingClientRect().height === 0) return false;
+    const material = getComputedStyle(header, "::before");
+    return matchMedia("(min-width: 768px) and (prefers-reduced-transparency: reduce)").matches === reduced
+      && (!reduceMotion || matchMedia("(prefers-reduced-motion: reduce)").matches)
+      && material.backdropFilter === (reduced ? "none" : "blur(14px)")
+      && (material.backgroundImage === "none") === reduced;
+  }, { headerSelector, reduced, reduceMotion });
+}
+
 async function descriptionContrast(page) {
   const ratios = await page.locator(".lorca-settings-desktop").evaluate((root) => {
     const canvas = document.createElement("canvas");
@@ -135,13 +150,13 @@ export async function checkVisualSurfaces({ browser, base, screenshot, chooseSet
     await screenshot(page, `desktop-glass-scrolled-${theme}`);
     const media = await page.context().newCDPSession(page);
     try {
-      await media.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }, { name: "prefers-reduced-motion", value: "reduce" }] });
+      await setMaterialPreference(page, media, ".lorca-header", true, true);
       assert.equal(await page.evaluate(() => matchMedia("(prefers-reduced-transparency: reduce)").matches && matchMedia("(prefers-reduced-motion: reduce)").matches), true);
       await glassSurface(page, ".lorca-header", ".lorca-scroll", ".lorca-transcript", true);
       const motion = await page.locator(".lorca-composer").evaluate((element) => getComputedStyle(element).transitionDuration);
       assert.ok(motion.split(",").every((value) => parseFloat(value) <= 0.00001), "Reduced motion keeps transitions effectively disabled");
       await screenshot(page, `desktop-glass-reduced-transparency-${theme}`);
-      await media.send("Emulation.setEmulatedMedia", { features: [] });
+      await setMaterialPreference(page, media, ".lorca-header", false);
     } finally {
       await media.detach();
     }
@@ -156,11 +171,11 @@ export async function checkVisualSurfaces({ browser, base, screenshot, chooseSet
     await glassSurface(page, ".lorca-settings-page-header", ".lorca-settings-scroll", ".lorca-settings-reading-width", false);
     const settingsMedia = await page.context().newCDPSession(page);
     try {
-      await settingsMedia.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }] });
+      await setMaterialPreference(page, settingsMedia, ".lorca-settings-page-header", true);
       await glassSurface(page, ".lorca-settings-page-header", ".lorca-settings-scroll", ".lorca-settings-reading-width", true);
       assert.equal(await page.locator(".lorca-auto-review-actions").evaluate((element) => getComputedStyle(element, "::before").display), "none", "Reduced transparency also removes the approval footer fade");
       if (theme === "light") await screenshot(page, "desktop-settings-reduced-transparency");
-      await settingsMedia.send("Emulation.setEmulatedMedia", { features: [] });
+      await setMaterialPreference(page, settingsMedia, ".lorca-settings-page-header", false);
     } finally {
       await settingsMedia.detach();
     }
