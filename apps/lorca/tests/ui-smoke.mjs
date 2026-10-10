@@ -103,6 +103,18 @@ async function assertDesktopDensity(page) {
   assert.ok(layout.composerBottom < layout.height, "Composer remains inside the window");
 }
 
+async function assertNativeSkipLink(page) {
+  const link = page.locator(".lorca-skip-link");
+  const composer = page.getByRole("textbox", { name: "给 dots 发消息" });
+  await composer.focus();
+  assert.ok(await link.evaluate((element) => element.getBoundingClientRect().bottom) <= 0, "Unfocused native skip link is entirely above the viewport");
+  await link.focus();
+  assert.equal(await link.evaluate((element) => element === document.activeElement), true);
+  assert.ok(await link.evaluate((element) => element.getBoundingClientRect().top) >= 40, "Focused skip link appears below the traffic-light safe area");
+  await composer.focus();
+  assert.ok(await link.evaluate((element) => element.getBoundingClientRect().bottom) <= 0, "Native skip link becomes completely hidden after blur");
+}
+
 try {
   const sandboxSession = await browser.newBrowserCDPSession();
   try {
@@ -976,6 +988,7 @@ try {
   assert.equal(nativeChrome.headerDrag, "drag");
   assert.equal(nativeChrome.statusDrag, "no-drag");
   assert.equal(nativeChrome.titleDrag, "no-drag");
+  await assertNativeSkipLink(nativeLayout);
   await screenshot(nativeLayout, "desktop-macos-layout-light");
   await nativeLayout.locator(".lorca-header-status").click();
   await waitForSettings(nativeLayout);
@@ -995,6 +1008,7 @@ try {
   assert.ok(minimumLayout.headerRight <= 760);
   assert.ok(minimumLayout.composerBottom < 520);
   assert.ok(minimumLayout.editorHeight >= 50, "Minimum window keeps the editor usable");
+  await assertNativeSkipLink(nativeLayout);
   await screenshot(nativeLayout, "desktop-minimum-window");
   await nativeLayout.getByRole("textbox", { name: "给 dots 发消息" }).fill("Synthetic minimum-window draft");
   await nativeLayout.locator(".lorca-header-status").click();

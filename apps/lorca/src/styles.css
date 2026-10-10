@@ -2482,6 +2482,9 @@ select:focus-visible {
 :where(html[data-lorca-platform="darwin"] .lorca-app) .lorca-skip-link {
   top: 44px;
 }
+:where(html[data-lorca-platform="darwin"] .lorca-app) .lorca-skip-link:not(:focus) {
+  transform: translateY(calc(-100% - 48px));
+}
 
 @media (max-width: 767px) {
   :where(html[data-lorca-platform="darwin"] .lorca-app) .lorca-header {
