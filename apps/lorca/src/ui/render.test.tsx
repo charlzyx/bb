@@ -8,7 +8,8 @@ import { LorcaShell } from "./LorcaShell";
 import { Settings, validateEndpoint } from "./Settings";
 import { McpPanel, RunnersPanel } from "./settings/RuntimePanels";
 import { BotSettingsPanel } from "./settings/BotSettingsPanel";
-import { AutoReviewPanel } from "./settings/AutoReviewPanel";
+import { AutoReviewPanel as AutoReviewView } from "./settings/AutoReviewPanel";
+import { useAutoReviewDraft } from "./settings/auto-review-draft";
 import {
   APPEARANCE_STORAGE_KEY,
   readAppearancePreference,
@@ -30,6 +31,10 @@ const actions: LorcaShellActions = {
   async onSettingsAction() { return { status: "cancelled" }; },
   onApproval() {},
 };
+
+function AutoReviewPanel(props: Parameters<typeof useAutoReviewDraft>[0]) {
+  return <AutoReviewView draft={useAutoReviewDraft(props)} />;
+}
 
 function renderMessage(message: LorcaMessage) {
   return renderToStaticMarkup(

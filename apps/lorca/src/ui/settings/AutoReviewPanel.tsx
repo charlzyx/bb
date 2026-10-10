@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useId } from "react";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { Input } from "@bb/shared-ui/input";
@@ -9,51 +9,7 @@ import {
   SettingsWithControl,
 } from "../../../../app/src/components/ui/settings-section";
 import { approvalZh } from "../../locale/approval.zh-CN";
-import type {
-  SettingsAction,
-  SettingsActionResult,
-  SettingsEditor,
-} from "../types";
-
-type RuleDraft = {
-  key: number;
-  id?: string;
-  text: string;
-  behavior: "allow" | "ask";
-  tool: string;
-};
-
-function snapshotRules(editor: SettingsEditor | undefined): RuleDraft[] {
-  return (editor?.autoReview.rules ?? []).map((rule, index) => ({
-    key: index,
-    id: rule.id,
-    text: rule.text,
-    behavior: rule.behavior,
-    tool: rule.tool ?? "",
-  }));
-}
-
-function rulePayload(rules: RuleDraft[]) {
-  return rules.map((rule) => ({
-    ...(rule.id === undefined ? {} : { id: rule.id }),
-    text: rule.text.trim(),
-    behavior: rule.behavior,
-    ...(rule.tool.trim() ? { tool: rule.tool.trim() } : {}),
-  }));
-}
-
-function policySnapshot(editor: SettingsEditor | undefined) {
-  if (
-    !editor ||
-    editor.autoReview.status !== "ready" ||
-    editor.autoReview.isEnabled === null
-  ) return null;
-  return {
-    revision: editor.revision,
-    isEnabled: editor.autoReview.isEnabled,
-    rules: snapshotRules(editor),
-  };
-}
+import type { RuleDraft, useAutoReviewDraft } from "./auto-review-draft";
 
 function RuleSummary({ rule }: { rule: RuleDraft }) {
   const tool = rule.tool.trim();
@@ -76,115 +32,14 @@ function RuleSummary({ rule }: { rule: RuleDraft }) {
   );
 }
 
-export function AutoReviewPanel({
-  editor,
-  disabled,
-  onAction,
-}: {
-  editor: SettingsEditor | undefined;
-  disabled: boolean;
-  onAction: (action: SettingsAction) => Promise<SettingsActionResult>;
-}) {
+export function AutoReviewPanel({ draft }: { draft: ReturnType<typeof useAutoReviewDraft> }) {
   const panelId = useId();
-  const [baseline, setBaseline] = useState(() => policySnapshot(editor));
-  const [isEnabled, setIsEnabled] = useState(
-    editor?.autoReview.isEnabled === true,
-  );
-  const [rules, setRules] = useState(() => snapshotRules(editor));
-  const [reviewing, setReviewing] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [showValidation, setShowValidation] = useState(false);
-  const [outcome, setOutcome] = useState<
-    SettingsActionResult["status"] | "failed" | null
-  >(null);
-  const pendingRef = useRef(false);
-  const resultRef = useRef<HTMLDivElement>(null);
-  const reviewRef = useRef<HTMLDivElement>(null);
-  const hasEmptyRule = rules.some((rule) => !rule.text.trim());
-  const currentSnapshot = policySnapshot(editor);
-  const toolCounts = new Map<string, number>();
-  for (const rule of rules) {
-    const tool = rule.tool.trim();
-    if (tool) toolCounts.set(tool, (toolCounts.get(tool) ?? 0) + 1);
-  }
-  const duplicateTools = [...toolCounts].filter(([, count]) => count > 1).map(([tool]) => tool);
-  const needsRefresh = outcome === "applied" || outcome === "unknownOutcome";
-  const dirty = baseline !== null && (
-    isEnabled !== baseline.isEnabled ||
-    JSON.stringify(rulePayload(rules)) !== JSON.stringify(rulePayload(baseline.rules))
-  );
-  const snapshotChanged = currentSnapshot !== null && currentSnapshot.revision !== baseline?.revision;
-  const conflict = snapshotChanged && !pending && !needsRefresh;
-  const locked = disabled || pending || needsRefresh || conflict || !currentSnapshot;
-  const fieldsLocked = locked || reviewing;
-
-  if (snapshotChanged && !dirty && !pending && !reviewing && outcome === null) {
-    setBaseline(currentSnapshot);
-    setIsEnabled(currentSnapshot.isEnabled);
-    setRules(currentSnapshot.rules);
-  }
-
-  function adoptCurrent() {
-    if (disabled || pending || !currentSnapshot) return;
-    setBaseline(currentSnapshot);
-    setIsEnabled(currentSnapshot.isEnabled);
-    setRules(currentSnapshot.rules);
-    setOutcome(null);
-    setShowValidation(false);
-    setReviewing(false);
-  }
-
-  function updateRule(key: number, update: Partial<Omit<RuleDraft, "key" | "id">>) {
-    setRules((current) =>
-      current.map((rule) => (rule.key === key ? { ...rule, ...update } : rule)),
-    );
-    setOutcome(null);
-  }
-
-  function reviewChanges() {
-    if (locked || !dirty) return;
-    setShowValidation(true);
-    setOutcome(null);
-    if (hasEmptyRule || duplicateTools.length) return;
-    setReviewing(true);
-    requestAnimationFrame(() => reviewRef.current?.focus());
-  }
-
-  async function submitChanges() {
-    if (
-      pendingRef.current ||
-      locked ||
-      !reviewing ||
-      !editor ||
-      editor.autoReview.status !== "ready" ||
-      editor.autoReview.isEnabled === null ||
-      hasEmptyRule ||
-      duplicateTools.length > 0 ||
-      !baseline ||
-      !dirty
-    ) {
-      return;
-    }
-    pendingRef.current = true;
-    setPending(true);
-    setOutcome(null);
-    try {
-      const result = await onAction({
-        kind: "autoReview.set",
-        revision: baseline.revision,
-        isEnabled,
-        rules: rulePayload(rules),
-      });
-      setOutcome(result.status);
-    } catch {
-      setOutcome("failed");
-    } finally {
-      pendingRef.current = false;
-      setPending(false);
-      setReviewing(false);
-      requestAnimationFrame(() => resultRef.current?.focus());
-    }
-  }
+  const {
+    editor, disabled, baseline, isEnabled, rules, reviewing, pending, showValidation,
+    outcome, resultRef, reviewRef, hasEmptyRule, currentSnapshot, duplicateTools,
+    needsRefresh, dirty, conflict, locked, fieldsLocked, adoptCurrent, updateRule,
+    reviewChanges, submitChanges, setIsEnabled, setRules, setReviewing, setOutcome,
+  } = draft;
 
   if (!baseline && !currentSnapshot) {
     return (

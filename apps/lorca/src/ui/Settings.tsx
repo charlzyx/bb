@@ -3,6 +3,7 @@ import { settingsZh } from "../locale/settings.zh-CN";
 import { editorZh } from "../locale/editor.zh-CN";
 import { BotSettingsPanel } from "./settings/BotSettingsPanel";
 import { AutoReviewPanel } from "./settings/AutoReviewPanel";
+import { useAutoReviewDraft } from "./settings/auto-review-draft";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { Input } from "@bb/shared-ui/input";
@@ -155,6 +156,7 @@ export function Settings({
   const [selectedBotId, setSelectedBotId] = useState("");
   const connected = demo || connection.status === "connected";
   const disabled = !connected || loading || applying;
+  const autoReviewDraft = useAutoReviewDraft({ editor: runtime?.editor, disabled, onAction: actions.onSettingsAction });
   const refresh = () =>
     actions.onRefreshSettings(
       page === "mcp" ? (runtime?.mcp.runnerId ?? undefined) : undefined,
@@ -319,7 +321,7 @@ export function Settings({
       )}
       {page === "models" && (runtime ? <BotSettingsPanel key={String(open)} runtime={runtime} disabled={disabled} onAction={actions.onSettingsAction} selectedBotId={selectedBotId} onSelectBot={setSelectedBotId} /> : <InventoryEmpty icon="Info" title={settingsZh.noRuntimeDetails} detail={editorZh.unsupported} />)}
       <div hidden={page !== "approvals"}>
-        <AutoReviewPanel editor={runtime?.editor} disabled={disabled} onAction={actions.onSettingsAction} />
+        <AutoReviewPanel draft={autoReviewDraft} />
       </div>
       {(page === "runners" || page === "mcp") &&
         (runtime ? (

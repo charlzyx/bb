@@ -711,12 +711,38 @@ try {
   await ruleFields.last().getByRole("combobox").selectOption("ask");
   await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).click();
   assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), 2, "Approval edits do not immediately mutate");
+  const refreshApprovalSnapshot = async () => {
+    const previousTicket = await settingsInteraction.evaluate(() => window.__settingsUiTest.snapshot.editor.revision);
+    await settingsInteraction.getByRole("button", { name: "刷新", exact: true }).click();
+    await settingsInteraction.waitForFunction((ticket) => window.__settingsUiTest.snapshot.editor.revision !== ticket && document.querySelector(".lorca-settings-runtime-toolbar")?.getAttribute("aria-busy") === "false", previousTicket);
+  };
+  await refreshApprovalSnapshot();
+  assert.equal(await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).inputValue(), "Read only the synthetic fixture", "Same policy with a new ticket preserves the dirty draft");
+  assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isEnabled(), true, "Ticket renewal alone never creates a configuration conflict");
+  assert.equal(await settingsInteraction.getByRole("alert").filter({ hasText: "服务端配置已更新" }).count(), 0);
+  await settingsInteraction.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await settingsInteraction.locator(".lorca-header-status").click();
+  await waitForSettings(settingsInteraction);
+  await chooseSettingsPage(settingsInteraction, "自动审批");
+  assert.equal(await ruleFields.count(), 2, "Closing and reopening settings preserves the edited policy");
+  assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isEnabled(), true, "Reopening with unchanged policy keeps the draft editable");
   await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).click();
+  await refreshApprovalSnapshot();
+  await settingsInteraction.getByRole("region", { name: "确认自动审批变更", exact: true }).waitFor();
+  assert.equal(await settingsInteraction.getByRole("button", { name: "确认并提交", exact: true }).isEnabled(), true, "A renewed ticket preserves scope review and enables explicit submission");
+  await settingsInteraction.setViewportSize({ width: 560, height: 820 });
+  await settingsInteraction.locator(".lorca-settings-drawer .lorca-approval-confirmation").waitFor();
+  assert.equal(await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).inputValue(), "Read only the synthetic fixture", "Compact frame remount preserves the draft and review");
+  await settingsInteraction.setViewportSize({ width: 1240, height: 820 });
+  await settingsInteraction.locator(".lorca-settings-desktop .lorca-approval-confirmation").waitFor();
+  assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), 2, "Refresh, reopen and breakpoint changes never submit a policy");
+  const reviewedTicket = await settingsInteraction.evaluate(() => window.__settingsUiTest.snapshot.editor.revision);
   await settingsInteraction.getByRole("button", { name: "确认并提交", exact: true }).click();
   await settingsInteraction.waitForFunction(() => window.__settingsUiTest.pending.length === 1);
   assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).isDisabled(), true);
   const approvalAction = await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.at(-1));
   assert.equal(approvalAction.kind, "autoReview.set");
+  assert.equal(approvalAction.revision, reviewedTicket, "Explicit submission uses the current ticket after unchanged readbacks");
   assert.equal(approvalAction.isEnabled, true);
   assert.equal(approvalAction.rules[0].id, "existing-rule");
   assert.equal(approvalAction.rules[1].behavior, "ask");
@@ -741,6 +767,23 @@ try {
   assert.equal(await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).inputValue(), "Read only the synthetic fixture", "Explicit refresh preserves unknown-result draft");
   await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).waitFor();
   assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), afterUnknown);
+  await settingsInteraction.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await settingsInteraction.locator(".lorca-header-status").click();
+  await waitForSettings(settingsInteraction);
+  await chooseSettingsPage(settingsInteraction, "自动审批");
+  await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).waitFor();
+  for (const width of [560, 1240, 560, 1240]) {
+    await settingsInteraction.setViewportSize({ width, height: 820 });
+    const surface = width === 560 ? ".lorca-settings-drawer" : ".lorca-settings-desktop";
+    await settingsInteraction.locator(`${surface} .lorca-auto-review-panel`).waitFor();
+    assert.equal(await ruleFields.count(), 2, "Every breakpoint remount retains the complete uncertain policy draft");
+    assert.equal(await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).inputValue(), "Read only the synthetic fixture");
+    await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).waitFor();
+    assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isDisabled(), true, "Unknown-result lock survives every responsive remount");
+  }
+  await refreshApprovalSnapshot();
+  assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isDisabled(), true, "Refreshing after remount does not clear the unknown-result lock");
+  assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), afterUnknown, "Unknown policy is never automatically replayed by reopen, resize or refresh");
   await chooseSettingsPage(settingsInteraction, "MCP");
   await settingsInteraction.getByRole("button", { name: "移除", exact: true }).click();
   await settingsInteraction.getByText(/删除其本地配置、凭据、数据和关联的工具规则/).waitFor();
@@ -812,6 +855,8 @@ try {
           "First-send success migrates edited draft without stealing navigation",
           "Rejected endpoint save never reports success",
           "Settings screenshot waits for realized content",
+          "Approval capability-ticket renewal preserves edited scope review",
+          "Approval draft and unknown lock survive reopen and responsive remount",
           "Ordinary reconnect preserves drafts",
           "Account switch clears all drafts",
           "Desktop settings panes and read-only runner inspection",
