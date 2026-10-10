@@ -1,11 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { Icon } from "@bb/shared-ui/icon";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@bb/shared-ui/dropdown-menu";
+import { Button } from "@bb/shared-ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@bb/shared-ui/popover";
 import { zhCN } from "../locale/zh-CN";
 import type { LorcaShellState } from "./types";
 
@@ -45,70 +41,46 @@ export function ConnectionStatusSummary({ state }: { state: ConnectionState }) {
   );
 }
 
-export function ConnectionStatusMenu({ state, onSettings }: { state: ConnectionState; onSettings: () => void }) {
+export function ConnectionStatusPopover({ state, onSettings }: { state: ConnectionState; onSettings: () => void }) {
   const [open, setOpen] = useState(false);
-  const menuOpen = useRef(false);
   const trigger = useRef<HTMLButtonElement>(null);
-  const settingsItem = useRef<HTMLDivElement>(null);
-  const restoreFocus = useRef(true);
-  const changeOpen = (value: boolean) => {
-    menuOpen.current = value;
-    if (value) restoreFocus.current = true;
-    setOpen(value);
-  };
+  const handingOff = useRef(false);
   return (
-    <DropdownMenu modal={false} open={open} onOpenChange={changeOpen}>
-      <DropdownMenuTrigger asChild ref={trigger}>
+    <Popover modal={false} open={open} onOpenChange={(value) => {
+      if (value) handingOff.current = false;
+      setOpen(value);
+    }}>
+      <PopoverTrigger asChild ref={trigger}>
         <button className="lorca-header-status" aria-label={zhCN.chat.viewConnectionStatus}>
           <ConnectionLabel state={state} />
           <Icon name="ChevronDown" />
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        className="lorca-connection-menu"
+      </PopoverTrigger>
+      <PopoverContent
+        className="lorca-connection-popover"
         align="end"
         side="bottom"
         sideOffset={8}
         collisionPadding={12}
         aria-label={zhCN.chat.connectionStatus}
+        aria-labelledby={undefined}
         mobileTitle={zhCN.chat.connectionStatus}
-        onFocusOutside={(event) => {
-          if (event.target !== trigger.current) return;
-          event.preventDefault();
-          if (menuOpen.current) settingsItem.current?.focus({ preventScroll: true });
-        }}
-        onInteractOutside={(event) => {
-          if (event.target !== trigger.current) restoreFocus.current = false;
-        }}
         onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          if (!menuOpen.current && restoreFocus.current) trigger.current?.focus({ preventScroll: true });
-        }}
-        onKeyDown={(event) => {
-          if (event.key !== "Tab") return;
-          event.preventDefault();
-          const root = trigger.current?.closest(".lorca-app");
-          const controls = Array.from(root?.querySelectorAll<HTMLElement>("button, a[href], input, textarea, select, summary, [tabindex]") ?? [])
-            .filter((element) => element.tabIndex >= 0 && !element.matches(":disabled") && !element.closest("[inert], [aria-hidden=true]") && element.getClientRects().length > 0);
-          const index = controls.findIndex((element) => element === trigger.current);
-          const target = controls[index + (event.shiftKey ? -1 : 1)] ?? trigger.current;
-          restoreFocus.current = false;
-          changeOpen(false);
-          target?.focus({ preventScroll: true });
+          if (handingOff.current) event.preventDefault();
         }}
       >
         <ConnectionStatusSummary state={state} />
-        <DropdownMenuItem ref={settingsItem} className="lorca-connection-settings" onSelect={() => {
-          restoreFocus.current = false;
-          changeOpen(false);
+        <Button variant="ghost" className="lorca-connection-settings" onClick={() => {
+          handingOff.current = true;
+          setOpen(false);
           trigger.current?.focus({ preventScroll: true });
           onSettings();
         }}>
           <Icon name="Settings" />
           <span>{zhCN.chat.connectionSettings}</span>
           <Icon name="ChevronRight" />
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }

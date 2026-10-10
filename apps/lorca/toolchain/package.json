@@ -32,7 +32,8 @@
     "@tailwindcss/oxide": "^4.3.0",
     "electron": "^41.0.0",
     "pnpm": "9.15.0",
-    "playwright": "1.62.1"
+    "playwright": "1.62.1",
+    "@radix-ui/react-popover": "^1.1.19"
   },
   "packageManager": "pnpm@9.15.0"
 }

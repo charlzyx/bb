@@ -20,7 +20,7 @@ import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
 import { ConversationTimeline } from "../../../app/src/components/ui/conversation";
 import { Transcript } from "./Transcript";
 import { DotsMark } from "./DotsMark";
-import { ConnectionLabel, ConnectionStatusMenu } from "./ConnectionStatusMenu";
+import { ConnectionLabel, ConnectionStatusPopover } from "./ConnectionStatusPopover";
 import { ComposerRunnerStatus } from "./ComposerRunnerStatus";
 import { Avatar, ConversationAvatars } from "./Avatar";
 import { settleSubmittedDraft } from "./drafts";
@@ -539,7 +539,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                 {zhCN.chat.syntheticDemo}
               </Pill>
             )}
-            <ConnectionStatusMenu state={state} onSettings={() => openSettings("connection")} />
+            <ConnectionStatusPopover state={state} onSettings={() => openSettings("connection")} />
           </div>
         </header>
         <div

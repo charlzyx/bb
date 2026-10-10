@@ -391,9 +391,9 @@ select:focus-visible {
   background: var(--state-active);
   color: var(--foreground);
 }
-.lorca-connection-menu {
+.lorca-connection-popover {
   width: min(300px, calc(100vw - 24px));
-  max-height: var(--radix-dropdown-menu-content-available-height, 80dvh);
+  max-height: var(--radix-popover-content-available-height, 80dvh);
   padding: 6px;
   overflow-y: auto;
   border: 1px solid var(--border-seam);
@@ -401,17 +401,17 @@ select:focus-visible {
   background: var(--popover);
   color: var(--popover-foreground);
   box-shadow: 0 8px 28px color-mix(in oklab, var(--ink) 12%, transparent);
-  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  transform-origin: var(--radix-popover-content-transform-origin);
   -webkit-app-region: no-drag;
 }
-.lorca-connection-menu[data-state="open"] {
+.lorca-connection-popover[data-state="open"] {
   animation: lorca-connection-enter 160ms ease-out;
 }
-.lorca-connection-menu[data-state="closed"] {
-  animation: lorca-connection-exit 160ms ease-in;
+.lorca-connection-popover[data-state="closed"] {
+  animation: none !important;
   pointer-events: none;
 }
-:where(.lorca-connection-menu) .lorca-connection-summary {
+:where(.lorca-connection-popover) .lorca-connection-summary {
   padding: 8px 8px 12px;
 }
 :where(.lorca-connection-summary) h2 {
@@ -453,50 +453,48 @@ select:focus-visible {
   align-items: center;
   gap: 6px;
 }
-:where(.lorca-connection-menu) .lorca-connection-settings {
+:where(.lorca-connection-popover) .lorca-connection-settings {
+  display: flex;
+  width: 100%;
   min-height: 34px;
   gap: 8px;
   border-radius: 7px;
   font-size: var(--text-xs);
   cursor: pointer;
 }
-:where(.lorca-connection-menu) .lorca-connection-settings [data-icon-root]:last-child {
+:where(.lorca-connection-popover) .lorca-connection-settings [data-icon-root]:last-child {
   margin-left: auto;
 }
-:where(.lorca-connection-menu) .lorca-connection-settings:focus-visible {
+:where(.lorca-connection-popover) .lorca-connection-settings:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
-:where(.lorca-connection-menu) :is(.lorca-status-dot, .lorca-demo-dot) {
+:where(.lorca-connection-popover) :is(.lorca-status-dot, .lorca-demo-dot) {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--muted-foreground);
 }
-:where(.lorca-connection-menu) .lorca-status-connected {
+:where(.lorca-connection-popover) .lorca-status-connected {
   background: var(--success-foreground);
 }
-:where(.lorca-connection-menu) :is(.lorca-status-connecting, .lorca-demo-dot) {
+:where(.lorca-connection-popover) :is(.lorca-status-connecting, .lorca-demo-dot) {
   background: var(--warning-text);
 }
-:where(.lorca-connection-menu) .lorca-status-error {
+:where(.lorca-connection-popover) .lorca-status-error {
   background: var(--destructive-text);
 }
 @keyframes lorca-connection-enter {
   from { opacity: 0; transform: translateY(-3px); }
   to { opacity: 1; transform: translateY(0); }
 }
-@keyframes lorca-connection-exit {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-3px); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .lorca-connection-menu:is([data-state="open"], [data-state="closed"]) {
+  .lorca-connection-popover:is([data-state="open"], [data-state="closed"]) {
     animation: none;
   }
 }
 @media (max-width: 767px) {
-  .lorca-connection-menu {
+  .lorca-connection-popover {
     width: 100%;
     border: 0;
     box-shadow: none;

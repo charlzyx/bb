@@ -7,7 +7,7 @@ import { TranscriptItem } from "./Transcript";
 import { DotsMark } from "./DotsMark";
 import { Avatar, ConversationAvatars, safeAvatarImage } from "./Avatar";
 import { LorcaShell } from "./LorcaShell";
-import { ConnectionStatusMenu, ConnectionStatusSummary } from "./ConnectionStatusMenu";
+import { ConnectionStatusPopover, ConnectionStatusSummary } from "./ConnectionStatusPopover";
 import { ComposerRunnerStatus } from "./ComposerRunnerStatus";
 import { Settings, validateEndpoint } from "./Settings";
 import { DevicesInventory, McpPanel } from "./settings/RuntimePanels";
@@ -865,11 +865,11 @@ test("Application marks use the unchanged Ghost PNG assets without SVG or color 
 });
 
 
-test("Connection status trigger opens a read-only menu instead of entering settings", () => {
+test("Connection status trigger opens a read-only popover instead of entering settings", () => {
   let settingsOpened = 0;
-  const html = renderToStaticMarkup(<ConnectionStatusMenu state={{ connection: { status: "connected", endpoint: "ws://127.0.0.1:4862/ws" }, demo: false }} onSettings={() => { settingsOpened += 1; }} />);
+  const html = renderToStaticMarkup(<ConnectionStatusPopover state={{ connection: { status: "connected", endpoint: "ws://127.0.0.1:4862/ws" }, demo: false }} onSettings={() => { settingsOpened += 1; }} />);
   assert.match(html, /aria-label="查看连接状态"/);
-  assert.match(html, /aria-haspopup="menu"/);
+  assert.match(html, /aria-haspopup="dialog"/);
   assert.match(html, /aria-expanded="false"/);
   assert.match(html, /已连接/);
   assert.doesNotMatch(html, /打开连接设置|lorca-connection-summary|ws:\/\//);

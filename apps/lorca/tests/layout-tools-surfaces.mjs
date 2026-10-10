@@ -59,7 +59,7 @@ async function checkWidthAndStatus({ browser, base, screenshot, chooseChat, capt
   await chooseChat(page, "宽度布局回归");
   const controls = page.getByRole("group", { name: "内容宽度", exact: true });
   const composer = page.getByRole("textbox", { name: "给 dots 发消息" });
-  await composer.fill("Synthetic draft survives width and connection-menu changes");
+  await composer.fill("Synthetic draft survives width and connection-popover changes");
   assert.equal(await page.locator(".lorca-app").getAttribute("data-content-width"), "wide");
   await columnGeometry(page, "wide");
   await composerRow(page);
@@ -76,7 +76,7 @@ async function checkWidthAndStatus({ browser, base, screenshot, chooseChat, capt
   await controls.getByRole("button", { name: "阅读", exact: true }).click();
   await settle(page);
   assert.ok(Math.abs(await page.locator("[data-width-anchor-probe]").evaluate((element) => element.getBoundingClientRect().top) - anchorTop) <= 3, "Changing width preserves the first visible content anchor instead of jumping to latest");
-  assert.equal(await composer.inputValue(), "Synthetic draft survives width and connection-menu changes");
+  assert.equal(await composer.inputValue(), "Synthetic draft survives width and connection-popover changes");
   assert.equal(await controls.getByRole("button", { name: "阅读", exact: true }).getAttribute("aria-pressed"), "true");
   await columnGeometry(page, "reading");
   await screenshot(page, "desktop-layout-reading-2048");
@@ -121,13 +121,18 @@ async function checkWidthAndStatus({ browser, base, screenshot, chooseChat, capt
     }
     const trigger = page.locator(".lorca-header-status");
     const before = await page.evaluate(() => ({ scroll: document.querySelector(".lorca-scroll").scrollTop, requests: window.__layoutToolsUiTest.requests.length }));
+    assert.equal(await trigger.getAttribute("aria-expanded"), "false", "The status surface starts closed before the first keyboard activation");
     await trigger.focus();
     await trigger.press("Enter");
-    const menu = page.getByRole("menu", { name: "连接状态", exact: true });
-    await menu.waitFor();
+    const popover = page.getByRole("dialog", { name: "连接状态", exact: true });
+    await popover.waitFor();
     await trigger.focus();
-    assert.equal(await trigger.getAttribute("aria-expanded"), "true", "A late settings focus return to the stable trigger does not dismiss the new menu");
-    assert.equal(await menu.getByRole("menuitem", { name: "连接设置", exact: true }).evaluate((element) => element === document.activeElement), true, "A delayed anchor focus is handed back to the open menu item");
+    assert.equal(await trigger.getAttribute("aria-expanded"), "true", "A late settings focus return to the stable trigger does not dismiss the popover");
+    await page.keyboard.press("Escape");
+    await popover.waitFor({ state: "hidden" });
+    await trigger.press("Space");
+    await popover.waitFor();
+    await page.waitForFunction(() => document.activeElement?.matches("button.lorca-connection-settings"));
     assert.equal(await page.evaluate(() => window.__layoutToolsUiTest.requests.length), before.requests, "Opening connection status is local and sends no RPC");
     assert.equal(await composer.inputValue(), "Synthetic popover draft");
     assert.ok(Math.abs(await page.locator(".lorca-scroll").evaluate((element) => element.scrollTop) - before.scroll) <= 1, "Connection status does not move the reading position");
@@ -138,39 +143,47 @@ async function checkWidthAndStatus({ browser, base, screenshot, chooseChat, capt
     assert.equal(await composer.inputValue(), "Synthetic popover draft");
     assert.ok(Math.abs(await page.locator(".lorca-scroll").evaluate((element) => element.scrollTop) - before.scroll) <= 1, "Keyboard status-to-settings navigation preserves the reading position");
     await trigger.press("Enter");
-    await menu.waitFor();
+    await popover.waitFor();
     await page.keyboard.press("Escape");
-    await menu.waitFor({ state: "hidden" });
-    assert.equal(await trigger.evaluate((element) => element === document.activeElement), true, "Escape restores the status trigger's keyboard focus");
-    for (const backwards of [false, true]) {
-      await trigger.focus();
-      await trigger.evaluate((element, backwards) => {
-        const controls = Array.from(element.closest(".lorca-app").querySelectorAll("button, a[href], input, textarea, select, summary, [tabindex]"))
-          .filter((control) => control.tabIndex >= 0 && !control.matches(":disabled") && !control.closest("[inert], [aria-hidden=true]") && control.getClientRects().length > 0);
-        const target = controls[controls.indexOf(element) + (backwards ? -1 : 1)] || element;
-        document.querySelectorAll("[data-status-focus-target]").forEach((control) => control.removeAttribute("data-status-focus-target"));
-        target.setAttribute("data-status-focus-target", "");
-      }, backwards);
+    await popover.waitFor({ state: "hidden" });
+    await page.waitForFunction(() => document.querySelector(".lorca-header-status") === document.activeElement);
+    for (const key of ["Tab", "Shift+Tab"]) {
       await trigger.press("Space");
-      await menu.waitFor();
-      await page.keyboard.press(backwards ? "Shift+Tab" : "Tab");
-      await menu.waitFor({ state: "hidden" });
-      assert.equal(await page.locator("[data-status-focus-target]").evaluate((element) => element === document.activeElement), true, "Tab leaves the menu in the normal page focus order");
+      await popover.waitFor();
+      await page.waitForFunction(() => document.activeElement?.matches("button.lorca-connection-settings"));
+      await page.keyboard.press(key);
+      assert.equal(await popover.isVisible(), true, "The standard Popover focus scope stays open during keyboard traversal");
+      assert.equal(await popover.getByRole("button", { name: "连接设置", exact: true }).evaluate((element) => element === document.activeElement), true, "The single-action Popover loops Tab and Shift+Tab through its ordinary button");
+      await page.keyboard.press("Escape");
+      await popover.waitFor({ state: "hidden" });
+      await page.waitForFunction(() => document.querySelector(".lorca-header-status") === document.activeElement);
     }
     await trigger.press("Space");
-    await menu.waitFor();
+    await popover.waitFor();
     await composer.click();
-    await menu.waitFor({ state: "hidden" });
+    await popover.waitFor({ state: "hidden" });
     assert.equal(await composer.evaluate((element) => element === document.activeElement), true, "Outside dismissal leaves focus on the clicked editor");
     assert.equal(await composer.inputValue(), "Synthetic popover draft");
-    assert.equal(await page.evaluate(() => window.__layoutToolsUiTest.requests.length), before.requests, "Repeated status-menu interactions never read or mutate runtime settings");
+    assert.equal(await page.evaluate(() => window.__layoutToolsUiTest.requests.length), before.requests, "Repeated status-popover interactions never read or mutate runtime settings");
     await page.emulateMedia({ reducedMotion: "reduce" });
     await trigger.click();
-    await menu.waitFor();
-    assert.equal(await menu.evaluate((element) => getComputedStyle(element).animationName), "none", "Reduced motion removes the status-menu animation");
+    await popover.waitFor();
+    assert.equal(await popover.evaluate((element) => getComputedStyle(element).animationName), "none", "Reduced motion removes the status-popover animation");
     await page.keyboard.press("Escape");
-    await menu.waitFor({ state: "hidden" });
+    await popover.waitFor({ state: "hidden" });
     await page.emulateMedia({ reducedMotion: "no-preference" });
+    for (const icon of [false, true]) {
+      await trigger.click();
+      await popover.waitFor();
+      const position = icon ? await trigger.evaluate((element) => {
+        const anchor = element.getBoundingClientRect();
+        const icon = element.querySelector("[data-icon-root]").getBoundingClientRect();
+        return { x: icon.left + icon.width / 2 - anchor.left, y: icon.top + icon.height / 2 - anchor.top };
+      }) : undefined;
+      await trigger.click(position ? { position } : {});
+      await popover.waitFor({ state: "hidden" });
+      assert.equal(await trigger.getAttribute("aria-expanded"), "false", "Clicking the open trigger or its icon closes exactly once");
+    }
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await settle(page);

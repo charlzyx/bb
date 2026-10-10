@@ -60,6 +60,7 @@ async function screenshot(page, name) {
 function installFocusTrace() {
   if (window.__lorcaFocusTrace) return;
   const events = [];
+  window.__lorcaFocusTrace = events;
   const target = (element) => element instanceof Element ? {
     tag: element.tagName,
     classes: Array.from(element.classList).filter((name) => name.startsWith("lorca-")),
@@ -72,13 +73,16 @@ function installFocusTrace() {
     if (events.length > 300) events.shift();
   };
   for (const type of ["focusin", "focusout", "pointerdown", "click"]) document.addEventListener(type, (event) => record(type, event.target), true);
+  document.addEventListener("keydown", (event) => {
+    if (["Enter", "Escape", "Tab", " "].includes(event.key)) record("keydown", event.target, { key: event.key });
+  }, true);
   new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      if (!mutation.target.matches(".lorca-header-status, .lorca-connection-menu, .lorca-settings-desktop, .lorca-settings-drawer")) continue;
+      if (!mutation.target.matches(".lorca-header-status, .lorca-connection-popover, .lorca-settings-desktop, .lorca-settings-drawer")) continue;
       record("attribute", mutation.target, { attribute: mutation.attributeName, previous: mutation.oldValue });
     }
-  }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["data-state", "data-open"], attributeOldValue: true });
-  window.__lorcaFocusTrace = events;
+  }).observe(document, { subtree: true, attributes: true, attributeFilter: ["data-state", "data-open"], attributeOldValue: true });
+  record("installed", document.documentElement);
 }
 async function tracePage(page) {
   if (tracedPages.has(page)) return;
@@ -103,7 +107,7 @@ async function runLayoutToolsDiagnostics() {
 async function openConnectionSettings(page) {
   await tracePage(page);
   await page.locator(".lorca-header-status").click();
-  await page.getByRole("menuitem", { name: "连接设置", exact: true }).click();
+  await page.locator(".lorca-connection-popover").getByRole("button", { name: "连接设置", exact: true }).click();
 }
 async function chooseSettingsPage(page, label) {
   await page
