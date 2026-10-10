@@ -16,7 +16,7 @@ import {
   readAppearancePreference,
   writeAppearancePreference,
 } from "./settings/appearance";
-import type { LorcaShellActions, LorcaMessage, RuntimeSettings } from "./types";
+import type { LorcaShellActions, LorcaMessage, RuntimeSettings, LorcaShellState } from "./types";
 
 const actions: LorcaShellActions = {
   onSelectConversation() {},
@@ -635,4 +635,34 @@ test("Message avatars preserve bot identity and give user messages a person fall
   const user = renderMessage({ kind: "message", id: "user", role: "user", text: "Synthetic message" });
   assert.match(user, /lorca-avatar-person/);
   assert.doesNotMatch(user, /<img/);
+});
+
+
+test("Composer bot selector shows the selected avatar and retains native labels and disabled states", () => {
+  const state: LorcaShellState = {
+    connection: { status: "connected", endpoint: "ws://127.0.0.1:4862/ws" },
+    conversations: [], activeConversationId: null, messages: [],
+    agents: [{ id: "selected-bot", label: "Selected Bot", appearance: { botId: "selected-bot", name: "Selected Bot", symbolName: "terminal.fill", accent: "green", image: "data:image/png;base64,iVBORw0KGgo=" } }],
+    selectedAgentId: "selected-bot", busy: false, loading: false,
+    hasMore: false, loadingOlder: false, error: null, queue: [], demo: false,
+  };
+  const picker = (value: LorcaShellState) => {
+    const html = renderToStaticMarkup(<LorcaShell state={value} actions={actions} />);
+    const start = html.indexOf('class="lorca-agent-picker"');
+    assert.notEqual(start, -1);
+    return html.slice(start, html.indexOf("</select>", start) + 9);
+  };
+  const enabled = picker(state);
+  assert.match(enabled, /data-avatar-bot="selected-bot"/);
+  assert.match(enabled, /<img[^>]+data-avatar-image/);
+  assert.match(enabled, /<select aria-label="选择机器人"/);
+  assert.match(enabled, /<option value="selected-bot" selected="">Selected Bot<\/option>/);
+  assert.doesNotMatch(enabled, /data-icon="Bot"|<select[^>]+disabled/);
+  assert.doesNotMatch(enabled.slice(enabled.indexOf("<select")), /<img|<svg/);
+  for (const patch of [{ busy: true }, { loading: true }, { activeConversationId: "existing-chat" }, { agents: [], selectedAgentId: null }]) {
+    assert.match(picker({ ...state, ...patch }), /<select[^>]+disabled=""/);
+  }
+  const noImage = picker({ ...state, agents: state.agents.map((agent) => ({ ...agent, appearance: agent.appearance && { ...agent.appearance, image: undefined } })) });
+  assert.match(noImage, /data-icon="ComputerTerminal01"/);
+  assert.doesNotMatch(noImage, /<img/);
 });

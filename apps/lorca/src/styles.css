@@ -934,9 +934,9 @@ select:focus-visible {
   padding: 6px 4px;
   border-radius: 5px;
 }
-:where(.lorca-app) .lorca-agent-picker > [data-icon-root]:first-child {
-  width: 17px;
-  height: 17px;
+:where(.lorca-app) .lorca-agent-picker > .lorca-avatar {
+  width: 20px;
+  height: 20px;
 }
 :where(.lorca-app) .lorca-agent-picker > [data-icon-root]:last-child {
   width: 12px;

@@ -20,7 +20,7 @@ import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
 import { ConversationTimeline } from "../../../app/src/components/ui/conversation";
 import { TranscriptItem } from "./Transcript";
 import { DotsMark } from "./DotsMark";
-import { ConversationAvatars } from "./Avatar";
+import { Avatar, ConversationAvatars } from "./Avatar";
 import { Settings } from "./Settings";
 import type { SettingsPage } from "./settings/SettingsFrame";
 import {
@@ -723,7 +723,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                     </Button>
                   )}
                   <div className="lorca-agent-picker">
-                    <Icon name="Bot" />
+                    <Avatar appearance={state.agents.find((agent) => agent.id === state.selectedAgentId)?.appearance} />
                     <select
                       aria-label={zhCN.chat.selectBot}
                       value={state.selectedAgentId ?? ""}

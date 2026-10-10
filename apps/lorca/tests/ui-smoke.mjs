@@ -547,6 +547,7 @@ try {
     "开始聊天",
     "Created chat stays unselected until send succeeds",
   );
+  assert.equal(await controlled.getByRole("combobox", { name: "选择机器人", exact: true }).isDisabled(), true, "Bot selection stays disabled while the first send is pending");
   await controlled.evaluate(() => window.__lorcaUiTest.rejectSend());
   await controlled
     .getByText("Synthetic send failure", { exact: true })
@@ -834,7 +835,20 @@ try {
   avatars.on("request", (request) => { if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== new URL(base).origin) externalAvatarRequests.push(request.url()); });
   await avatars.addInitScript(installAvatarFixture);
   await avatars.goto(base, { waitUntil: "networkidle" });
+  const avatarPicker = avatars.getByRole("combobox", { name: "选择机器人", exact: true });
+  assert.equal(await avatarPicker.isEnabled(), true, "Bot selection remains enabled before starting a chat");
+  await avatars.locator('.lorca-agent-picker [data-avatar-bot="avatar-photo"] img').waitFor();
+  await avatarPicker.selectOption("avatar-symbol");
+  assert.equal(await avatars.locator('.lorca-agent-picker [data-avatar-bot="avatar-symbol"] [data-icon="ComputerTerminal01"]').count(), 1, "Composer uses the selected bot's symbol fallback");
+  assert.equal(await avatars.locator(".lorca-agent-picker img").count(), 0);
+  await avatarPicker.focus();
+  await avatarPicker.press("ArrowUp");
+  await avatars.waitForFunction(() => document.querySelector('.lorca-agent-picker select')?.value === "avatar-photo");
+  await avatars.locator('.lorca-agent-picker [data-avatar-bot="avatar-photo"] img').waitFor();
+  assert.equal(await avatarPicker.evaluate((element) => element.tagName), "SELECT", "Native keyboard selection semantics are preserved");
+  assert.equal(await avatars.locator(".lorca-agent-picker option img").count(), 0, "Native options remain safe text-only entries");
   await chooseChat(avatars, "合成头像 · 单聊");
+  assert.equal(await avatarPicker.isDisabled(), true, "Existing-chat bot selection remains disabled");
   await avatars.waitForFunction(() => Array.from(document.querySelectorAll('[data-avatar-bot="avatar-photo"] img')).every((image) => image.complete && image.naturalWidth === 64) && document.querySelectorAll('[data-avatar-bot="avatar-photo"] img').length >= 3);
   assert.equal(await avatars.locator(".lorca-brand .lorca-brand-logo svg").count(), 1, "Application dots mark remains separate from bot avatars");
   assert.equal(await avatars.locator(".lorca-user-message .lorca-avatar-person").count(), 1);
@@ -904,7 +918,8 @@ try {
           "Desktop settings panes and read-only runner inspection",
           "Appearance survives view reload within the session",
           "Desktop settings Escape and app-root focus behavior",
-          "Bot avatars in sidebar, header and messages with safe cached-image fallback",
+          "Bot avatars in sidebar, header, messages and native composer selector",
+          "Composer avatar follows keyboard selection and preserves disabled states",
           "Avatar replacement, identity clearing and no renderer remote-image fetches",
           "No console errors",
         ],
