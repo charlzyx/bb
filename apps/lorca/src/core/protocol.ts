@@ -2,6 +2,10 @@ export interface WireBot {
   id: string;
   name: string;
   runner_id: string;
+  symbol_name: string;
+  accent: string;
+  has_avatar: boolean;
+  avatar_version: string | null;
 }
 export interface WireChat {
   id: string;
@@ -134,6 +138,19 @@ export function parseBot(value: unknown): WireBot {
     id: string(v.id, "bot.id"),
     name: string(v.name, "bot.name"),
     runner_id: string(v.runner_id, "bot.runner_id"),
+    symbol_name:
+      typeof v.symbol_name === "string" && /^[a-zA-Z0-9._-]{1,80}$/.test(v.symbol_name)
+        ? v.symbol_name
+        : "sparkles",
+    accent:
+      typeof v.accent === "string" && ["indigo", "blue", "teal", "green", "orange", "pink", "purple", "red"].includes(v.accent)
+        ? v.accent
+        : "indigo",
+    has_avatar: v.has_avatar === true,
+    avatar_version:
+      typeof v.avatar_version === "string" && v.avatar_version.length > 0 && v.avatar_version.length <= 512
+        ? v.avatar_version
+        : null,
   };
 }
 function parseRun(value: unknown): Extract<WireBody, { kind: "tool" }>["run"] {

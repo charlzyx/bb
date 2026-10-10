@@ -3,6 +3,7 @@ const path = require('node:path');
 const { pathToFileURL, fileURLToPath } = require('node:url');
 const { LorcaBridge, isTrustedSender, validateCopyText } = require('./bridge.cjs');
 const { AttachmentSelections } = require('./attachments.cjs');
+const { BotAvatars } = require('./bot-avatars.cjs');
 const { applicationMenuTemplate } = require('./menu.cjs');
 const { APP_NAME, configureApplicationName, configureApplicationBranding } = require('./branding.cjs');
 const { SettingsInventory, sanitizeRendererEvent, sanitizeRendererResult, safeRendererError } = require('./settings.cjs');
@@ -18,6 +19,21 @@ const trustedURL = devURL || pathToFileURL(indexPath).href;
 const bridge = new LorcaBridge({ endpoint: process.env.LORCA_ENDPOINT ?? `ws://127.0.0.1:${process.env.LORCA_PORT ?? '4862'}/ws` });
 const selections = new AttachmentSelections();
 const settings = new SettingsInventory(bridge);
+const avatars = new BotAvatars(bridge, nativeImage);
+let pendingRoster = null;
+let observedGeneration = bridge.getStatus().generation;
+settings.onSnapshot = snapshot => {
+  avatars.observeSnapshot(snapshot);
+  if (pendingRoster) {
+    const generation = bridge.getStatus().generation, epoch = avatars.epoch, scope = avatars.identity;
+    queueMicrotask(() => {
+      if (!pendingRoster || bridge.getStatus().generation !== generation || avatars.epoch !== epoch || avatars.identity !== scope) return;
+      const roster = pendingRoster; pendingRoster = null;
+      avatars.observeBots(roster.data.bots);
+      send('lorca:event', sanitizeRendererEvent(roster, scope));
+    });
+  }
+};
 let window = null;
 let applicationIcon;
 let choosing = false;
@@ -45,9 +61,13 @@ function send(channel, value) {
   if (window && !window.isDestroyed()) window.webContents.send(channel, value);
 }
 bridge.on('event', value => {
-  if (value.event === 'identity.changed') selections.clear();
+  if (value.event === 'identity.changed') { selections.clear(); pendingRoster = null; }
   try {
-    const projected = sanitizeRendererEvent(value);
+    const projected = sanitizeRendererEvent(value, settings.identity ?? '');
+    if (value.event === 'roster.changed') {
+      if (avatars.identity === undefined) { pendingRoster = value; return; }
+      pendingRoster = null;
+    }
     if (projected) send('lorca:event', projected);
   } catch {
     bridge.close();
@@ -55,10 +75,16 @@ bridge.on('event', value => {
   }
 });
 bridge.on('status', value => {
-  if (value.status !== 'connected') selections.clear();
+  if (value.status !== 'connected' || value.generation !== observedGeneration) { selections.clear(); pendingRoster = null; }
+  observedGeneration = value.generation;
   send('lorca:status-update', value);
 });
 ipcMain.handle('lorca:connect', async (event, endpoint) => { ensureSender(event); return bridge.connect(endpoint); });
+ipcMain.handle('lorca:bot-avatar', (event, botId, expectedAvatarVersion) => {
+  ensureSender(event);
+  const fence = settings.capture();
+  return avatars.get(botId, expectedAvatarVersion, () => { ensureSender(event); settings.check(fence); });
+});
 ipcMain.handle('lorca:copy-text', (event, text) => { ensureSender(event); clipboard.writeText(validateCopyText(text)); return null; });
 ipcMain.handle('lorca:status', event => { ensureSender(event); return bridge.getStatus(); });
 ipcMain.handle('lorca:get-settings', async (event, params = {}) => {
@@ -148,5 +174,5 @@ app.whenReady().then(() => {
   createWindow();
 });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
-app.on('before-quit', () => { secureSettings.close(); bridge.close(); });
+app.on('before-quit', () => { avatars.dispose(); secureSettings.close(); bridge.close(); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

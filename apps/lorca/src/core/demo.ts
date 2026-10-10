@@ -18,7 +18,7 @@ export const demoSnapshot = {
   identity_id: "synthetic-account",
   relay_connected: false,
   relay_update_required: false,
-  bots: [{ id: "bot-demo", name: "示例助手", runner_id: "runner-demo" }],
+  bots: [{ id: "bot-demo", name: "示例助手", runner_id: "runner-demo", symbol_name: "sparkles", accent: "indigo", has_avatar: false, avatar_version: null }],
   chats: [
     {
       id: "chat-demo",

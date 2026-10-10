@@ -17,18 +17,20 @@ function chunk(type, bytes) {
   checksum.writeUInt32BE(crc32(Buffer.concat([header.subarray(4), bytes])));
   return Buffer.concat([header, bytes, checksum]);
 }
-function renderIcon(svg) {
+function renderIcon(svg, size = 256) {
+  if (![16, 32, 64, 128, 256, 512, 1024].includes(size)) throw new Error('图标尺寸不受支持');
   if (!/viewBox="0 0 32 32"/.test(svg)) throw new Error('图标必须使用 32 × 32 画布');
   const circles = [...svg.matchAll(/<circle\s+cx="([\d.]+)"\s+cy="([\d.]+)"\s+r="([\d.]+)"\s*\/>/g)].map(match => match.slice(1).map(Number));
   if (circles.length !== 4 || circles.flat().some(value => !Number.isFinite(value) || value < 0 || value > 32)) throw new Error('图标必须包含四个有效圆点');
-  const size = 256;
+  const inset = size * 100 / 1024;
+  const contentSize = size - inset * 2;
   const rows = Buffer.alloc((size * 4 + 1) * size);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     let coverage = 0;
     let tile = 0;
     for (let sy = 0; sy < 4; sy++) for (let sx = 0; sx < 4; sx++) {
-      const px = (x + (sx + 0.5) / 4) * 32 / size;
-      const py = (y + (sy + 0.5) / 4) * 32 / size;
+      const px = (x + (sx + 0.5) / 4 - inset) * 32 / contentSize;
+      const py = (y + (sy + 0.5) / 4 - inset) * 32 / contentSize;
       const dx = Math.max(5 - px, 0, px - 27);
       const dy = Math.max(5 - py, 0, py - 27);
       if (dx * dx + dy * dy <= 25) tile++;

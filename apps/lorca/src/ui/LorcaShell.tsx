@@ -20,6 +20,7 @@ import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
 import { ConversationTimeline } from "../../../app/src/components/ui/conversation";
 import { TranscriptItem } from "./Transcript";
 import { DotsMark } from "./DotsMark";
+import { ConversationAvatars } from "./Avatar";
 import { Settings } from "./Settings";
 import type { SettingsPage } from "./settings/SettingsFrame";
 import {
@@ -155,7 +156,8 @@ function Sidebar({
                   onNavigate();
                 }}
               >
-                <span>{conversation.title || zhCN.chat.untitledChat}</span>
+                <ConversationAvatars avatars={conversation.avatars} />
+                <span className="lorca-chat-item-title">{conversation.title || zhCN.chat.untitledChat}</span>
                 {conversation.status !== "idle" && (
                   <span
                     className={`lorca-thread-state lorca-thread-state-${conversation.status}`}
@@ -483,7 +485,8 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                 <Icon name="PanelLeft" />
               </Button>
             )}
-            <span>{activeConversation?.title || zhCN.chat.newChat}</span>
+            {activeConversation && <ConversationAvatars avatars={activeConversation.avatars} size="md" />}
+            <span className="lorca-header-chat-title">{activeConversation?.title || zhCN.chat.newChat}</span>
             {state.busy && (
               <span className="lorca-header-running">
                 <span className="lorca-pulse-dot" />
@@ -563,7 +566,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                   (message) => message.kind === "message" && message.streaming,
                 ) && (
                   <div className="lorca-thinking" role="status">
-                    <DotsMark />
+                    <ConversationAvatars avatars={activeConversation?.avatars} />
                     <span>{zhCN.chat.workingOnMessage}</span>
                     <span className="lorca-thinking-dots">
                       <i />

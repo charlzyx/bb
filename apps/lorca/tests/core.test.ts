@@ -1112,3 +1112,31 @@ test("Chinese parser diagnostics retain the offending protocol field identifiers
     /^Error: 设置数据格式不兼容：devices\.isThisDevice$/,
   );
 });
+
+test("starting a bot DM reuses the daemon's existing conversation without replacing history", async () => {
+  const bridge = new FakeBridge(), controller = new LorcaController(bridge);
+  try {
+    await controller.start();
+    await tick();
+    const previousIds = demoSnapshot.chats[0].messages.map(item => item.id);
+    const chatCount = controller.getSnapshot().conversations.length;
+    bridge.handler = async (method, params) => {
+      if (method === "chats.create") return { chat: { ...demoSnapshot.chats[0], messages: [] } };
+      if (method === "chats.send") return { message: {
+        id: params.message_id, chat_id: params.chat_id,
+        author: { kind: "you" }, body: { kind: "text", text: params.text },
+        state: { kind: "complete" }, created_at: 1791562600,
+      } };
+      throw new Error(`Unexpected request: ${method}`);
+    };
+    const result = await controller.actions.onSend("Synthetic continuation");
+    assert.deepEqual(result, { chatId: "chat-demo" });
+    assert.equal(controller.getSnapshot().conversations.length, chatCount);
+    controller.actions.onSelectConversation("chat-demo");
+    const ids = controller.getSnapshot().messages.map(item => item.id);
+    for (const id of previousIds) assert.ok(ids.includes(id));
+    assert.ok(controller.getSnapshot().messages.some(item => item.kind === "message" && item.text === "Synthetic continuation"));
+    assert.deepEqual(bridge.calls.filter(call => call.method === "chats.send").map(call => call.params.chat_id), ["chat-demo"]);
+    assert.ok(!bridge.calls.some(call => ["chats.delete", "bots.create", "bots.delete"].includes(call.method)));
+  } finally { controller.dispose(); }
+});

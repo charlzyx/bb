@@ -207,7 +207,7 @@ select:focus-visible {
   background: var(--state-active);
   font-weight: 500;
 }
-:where(.lorca-app, .lorca-mobile-sidebar) .lorca-chat-item > span:first-child {
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-chat-item-title {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -345,7 +345,7 @@ select:focus-visible {
   min-width: 0;
   font-weight: 500;
 }
-:where(.lorca-app) .lorca-header-title > span:first-of-type {
+:where(.lorca-app) .lorca-header-chat-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -505,10 +505,12 @@ select:focus-visible {
 :where(.lorca-app) .lorca-user-message {
   display: flex;
   justify-content: flex-end;
+  align-items: flex-end;
+  gap: 8px;
   padding: 6px 0 10px;
 }
 :where(.lorca-app) .lorca-user-message > div {
-  max-width: 87%;
+  max-width: min(87%, calc(100% - 32px));
   padding: 13px 19px;
   border-radius: 16px 16px 4px 16px;
   background: var(--surface-recessed);
@@ -1354,7 +1356,7 @@ select:focus-visible {
     gap: 20px;
   }
   :where(.lorca-app) .lorca-user-message > div {
-    max-width: 92%;
+    max-width: min(92%, calc(100% - 32px));
     font-size: var(--text-sm);
     padding: 11px 15px;
   }
@@ -2239,4 +2241,52 @@ select:focus-visible {
   border: 1px solid var(--border-seam);
   border-radius: 12px;
   padding: 16px;
+}
+
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar {
+  --lorca-avatar-accent: color-mix(in oklch, var(--timeline-accent) 55%, var(--pr-merged));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 50%;
+  color: color-mix(in oklch, var(--lorca-avatar-accent) 78%, var(--ink));
+  background: linear-gradient(150deg, color-mix(in oklch, var(--lorca-avatar-accent) 12%, var(--canvas)), color-mix(in oklch, var(--lorca-avatar-accent) 26%, var(--canvas)));
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar-md {
+  width: 28px;
+  height: 28px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar[data-accent="blue"] { --lorca-avatar-accent: var(--timeline-accent); }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar[data-accent="teal"] { --lorca-avatar-accent: color-mix(in oklch, var(--timeline-accent) 40%, var(--success)); }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar[data-accent="green"] { --lorca-avatar-accent: var(--success); }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar[data-accent="orange"] { --lorca-avatar-accent: var(--warning); }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar[data-accent="pink"] { --lorca-avatar-accent: color-mix(in oklch, var(--pr-merged) 45%, var(--destructive)); }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar[data-accent="purple"] { --lorca-avatar-accent: var(--pr-merged); }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar[data-accent="red"] { --lorca-avatar-accent: var(--destructive); }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar-person {
+  color: var(--subtle-foreground);
+  background: var(--surface-recessed);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar > svg,
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar [data-icon-root] {
+  width: 15px;
+  height: 15px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-conversation-avatars {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar-stack .lorca-avatar + .lorca-avatar {
+  margin-left: -10px;
+  box-shadow: 0 0 0 2px var(--background);
 }

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Markdown, safeMarkdownUrl } from "./markdown";
 import { TranscriptItem } from "./Transcript";
+import { Avatar, ConversationAvatars, safeAvatarImage } from "./Avatar";
 import { LorcaShell } from "./LorcaShell";
 import { Settings, validateEndpoint } from "./Settings";
 import { McpPanel, RunnersPanel } from "./settings/RuntimePanels";
@@ -456,6 +457,8 @@ test("dots branding and Chinese chrome preserve original conversation and bot na
     />,
   );
   assert.match(html, /想和 dots 聊些什么？/);
+  assert.match(html, /开始聊天/);
+  assert.match(html, /已有私聊会继续使用原对话/);
   assert.match(html, /aria-label="搜索对话"/);
   assert.match(html, /aria-label="发送消息"/);
   assert.match(html, /给 dots 发消息/);
@@ -587,4 +590,49 @@ test("Connection copy separates local authentication, device identity and servic
     assert.match(html, /可选登录属于各自服务的授权，不替代前两者/);
     assert.match(html, authMode === "token" ? /本地令牌认证/ : /本地兼容连接（不校验令牌）/);
   }
+});
+
+
+test("Avatar rendering accepts only bounded PNG data and maps symbols and accents safely", () => {
+  const image = "data:image/png;base64,iVBORw0KGgo=";
+  const appearance = { botId: "synthetic-bot", name: "Original Bot", symbolName: "terminal.fill", accent: "green", image };
+  const html = renderToStaticMarkup(<Avatar appearance={appearance} />);
+  assert.match(html, /<img[^>]+data-avatar-image/);
+  assert.match(html, /data-avatar-bot="synthetic-bot"/);
+  assert.match(html, /data-accent="green"/);
+  assert.equal(safeAvatarImage(image), image);
+  for (const unsafe of ["https://example.com/avatar.png", "file:///private/avatar.png", "data:image/svg+xml;base64,AAAA", "data:image/png;base64,not base64", `data:image/png;base64,${"A".repeat(1024 * 1024)}`]) {
+    assert.equal(safeAvatarImage(unsafe), undefined);
+    const fallback = renderToStaticMarkup(<Avatar appearance={{ ...appearance, image: unsafe, accent: "red;background:url(https://example.com)", symbolName: "https://example.com/icon.svg" }} />);
+    assert.doesNotMatch(fallback, /<img|example.com|style=/);
+    assert.match(fallback, /data-accent="indigo"/);
+    assert.match(fallback, /<svg/);
+  }
+  for (const symbolName of ["constructor", "__proto__", "toString"]) {
+    const fallback = renderToStaticMarkup(<Avatar appearance={{ ...appearance, image: undefined, symbolName }} />);
+    assert.doesNotMatch(fallback, /data-icon=|<img/);
+    assert.match(fallback, /<svg/);
+  }
+  const person = renderToStaticMarkup(<Avatar person appearance={appearance} />);
+  assert.match(person, /lorca-avatar-person/);
+  assert.doesNotMatch(person, /<img|data-avatar-bot/);
+});
+
+test("Conversation avatars use at most two ordered bot identities", () => {
+  const avatars = ["first", "second", "third"].map((botId) => ({ botId, name: botId, symbolName: "terminal.fill", accent: "teal" }));
+  const html = renderToStaticMarkup(<ConversationAvatars avatars={avatars} />);
+  assert.match(html, /lorca-avatar-stack/);
+  assert.ok(html.indexOf('data-avatar-bot="first"') < html.indexOf('data-avatar-bot="second"'));
+  assert.doesNotMatch(html, /data-avatar-bot="third"/);
+});
+
+test("Message avatars preserve bot identity and give user messages a person fallback", () => {
+  const html = renderMessage({ kind: "message", id: "avatar", role: "assistant", authorName: "Named Bot", authorAvatar: { botId: "named-bot", name: "Named Bot", symbolName: "terminal.fill", accent: "green" }, text: "Synthetic response" });
+  assert.match(html, /data-avatar-bot="named-bot"/);
+  assert.match(html, /data-icon="ComputerTerminal01"/);
+  assert.match(html, /Named Bot/);
+  assert.doesNotMatch(html, /<circle cx="10" cy="10" r="3.5"/);
+  const user = renderMessage({ kind: "message", id: "user", role: "user", text: "Synthetic message" });
+  assert.match(user, /lorca-avatar-person/);
+  assert.doesNotMatch(user, /<img/);
 });

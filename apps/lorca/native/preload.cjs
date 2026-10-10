@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('lorca', Object.freeze({
   connect: endpoint => invoke('lorca:connect', endpoint),
   request: (method, params) => invoke('lorca:request', method, params),
   copyText: text => invoke('lorca:copy-text', text),
+  getBotAvatar: (botId, expectedAvatarVersion) => invoke('lorca:bot-avatar', botId, expectedAvatarVersion),
   getStatus: () => invoke('lorca:status'),
   getSettings: (params = {}) => invoke('lorca:get-settings', params),
   settingsAction: action => invoke('lorca:settings-action', action),

@@ -22,6 +22,7 @@ import {
 import type { BridgeStatus, LorcaBridge, PickedAttachment } from "./bridge";
 import type {
   LorcaShellState,
+  LorcaBotAppearance,
   LorcaConversation,
   LorcaMessage,
   LorcaShellActions,
@@ -32,7 +33,7 @@ import type {
 
 import { parseRuntimeSettings } from "./settings";
 
-function messageView(message: WireMessage, authorName?: string): LorcaMessage {
+function messageView(message: WireMessage, authorName?: string, authorAvatar?: LorcaBotAppearance): LorcaMessage {
   const body = message.body;
   switch (body.kind) {
     case "text":
@@ -41,6 +42,7 @@ function messageView(message: WireMessage, authorName?: string): LorcaMessage {
         id: message.id,
         role: message.author.kind === "you" ? "user" : "assistant",
         authorName,
+        authorAvatar,
         text: body.text,
         createdAt: new Date(message.created_at * 1000).toISOString(),
         error: message.error ?? undefined,
@@ -125,6 +127,48 @@ function messageView(message: WireMessage, authorName?: string): LorcaMessage {
       };
   }
 }
+function avatarImage(value: unknown): string | null {
+  const prefix = "data:image/png;base64,";
+  if (typeof value !== "string" || value.length > 1024 * 1024 || !value.startsWith(prefix)) return null;
+  const payload = value.slice(prefix.length);
+  if (payload.length % 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(payload)) return null;
+  try {
+    const binary = atob(payload);
+    if (btoa(binary) !== payload) return null;
+    const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+    if (bytes.length < 57 || ![137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)) return null;
+    const view = new DataView(bytes.buffer);
+    let offset = 8;
+    let hasData = false;
+    while (offset + 12 <= bytes.length) {
+      const length = view.getUint32(offset);
+      if (length > bytes.length - offset - 12) return null;
+      const kind = binary.slice(offset + 4, offset + 8);
+      if (offset === 8) {
+        if (kind !== "IHDR" || length !== 13) return null;
+        const width = view.getUint32(offset + 8), height = view.getUint32(offset + 12);
+        if (!width || !height || width > 256 || height > 256) return null;
+      } else if (kind === "IHDR") return null;
+      if (kind === "IDAT" && length) hasData = true;
+      if (kind === "IEND") return hasData && length === 0 && offset + 12 === bytes.length ? value : null;
+      offset += length + 12;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+interface AvatarEntry {
+  botId: string;
+  version: string;
+  scope: string;
+  state: "queued" | "pending" | "settled";
+  image: string | null;
+  failedAt: number | null;
+  retries: number;
+  evicted: boolean;
+  obsolete: boolean;
+}
 export class LorcaController {
   private model: Model = emptyModel();
   private runtimeSettings: RuntimeSettings | null = null;
@@ -154,6 +198,9 @@ export class LorcaController {
   private sending = false;
   private navigation = 0;
   private accountEpoch = 0;
+  private avatarEpoch = 0;
+  private pendingAvatars = new Set<AvatarEntry>();
+  private avatars = new Map<string, AvatarEntry>();
   private pendingActions = new Set<string>();
   private pendingAttachments: PickedAttachment[] = [];
   private sendingAttachmentIds = new Set<string>();
@@ -174,6 +221,114 @@ export class LorcaController {
     if (this.disposed) return;
     this.state = this.makeState();
     for (const listener of this.listeners) listener();
+  }
+  private avatarScope(): string {
+    return JSON.stringify([this.status.endpoint, this.generation, this.accountEpoch, this.avatarEpoch, this.model.identityId]);
+  }
+  private clearAvatars(): void {
+    this.avatarEpoch++;
+    this.avatars.clear();
+  }
+  private appearance(botId: string): LorcaBotAppearance | undefined {
+    const bot = this.model.bots.get(botId);
+    if (!bot) return undefined;
+    const entry = this.avatars.get(botId);
+    return {
+      botId,
+      name: bot.name,
+      symbolName: bot.symbol_name,
+      accent: bot.accent,
+      image: entry && this.currentAvatar(entry) ? entry.image ?? undefined : undefined,
+    };
+  }
+  private currentAvatar(entry: AvatarEntry): boolean {
+    return this.avatars.get(entry.botId) === entry && this.matchingAvatar(entry);
+  }
+  private matchingAvatar(entry: AvatarEntry): boolean {
+    const bot = this.model.bots.get(entry.botId);
+    return !entry.obsolete && !this.disposed && this.status.status === "connected" && this.model.hasIdentity && entry.scope === this.avatarScope() && bot?.has_avatar === true && bot.avatar_version === entry.version;
+  }
+  private syncAvatars(retryFailures = false, retryEvicted = false): void {
+    for (const entry of this.pendingAvatars) {
+      if (!this.matchingAvatar(entry)) entry.obsolete = true;
+    }
+    for (const [botId, entry] of this.avatars) {
+      if (!this.currentAvatar(entry)) this.avatars.delete(botId);
+    }
+    if (this.disposed || !this.bridge.getBotAvatar || this.status.status !== "connected" || !this.synchronized || !this.model.hasIdentity) return;
+    const wanted = new Set<string>();
+    const include = (id: string | null) => {
+      if (!id || wanted.size >= 64) return;
+      const bot = this.model.bots.get(id);
+      if (bot?.has_avatar && bot.avatar_version) wanted.add(id);
+    };
+    const active = this.activeId ? this.model.chats.get(this.activeId) : undefined;
+    for (const id of active?.bot_ids ?? []) include(id);
+    for (const message of [...active?.messages ?? []].reverse()) if (!message.queued && message.author.kind !== "you") include(message.author.bot_id);
+    include(this.selectedBot);
+    const recentChats = [...this.model.chats.values()].sort((a, b) => (b.messages.at(-1)?.created_at ?? b.created_at) - (a.messages.at(-1)?.created_at ?? a.created_at));
+    for (const chat of recentChats) {
+      if (wanted.size >= 64) break;
+      for (const id of chat.bot_ids) include(id);
+    }
+    for (const id of this.model.bots.keys()) {
+      if (wanted.size >= 64) break;
+      include(id);
+    }
+    const next = new Map<string, AvatarEntry>();
+    for (const id of wanted) {
+      const bot = this.model.bots.get(id)!;
+      const previous = this.avatars.get(id) ?? [...this.pendingAvatars].find(entry => entry.botId === id && this.matchingAvatar(entry));
+      const entry = previous && this.matchingAvatar(previous)
+        ? previous
+        : { botId: id, version: bot.avatar_version!, scope: this.avatarScope(), state: "queued" as const, image: null, failedAt: null, retries: 0, evicted: false, obsolete: false };
+      if (entry.state === "settled" && ((retryFailures && entry.failedAt !== null && Date.now() - entry.failedAt >= 5000 && entry.retries < 1) || (retryEvicted && entry.evicted))) {
+        entry.state = "queued";
+        entry.retries++;
+        entry.failedAt = null;
+        entry.evicted = false;
+      }
+      next.set(id, entry);
+    }
+    this.avatars = next;
+    this.pumpAvatars();
+  }
+  private trimAvatarImages(): void {
+    let bytes = 0;
+    for (const entry of this.avatars.values()) {
+      const size = (entry.image?.length ?? 0) * 2;
+      if (bytes + size > 8 * 1024 * 1024) {
+        entry.image = null;
+        entry.evicted = true;
+      } else bytes += size;
+    }
+  }
+  private pumpAvatars(): void {
+    if (this.disposed || !this.bridge.getBotAvatar || this.status.status !== "connected" || !this.synchronized || !this.model.hasIdentity) return;
+    while (this.pendingAvatars.size < 4) {
+      const entry = [...this.avatars.values()].find(candidate => candidate.state === "queued" && this.currentAvatar(candidate));
+      if (!entry) return;
+      entry.state = "pending";
+      this.pendingAvatars.add(entry);
+      void this.loadAvatar(entry);
+    }
+  }
+  private async loadAvatar(entry: AvatarEntry): Promise<void> {
+    let image: string | null = null;
+    try {
+      image = avatarImage(await this.bridge.getBotAvatar?.(entry.botId, entry.version));
+    } catch {
+      image = null;
+    }
+    this.pendingAvatars.delete(entry);
+    if (this.currentAvatar(entry)) {
+      entry.image = image;
+      entry.state = "settled";
+      entry.failedAt = image ? null : Date.now();
+      this.trimAvatarImages();
+      this.emit();
+    }
+    this.pumpAvatars();
   }
   private makeState(): LorcaShellState {
     const chat = this.activeId
@@ -200,6 +355,10 @@ export class LorcaController {
       conversations: [...this.model.chats.values()]
         .map((c): LorcaConversation => ({
           id: c.id,
+          avatars: c.bot_ids.flatMap(id => {
+            const appearance = this.appearance(id);
+            return appearance ? [appearance] : [];
+          }),
           title:
             c.title ||
             c.bot_ids
@@ -221,10 +380,11 @@ export class LorcaController {
         }))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
       activeConversationId: chat?.id ?? null,
-      messages: messages.filter((m) => !m.queued).map((m) => messageView(m, m.author.bot_id ? this.model.bots.get(m.author.bot_id)?.name : undefined)),
+      messages: messages.filter((m) => !m.queued).map((m) => messageView(m, m.author.bot_id ? this.model.bots.get(m.author.bot_id)?.name : undefined, m.author.kind !== "you" && m.author.bot_id ? this.appearance(m.author.bot_id) : undefined)),
       agents: [...this.model.bots.values()].map((b) => ({
         id: b.id,
         label: b.name,
+        appearance: this.appearance(b.id),
       })),
       selectedAgentId: this.selectedBot,
       busy: Boolean(chat && isRunning(this.model, chat.id)),
@@ -264,6 +424,7 @@ export class LorcaController {
   }
   dispose(): void {
     this.disposed = true;
+    this.clearAvatars();
     this.resetOlder();
     this.clearAttachments();
     this.clearSettings();
@@ -274,11 +435,12 @@ export class LorcaController {
   }
   private receiveStatus(status: BridgeStatus): void {
     if (this.disposed) return;
-    const newSession = status.generation !== this.generation;
+    const newSession = status.generation !== this.generation || status.endpoint !== this.status.endpoint;
     const becameConnected =
       status.status === "connected" && this.status.status !== "connected";
     this.status = status;
     if (newSession || status.status !== "connected") {
+      this.clearAvatars();
       this.clearSettings();
       this.snapshotRequest++;
       this.synchronized = false;
@@ -305,9 +467,11 @@ export class LorcaController {
       void this.refresh();
   }
   private receive(value: unknown): void {
+    if (this.disposed) return;
     try {
       const event = parseEvent(value);
       if (event.event === "identity.changed") {
+        this.clearAvatars();
         this.clearSettings();
         this.accountEpoch++;
         this.navigation++;
@@ -327,6 +491,7 @@ export class LorcaController {
       }
       if (event.event === "snapshot") this.checkIdentity(event.data);
       this.model = applyEvent(this.model, event);
+      this.syncAvatars();
       this.reconcileSelection();
       this.emit();
     } catch (error) {
@@ -339,6 +504,7 @@ export class LorcaController {
   }
   private checkIdentity(snapshot: WireSnapshot): boolean {
     if (this.model.version && this.model.identityId !== (snapshot.identity_id ?? null)) {
+      this.clearAvatars();
       this.resetOlder();
       this.clearSettings();
       this.accountEpoch++;
@@ -384,6 +550,7 @@ export class LorcaController {
       for (const event of accountChanged ? [] : this.buffering ?? []) next = applyBufferedEvent(next, event);
       this.model = next;
       this.synchronized = true;
+      this.syncAvatars(true);
       this.buffering = null;
       this.reconcileSelection();
       if (!this.model.hasIdentity)
@@ -620,6 +787,7 @@ export class LorcaController {
         this.selectedBot =
           this.model.chats.get(id)?.bot_ids[0] ?? this.selectedBot;
         this.clearAttachments();
+        this.syncAvatars(false, true);
         this.emit();
       }
     },
@@ -628,11 +796,13 @@ export class LorcaController {
       this.activeId = null;
       this.clearAttachments();
       this.error = null;
+      this.syncAvatars(false, true);
       this.emit();
     },
     onSelectAgent: (id) => {
       if (!this.sending && this.model.bots.has(id)) {
         this.selectedBot = id;
+        this.syncAvatars(false, true);
         this.emit();
       }
     },
@@ -715,6 +885,7 @@ export class LorcaController {
       const canonical = `ws://127.0.0.1:${Number(match[2])}/ws`;
       const changed = canonical !== this.status.endpoint.replace("localhost", "127.0.0.1");
       if (changed) {
+        this.clearAvatars();
         this.resetOlder();
         this.snapshotRequest++;
         this.buffering = null;

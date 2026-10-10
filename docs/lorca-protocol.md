@@ -201,3 +201,8 @@ Lorca has no event sequence, message revision, or snapshot barrier. Events buffe
 The acceptance daemon exposes `bootstrap.identity_id`. The controller tracks it to invalidate draft scope, attachment selections and cached history if the account changes, including a change discovered after reconnect. The explicit `identity.changed` event invalidates immediately. Same-account reconnects preserve text drafts. A daemon omitting the identity ID cannot establish continuity, so a new connection conservatively resets the account scope. Endpoint changes also reset the scope; equivalent loopback endpoint spellings do not.
 
 Native attachment-send errors require selecting files again; unknown mutation outcomes never replay files or text automatically.
+
+
+## Direct conversation identity
+
+At the pinned upstream `b975eb6`, `chats.create` with `kind:"dm"` and `chats.dm` both call `App::dm_with` (`crates/cli/src/api.rs:310–333`, `app.rs:1322–1347`). That function returns the existing DM for the bot before considering `preferred_id`. There is one DM per bot, not a fresh independent context on every UI start action. The client labels this “开始聊天” and explains history reuse. Ordinary group creation is separate and is not silently substituted; the client never deletes history or creates a replacement bot to simulate a new direct session.

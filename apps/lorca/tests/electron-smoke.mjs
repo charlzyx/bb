@@ -24,6 +24,18 @@ async function loadPlaywright() {
     return import(process.env.PLAYWRIGHT_MODULE);
   }
 }
+function pngWithText(bytes, text) {
+  const payload = Buffer.from(`Comment\0${text}`);
+  const chunk = Buffer.alloc(payload.length + 12);
+  chunk.writeUInt32BE(payload.length); chunk.write('tEXt', 4); payload.copy(chunk, 8);
+  let crc = 0xffffffff;
+  for (const byte of chunk.subarray(4, chunk.length - 4)) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  chunk.writeUInt32BE((crc ^ 0xffffffff) >>> 0, chunk.length - 4);
+  return Buffer.concat([bytes.subarray(0, bytes.length - 12), chunk, bytes.subarray(bytes.length - 12)]);
+}
 const epoch = 1791561600;
 const secretMarker = 'SYNTHETIC_SETTINGS_SECRET_MUST_NOT_REACH_RENDERER';
 const privateSettings = { env: { KEY: secretMarker }, headers: { Authorization: secretMarker }, oauth: { clientSecret: secretMarker }, args: [secretMarker], cwd: secretMarker, url: secretMarker };
@@ -60,6 +72,10 @@ async function main() {
   try {
     await mkdir(home, { recursive: true });
     await writeFile(path.join(home, 'serve-token'), token, { mode: 0o600 });
+    const avatarBytes = pngWithText(await readFile(path.join(appDirectory, 'public/dots.png')), secretMarker);
+    await mkdir(path.join(home, 'files'));
+    await writeFile(path.join(home, 'files/att-smoke-avatar'), avatarBytes);
+    Object.assign(snapshot.bots[0], { symbol_name: 'sparkles', accent: 'teal', avatar: { id: 'att-smoke-avatar', name: 'synthetic.png', mime: 'image/png', size: avatarBytes.length, width: 256, height: 256, key: secretMarker } });
     server.on('upgrade', (request, socket, head) => {
       const valid = request.url === '/ws' && request.headers.origin === undefined && request.headers.authorization === `Bearer ${token}`;
       authenticated.push(valid);
@@ -129,7 +145,18 @@ async function main() {
     assert.equal(renderer.processType, 'undefined'); assert.equal(renderer.requireType, 'undefined');
     assert.equal(renderer.status.status, 'connected'); assert.equal(renderer.status.authMode, 'token');
     assert.equal(JSON.stringify(renderer).includes(token), false); assert.equal(JSON.stringify(renderer).includes(home), false);
-    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'settingsAction']);
+    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'settingsAction']);
+    const avatar = await page.evaluate(async () => {
+      const current = await window.lorca.request('bootstrap', {});
+      return window.lorca.getBotAvatar('bot-smoke', current.bots[0].avatar_version);
+    });
+    assert.match(avatar, /^data:image\/png;base64,/);
+    assert.equal(Buffer.from(avatar.split(',')[1], 'base64').includes(Buffer.from(secretMarker)), false);
+    assert.notEqual(avatar, `data:image/png;base64,${avatarBytes.toString('base64')}`);
+    const decodedAvatar = await application.evaluate(({ nativeImage }, value) => nativeImage.createFromDataURL(value).getSize(), avatar);
+    assert.deepEqual(decodedAvatar, { width: 256, height: 256 });
+    assert.equal(requests.some(request => request.method === 'files.path'), false);
+    assert.equal(await page.evaluate(() => window.lorca.getBotAvatar('unknown-bot', '0'.repeat(24))), null);
     const inventory = await page.evaluate(async () => {
       const events = [];
       const unsubscribe = window.lorca.onEvent(event => events.push(event));
@@ -146,6 +173,9 @@ async function main() {
     assert.equal(inventory.settings.mcp.servers[0].hasError, true);
     assert.equal(inventory.settings.devices[0].name, 'Synthetic Runner');
     assert.equal(JSON.stringify(inventory).includes(secretMarker), false);
+    assert.equal(JSON.stringify(inventory).includes('att-smoke-avatar'), false);
+    assert.equal(inventory.bootstrap.bots[0].has_avatar, true);
+    assert.match(inventory.bootstrap.bots[0].avatar_version, /^[a-f0-9]{24}$/);
     assert.equal(inventory.events.some(event => event.event === 'provider.auth'), false);
     assert.ok(inventory.events.some(event => event.event === 'roster.changed'));
     assert.match(inventory.remoteError, /未被自动重发/);

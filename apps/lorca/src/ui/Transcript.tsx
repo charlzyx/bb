@@ -5,7 +5,7 @@ import { Icon } from "@bb/shared-ui/icon";
 import { Pill } from "@bb/shared-ui/pill";
 import { CONTEXT_CARD_CLASS } from "@bb/shared-ui/chrome-style-tokens";
 import { Markdown } from "./markdown";
-import { DotsMark } from "./DotsMark";
+import { Avatar } from "./Avatar";
 import { copyText } from "./clipboard";
 import type { LorcaMessage, LorcaShellActions } from "./types";
 
@@ -220,6 +220,7 @@ export function TranscriptItem({
           )}
           {attachments}
         </div>
+        <Avatar person />
       </article>
     );
   return (
@@ -230,7 +231,7 @@ export function TranscriptItem({
       )}
     >
       <div className="lorca-message-author">
-        <DotsMark />
+        <Avatar appearance={message.authorAvatar} size="md" />
         <span>{message.authorName || "dots"}</span>
         {message.streaming && (
           <span className="lorca-streaming-label">

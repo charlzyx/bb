@@ -2,6 +2,22 @@
 
 Verified on 2026-10-10. This is an experimental client, not a packaged release.
 
+## Avatar and native icon follow-up
+
+The avatar/icon changes pass **281 deterministic tests**, TypeScript, production build and lint locally. Cached images are tested with synthetic raster data only: no remote image URL, file-path IPC or `files.path` request is added. Native reads are bound to the known bot, opaque expected avatar version, account and connection; symlinks, hardlinks, unsupported/animated raster inputs, excessive bytes/pixels and stale reads are rejected. The main process re-encodes accepted images; the renderer has its own 64-entry/8 MiB image budget and four-request limit. A failed image falls back and may retry only after a bounded explicit refresh.
+
+The browser smoke adds desktop light/dark/group avatar views and identity/version replacement checks. The Electron smoke exercises the real native image decoder against a temporary cached PNG and verifies that synthetic embedded metadata does not reach the renderer. These additions still require the exact commit's CI run; prior green checks do not verify them.
+
+Mac measurements found the previous app icon occupied the whole canvas. The new owned four-dot mark uses a 206-pixel footprint on its 256-pixel canvas and seven ICNS resolutions from 16 through 1024. Pixel/format tests pass; actual Dock/About appearance needs a rebuilt Mac bundle. No user avatar or screenshot is committed.
+
+The pinned daemon returns a bot's existing single DM when the user starts chatting again. Copy now says “开始聊天” and explains history reuse; a regression confirms that the reused response does not overwrite loaded history or trigger a bot/history deletion. No additional live message was sent from this cloud task.
+
+## Approval draft follow-up
+
+[`989903a`](https://github.com/charlzyx/bb/commit/989903a91fdd51b8db826eb053e773d802049a66) passed **231 tests**, TypeScript, build and lint in [run 38017919835](https://github.com/charlzyx/bb/actions/runs/38017919835). Browser checks actually exercised renewed capability tickets with unchanged policy content, close/reopen, responsive layout remounts and unknown-outcome resubmission locks. The real Electron fixture reported `sandboxEnabled: true` with the strict process checks below. Fork scope and both version-lockstep runs also passed.
+
+The native random ticket is a submission capability, not a configuration version. The UI compares policy content and rule order for conflicts, renews the capability without discarding an unchanged draft, and keeps the draft above responsive layout remounts. Actual account/endpoint changes still clear it. The 25 synthetic screenshots are in artifact `11657590323` (7-day retention); the desktop approval confirmation screenshot was downloaded and visually inspected. No private image or screenshot was added to the repository.
+
 ## Editable settings follow-up
 
 The controlled settings implementation passes **178 deterministic tests**, TypeScript, production build and lint. Strict browser and Electron integration verification passed on [`f86e76e`](https://github.com/charlzyx/bb/commit/f86e76e2d3913e46e3ffa0de900b52fbfb74092b) in [CI run 38009952957](https://github.com/charlzyx/bb/actions/runs/38009952957); all verification steps ran, none were skipped.
@@ -16,7 +32,7 @@ This phase does not use the user's Mac or live service. macOS native confirmatio
 
 ## PC audit follow-up
 
-The subsequent local audit passes **212 tests**, types/build and lint, plus five fork-scope guard tests. It fixes:
+The subsequent audit on [`3a075ee`](https://github.com/charlzyx/bb/commit/3a075ee19cd9c767328d2a3fb798b26ec81da7e3) passes **212 tests**, types/build and lint, plus five fork-scope guard tests. It fixes:
 
 - Successful send acknowledgements no longer inherit a concurrent stop/history error.
 - Discarded attachments release opaque native handles without deleting files; same-endpoint Save preserves valid selections, and active sends retain their handles until completion.
@@ -25,7 +41,7 @@ The subsequent local audit passes **212 tests**, types/build and lint, plus five
 - Unknown devices with empty descriptions no longer disable every settings editor. Existing MCP entries can be disabled without interpreting their saved URL as new credentials; reconnect explicitly rebuilds the cached connection with native confirmation.
 - Provider disconnect descriptions match account-wide scope and possible token revocation.
 
-The browser smoke includes interruption, conflict, unknown-readback and successful-send/concurrent-stop regressions. The `f86e76e` screenshot run above predates these audit changes; use the exact later commit's PR checks for its browser/Electron result, not that historical green run.
+The browser smoke includes interruption, conflict, unknown-readback and successful-send/concurrent-stop regressions. [Run 38012113600](https://github.com/charlzyx/bb/actions/runs/38012113600) passed its browser and strict-sandbox Electron checks. Its desktop chat, model, MCP, approval and isolated credential-window screenshots were actually inspected after download.
 
 Fork CI now runs the actual version checks on standard Ubuntu and uses a failing scope guard for code/lockfile/Turbo changes outside this focused integration. Dedicated Lorca CI still runs build/types/tests/lint and strict-sandbox browser/Electron fixtures. This is not the upstream BB full-stack or mobile matrix. See [CI scope](../.github/workflows/lorca-ci.md).
 
@@ -76,7 +92,7 @@ The [inventory contract](lorca-settings.md) and [editable settings contract](lor
 ## Remaining runtime limits
 
 - Cloud development and CI exercised no real Lorca identity, relay, model provider, native file transfer, or production service. A separate authorized macOS source-run check connected to an existing daemon and verified read-only chat/history/settings access; no new agent message was sent.
-- macOS source-run verification found that the system application menu and About icon still belong to the Electron host bundle. The app window, sidebar and explicit About product name use dots. The native About product version is now explicitly 0.1.0. A new isolated local packaging script supplies dots bundle metadata and an ICNS icon; its real macOS signing, launch and native appearance are not yet verified. It uses local ad-hoc signing only, with no Developer ID or notarization, and does not change Lorca data/token lookup. See [local macOS packaging instructions](../apps/lorca/README.zh-CN.md#macos-独立本地开发包).
+- macOS source-run verification found that the system application menu and About icon still belong to the Electron host bundle. The app window, sidebar and explicit About product name use dots. The native About product version is now explicitly 0.1.0. A new isolated local packaging script supplies dots bundle metadata and an ICNS icon; a previous development bundle was generated and passed ad-hoc verification on the Mac. The updated optical bounds and multiresolution icon still need a rebuilt bundle and visual acceptance. It uses local ad-hoc signing only, with no Developer ID or notarization, and does not change Lorca data/token lookup. See [local macOS packaging instructions](../apps/lorca/README.zh-CN.md#macos-独立本地开发包).
 - The macOS packaging follow-up passed 105 local tests, TypeScript, production build and lint. Its two new packaging tests verify ICNS format, runtime-only file selection, no-overwrite behavior and command isolation using a synthetic Electron bundle; they do not execute Apple tools on Linux.
 - Browser and Electron checks use synthetic fixtures; passing them does not prove compatibility with every live daemon version.
 

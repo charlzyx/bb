@@ -101,6 +101,10 @@ test('dots icon is a reproducible nonempty PNG derived from the owned vector mar
   for (const [x, y] of [[80, 80], [176, 80], [80, 176], [176, 176]]) assert.deepEqual(pixel(x, y), [36, 36, 34, 255]);
   assert.deepEqual(pixel(128, 128), [243, 243, 239, 255]);
   assert.equal(pixel(0, 0)[3], 0);
+  assert.equal(pixel(24, 128)[3], 0);
+  assert.equal(pixel(25, 128)[3], 255);
+  assert.equal(pixel(230, 128)[3], 255);
+  assert.equal(pixel(231, 128)[3], 0);
   assert.throws(() => renderIcon('<svg/>'));
 });
 

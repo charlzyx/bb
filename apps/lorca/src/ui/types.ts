@@ -10,16 +10,26 @@ export interface LorcaConnection {
   detail?: string;
 }
 
+export interface LorcaBotAppearance {
+  botId: string;
+  name: string;
+  symbolName: string;
+  accent: string;
+  image?: string;
+}
+
 export interface LorcaConversation {
   id: string;
   title: string;
   updatedAt: string;
   status: "idle" | "running" | "waiting" | "error";
+  avatars?: LorcaBotAppearance[];
 }
 
 export interface LorcaAgent {
   id: string;
   label: string;
+  appearance?: LorcaBotAppearance;
 }
 
 export type LorcaMessage =
@@ -28,6 +38,7 @@ export type LorcaMessage =
       id: string;
       role: "user" | "assistant";
       authorName?: string;
+      authorAvatar?: LorcaBotAppearance;
       text: string;
       createdAt?: string;
       streaming?: boolean;

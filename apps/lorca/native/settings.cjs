@@ -1,3 +1,4 @@
+const { botPresentation } = require('./bot-avatars.cjs');
 const SETTINGS_ERROR = '无法读取 Lorca 设置，请重新连接后重试';
 const CHANGED_ERROR = 'Lorca 账号或连接已变化，请刷新后再继续';
 const PLUGIN_STATES = new Set(['ready', 'needs_setup', 'needs_auth', 'connecting', 'error', 'disabled', 'insufficient_access']);
@@ -118,6 +119,7 @@ class SettingsInventory {
     const identity = `${boolean(input.has_identity)}:${nullableText(input.identity_id) ?? ''}`;
     if (this.identity !== undefined && identity !== this.identity) ++this.epoch;
     this.identity = identity;
+    this.onSnapshot?.(value);
   }
   projectResult(method, value, fence) {
     this.check(fence);
@@ -160,9 +162,9 @@ class SettingsInventory {
     } finally { --this.pending; }
   }
 }
-function wireBot(value) {
+function wireBot(value, scope = '') {
   const item = object(value);
-  return { id: id(item.id), name: text(item.name), runner_id: id(item.runner_id) };
+  return { id: id(item.id), name: text(item.name), runner_id: id(item.runner_id), ...botPresentation(item, scope) };
 }
 function wireMessage(value) {
   const item = object(value), author = object(item.author), source = object(item.body), status = object(item.state);
@@ -199,16 +201,16 @@ function wireSnapshot(value) {
   const item = object(value);
   return { version: text(item.version, 128), has_identity: boolean(item.has_identity), identity_id: nullableText(item.identity_id), is_identity_device: boolean(item.is_identity_device, false), this_device_id: nullableText(item.this_device_id),
     relay_connected: boolean(item.relay_connected), relay_update_required: boolean(item.relay_update_required, false),
-    bots: array(item.bots, 1024).map(wireBot), chats: array(item.chats, 2048).map(chat => wireChat(chat, true)),
+    bots: array(item.bots, 1024).map(bot => wireBot(bot, `${item.has_identity}:${item.identity_id ?? ''}`)), chats: array(item.chats, 2048).map(chat => wireChat(chat, true)),
     running_turns: array(item.running_turns, 1024, []).map(wireTurn), running_chat_ids: array(item.running_chat_ids, 1024, []).map(id) };
 }
-function sanitizeRendererEvent(value) {
+function sanitizeRendererEvent(value, scope = '') {
   const envelope = object(value), event = text(envelope.event, 100);
   if (!['snapshot', 'roster.changed', 'identity.changed', 'relay.status', 'job.started', 'job.finished', 'message.added', 'message.updated', 'message.removed', 'chat.removed'].includes(event)) return null;
   const input = object(envelope.data);
   let data;
   if (event === 'snapshot') data = wireSnapshot(input);
-  else if (event === 'roster.changed') data = { bots: array(input.bots, 1000).map(wireBot), chats: array(input.chats, 2048).map(chat => wireChat(chat, false)) };
+  else if (event === 'roster.changed') data = { bots: array(input.bots, 1000).map(bot => wireBot(bot, scope)), chats: array(input.chats, 2048).map(chat => wireChat(chat, false)) };
   else if (event === 'identity.changed') data = { has_identity: boolean(input.has_identity) };
   else if (event === 'relay.status') data = { connected: boolean(input.connected), update_required: boolean(input.update_required, false) };
   else if (['job.started', 'job.finished'].includes(event)) data = wireTurn(input);

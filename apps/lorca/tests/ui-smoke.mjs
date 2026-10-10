@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { installSettingsFixture } from "./settings-ui-fixture.mjs";
+import { installAvatarFixture } from "./avatar-ui-fixture.mjs";
 
 let playwright;
 try {
@@ -543,7 +544,7 @@ try {
   );
   assert.equal(
     await controlled.locator(".lorca-header-title").innerText(),
-    "新对话",
+    "开始聊天",
     "Created chat stays unselected until send succeeds",
   );
   await controlled.evaluate(() => window.__lorcaUiTest.rejectSend());
@@ -559,7 +560,7 @@ try {
   );
   assert.equal(
     await controlled.locator(".lorca-header-title").innerText(),
-    "新对话",
+    "开始聊天",
   );
   await controlled
     .getByRole("textbox", { name: "给 dots 发消息" })
@@ -826,6 +827,47 @@ try {
   await chooseSettingsPage(settingsInteraction, "自动审批");
   assert.equal(await ruleFields.first().getByRole("textbox", { name: /备注/ }).inputValue(), "Changed by another client", "Identity loss and replacement clear private policy drafts");
   assert.equal(await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).count(), 0);
+  const avatars = await browser.newPage({ viewport: { width: 1240, height: 820 } });
+  failurePage = avatars;
+  captureErrors(avatars);
+  const externalAvatarRequests = [];
+  avatars.on("request", (request) => { if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== new URL(base).origin) externalAvatarRequests.push(request.url()); });
+  await avatars.addInitScript(installAvatarFixture);
+  await avatars.goto(base, { waitUntil: "networkidle" });
+  await chooseChat(avatars, "合成头像 · 单聊");
+  await avatars.waitForFunction(() => Array.from(document.querySelectorAll('[data-avatar-bot="avatar-photo"] img')).every((image) => image.complete && image.naturalWidth === 64) && document.querySelectorAll('[data-avatar-bot="avatar-photo"] img').length >= 3);
+  assert.equal(await avatars.locator(".lorca-brand .lorca-brand-logo svg").count(), 1, "Application dots mark remains separate from bot avatars");
+  assert.equal(await avatars.locator(".lorca-user-message .lorca-avatar-person").count(), 1);
+  assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').count(), 1);
+  assert.equal(await avatars.evaluate(() => window.__avatarUiTest.calls.filter((id) => id === "avatar-photo").length), 1, "Sidebar, header and transcript deduplicate avatar reads");
+  await screenshot(avatars, "desktop-avatars-light");
+  await avatars.locator(".lorca-header-status").click();
+  await waitForSettings(avatars);
+  await chooseSettingsPage(avatars, "偏好设置");
+  await avatars.getByRole("button", { name: "深色", exact: true }).click();
+  await avatars.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await screenshot(avatars, "desktop-avatars-dark");
+  await chooseChat(avatars, "合成头像 · 群组");
+  assert.equal(await avatars.locator(".lorca-header-title .lorca-avatar-stack .lorca-avatar").count(), 2);
+  assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-symbol"] [data-icon="ComputerTerminal01"]').count(), 1);
+  assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').count(), 1);
+  await screenshot(avatars, "desktop-avatars-group");
+  await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').dispatchEvent("error");
+  await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').waitFor({ state: "detached" });
+  assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').count(), 0, "A failed image decode falls back locally");
+  assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] svg').count(), 1);
+  assert.equal(await avatars.locator(".lorca-composer-error").count(), 0);
+  await avatars.evaluate(() => window.__avatarUiTest.replace());
+  await avatars.waitForFunction(() => document.querySelectorAll('[data-avatar-bot="avatar-photo"] img').length >= 3 && Array.from(document.querySelectorAll('[data-avatar-bot="avatar-photo"] img')).every((image) => image.src === window.__avatarUiTest.images[1] && image.complete && image.naturalWidth === 64));
+  assert.equal(await avatars.evaluate(() => window.__avatarUiTest.calls.filter((id) => id === "avatar-photo").length), 2, "A changed avatar version is reloaded exactly once");
+  assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').count(), 1, "A new valid avatar replaces an earlier failed decode fallback");
+  await chooseChat(avatars, "合成头像 · 缓存缺失");
+  assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-missing"] img').count(), 0);
+  assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-missing"][data-accent="orange"]').count(), 1);
+  assert.equal(await avatars.locator(".lorca-composer-error").count(), 0, "Missing local avatar cache does not fail the chat");
+  await avatars.evaluate(() => window.__avatarUiTest.loseIdentity());
+  await avatars.waitForFunction(() => document.querySelectorAll("[data-avatar-image]").length === 0);
+  assert.deepEqual(externalAvatarRequests, [], "Bot avatars never fetch remote image URLs in the renderer");
   assert.deepEqual(
     failures,
     [],
@@ -862,6 +904,8 @@ try {
           "Desktop settings panes and read-only runner inspection",
           "Appearance survives view reload within the session",
           "Desktop settings Escape and app-root focus behavior",
+          "Bot avatars in sidebar, header and messages with safe cached-image fallback",
+          "Avatar replacement, identity clearing and no renderer remote-image fetches",
           "No console errors",
         ],
       },

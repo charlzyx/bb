@@ -145,7 +145,10 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
   const { file } = await fixture(context);
   const handlers = new Map<string, (...args: any[]) => any>();
   const actualBridge = require("../native/bridge.cjs");
+  let avatarSnapshot = { ...structuredClone(demoSnapshot), bots: [{ ...demoSnapshot.bots[0], avatar: { id: "att-fixture-avatar", mime: "image/png", size: 100, width: 1, height: 1 } }] };
+  const sentEvents: { channel: string; value: any }[] = [];
   let nativeRegistry: any;
+  let nativeAvatars: any;
   let nativeBridge: any;
   class NativeBridge extends EventEmitter {
     status: BridgeStatus = { status: "connected", endpoint: "ws://127.0.0.1:4862/ws", generation: 1, authMode: "token" };
@@ -157,13 +160,14 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
       this.status = { ...this.status, endpoint, generation: this.status.generation + 1, status: "connecting" };
       this.emit("status", this.getStatus()); this.status.status = "connected"; this.emit("status", this.getStatus()); return this.getStatus();
     }
+    async request() { return avatarSnapshot; }
     async sendValidated(_method: string, params: Record<string, unknown>) { return { message: { id: params.message_id, chat_id: params.chat_id } }; }
     close() {}
   }
   class Contents extends EventEmitter {
     mainFrame = { url: "" };
     session = Object.assign(new EventEmitter(), { setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, webRequest: { onBeforeRequest() {}, onHeadersReceived() {} } });
-    send() {}
+    send(channel: string, value: unknown) { sentEvents.push({ channel, value }); }
     setWindowOpenHandler() {}
   }
   let window!: FakeWindow;
@@ -182,16 +186,20 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
   };
   const source = await readFile(new URL("../native/main.cjs", import.meta.url), "utf8");
   runInNewContext(source, {
-    __dirname: fileURLToPath(new URL("../native", import.meta.url)), process: { env: {}, platform: "linux" },
+    queueMicrotask, __dirname: fileURLToPath(new URL("../native", import.meta.url)), process: { env: {}, platform: "linux" },
     require: (name: string) => {
       if (name === "electron") return electron;
+      if (name === "./bot-avatars.cjs") {
+        const module = require("../native/bot-avatars.cjs");
+        return { ...module, BotAvatars: class extends module.BotAvatars { constructor(...args: any[]) { super(...args); nativeAvatars = this; } } };
+      }
       if (name === "./bridge.cjs") return { ...actualBridge, LorcaBridge: NativeBridge };
       if (name === "./attachments.cjs") return { AttachmentSelections: class extends AttachmentSelections { constructor() { super(); nativeRegistry = this; } } };
       if (name === "./branding.cjs") return { APP_NAME: "dots", configureApplicationName() {}, configureApplicationBranding() {} };
       if (name === "./menu.cjs") return { applicationMenuTemplate: () => [] };
       if (name === "./secure-settings.cjs") return { createSecureSettingsEditor: () => ({ edit() {}, close() {} }) };
       if (name === "./settings-editor.cjs") return { SettingsEditor: class {} };
-      if (name === "./settings.cjs") return { SettingsInventory: class { capture() {} check() {} }, sanitizeRendererResult: (_method: string, value: unknown) => value, sanitizeRendererEvent: (value: unknown) => value, safeRendererError: (error: unknown) => error };
+      if (name === "./settings.cjs") return { ...require("../native/settings.cjs"), sanitizeRendererResult: (_method: string, value: unknown) => value };
       return require(name);
     },
   });
@@ -213,4 +221,36 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
   nativeBridge.emit("status", { ...nativeBridge.getStatus(), status: "disconnected" });
   assert.equal(nativeRegistry.files.size, 0);
   assert.match(await readFile(file, "utf8"), /^Synthetic attachment/);
+  nativeBridge.emit("event", { event: "roster.changed", data: avatarSnapshot });
+  assert.equal(sentEvents.filter(item => item.value.event === "roster.changed").length, 0);
+  const current = await handlers.get("lorca:request")!(event, "bootstrap", {});
+  const roster = sentEvents.find(item => item.value.event === "roster.changed")!.value;
+  assert.equal(roster.data.bots[0].avatar_version, current.bots[0].avatar_version);
+  assert.equal(nativeAvatars.bots.get("bot-demo").version, roster.data.bots[0].avatar_version);
+  assert.match(current.bots[0].avatar_version, /^[a-f0-9]{24}$/);
+  await handlers.get("lorca:connect")!(event, "ws://localhost:4864/ws");
+  avatarSnapshot = { ...avatarSnapshot, identity_id: "replacement-account" };
+  nativeBridge.emit("event", { event: "roster.changed", data: avatarSnapshot });
+  assert.equal(sentEvents.filter(item => item.value.event === "roster.changed").length, 1);
+  const replacement = await handlers.get("lorca:request")!(event, "bootstrap", {});
+  const replacementRoster = sentEvents.filter(item => item.value.event === "roster.changed").at(-1)!.value;
+  assert.notEqual(replacement.bots[0].avatar_version, current.bots[0].avatar_version);
+  assert.equal(replacementRoster.data.bots[0].avatar_version, replacement.bots[0].avatar_version);
+  assert.throws(() => handlers.get("lorca:bot-avatar")!({ ...event, senderFrame: { ...event.senderFrame } }, "bot-demo", replacement.bots[0].avatar_version), /来源不可信/);
+  await handlers.get("lorca:connect")!(event, "ws://localhost:4865/ws");
+  nativeBridge.emit("event", { event: "roster.changed", data: avatarSnapshot });
+  const differentSnapshot = { ...avatarSnapshot, bots: [{ ...avatarSnapshot.bots[0], avatar: { ...avatarSnapshot.bots[0].avatar, id: "att-different-snapshot" } }] };
+  nativeBridge.emit("event", { event: "snapshot", data: differentSnapshot });
+  await tick();
+  const finalRoster = sentEvents.filter(item => item.value.event === "roster.changed").at(-1)!.value;
+  assert.equal(nativeAvatars.bots.get("bot-demo").version, finalRoster.data.bots[0].avatar_version);
+  assert.equal(nativeAvatars.bots.get("bot-demo").id, "att-fixture-avatar");
+  await handlers.get("lorca:connect")!(event, "ws://localhost:4866/ws");
+  nativeBridge.emit("event", { event: "roster.changed", data: avatarSnapshot });
+  nativeBridge.emit("event", { event: "snapshot", data: avatarSnapshot });
+  nativeBridge.emit("event", { event: "roster.changed", data: differentSnapshot });
+  await tick();
+  const newestRoster = sentEvents.filter(item => item.value.event === "roster.changed").at(-1)!.value;
+  assert.equal(nativeAvatars.bots.get("bot-demo").id, "att-different-snapshot");
+  assert.equal(nativeAvatars.bots.get("bot-demo").version, newestRoster.data.bots[0].avatar_version);
 });

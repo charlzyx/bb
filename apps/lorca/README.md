@@ -66,13 +66,22 @@ Read [Protocol and compatibility](../../docs/lorca-protocol.md) for exact RPC ma
 
 Read [Settings and runtime inventory](../../docs/lorca-settings.md) for the pinned-reference capability matrix, native redaction contract, and which preferences are editable. Connection and appearance are local session preferences. Runtime inventory remains a sanitized daemon report, not a health test. The separate [editable settings contract](../../docs/lorca-editable-settings.md) covers bot-wide model/Runner changes, controlled provider/MCP configuration and explicit account-wide approval policy updates. Persistent changes use native confirmation and session-bound revision checks; secrets never enter the ordinary renderer. MCP file writes/reload can also apply unrelated pending on-disk changes and start programs absent from the cached inventory. Native confirmation discloses the whole-file scope; the daemon has no preview/CAS endpoint.
 
+The pinned daemon has one direct conversation per bot. “开始聊天” opens or creates that DM; supplying a new preferred chat ID does not force a separate DM. Existing history remains. Independent group creation is a different upstream operation and is not offered as a workaround for separate direct sessions.
+
+## Avatar resources
+
+Bot avatars are derived from the actual bot roster; group conversations combine bot appearances and bot messages resolve their author. The pinned protocol has no separate user avatar, so user messages use a person fallback. A dedicated main-process capability reads only an observed bot's already-cached image beneath the selected Lorca home, validates its path/format/byte and pixel limits, and re-encodes a small PNG. It exposes no native path, attachment key or arbitrary filesystem reader. Missing/unsupported resources fall back without failing chat; avatar display never registers a device or initiates a relay download. Select a custom daemon home with `LORCA_HOME` at launch.
+
+The owned four-dot macOS app icon uses an approximately 80.5% optical footprint and seven ICNS resolutions from 16 to 1024 pixels. Rebuild the isolated development bundle to update its icon; an old bundle is unchanged.
+
 ## Scope
 
 | Feature | Status |
 | --- | --- |
 | BB typography, theme, shared buttons/icons/drawers/timeline | Reused source |
 | Existing bot roster and conversations | Supported |
-| New direct chat with an existing bot | Supported |
+| Bot avatars in chat lists, headers and messages | Existing local cache only; safe symbol/color fallback |
+| Start chatting with an existing bot | Opens or creates its single DM; preserves existing history |
 | Text send and complete-message streaming updates | Supported |
 | Stop and queued direct-chat Send now | Supported |
 | Older history pagination | Supported |
