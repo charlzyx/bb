@@ -24,6 +24,7 @@ import { ConnectionLabel, ConnectionStatusMenu } from "./ConnectionStatusMenu";
 import { ComposerRunnerStatus } from "./ComposerRunnerStatus";
 import { Avatar, ConversationAvatars } from "./Avatar";
 import { settleSubmittedDraft } from "./drafts";
+import { hasTranscriptLayoutUpdate } from "./transcript-layout";
 import { readContentWidthPreference, writeContentWidthPreference, type ContentWidth } from "./content-width";
 import { Settings } from "./Settings";
 import type { SettingsPage } from "./settings/SettingsFrame";
@@ -283,6 +284,9 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
     conversation: state.activeConversationId,
     firstId: state.messages[0]?.id,
     height: 0,
+    viewportHeight: 0,
+    width: 0,
+    messages: state.messages,
   });
   const draftKey = state.activeConversationId ?? "__new__";
   const draft = drafts[draftKey] ?? "";
@@ -360,6 +364,8 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
       if (scroll) {
         if (followLatest.current) scroll.scrollTop = scroll.scrollHeight;
         previousLayout.current.height = scroll.scrollHeight;
+        previousLayout.current.viewportHeight = scroll.clientHeight;
+        previousLayout.current.width = scroll.clientWidth;
       }
     });
     observer.observe(input);
@@ -370,6 +376,12 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
     const scroll = scrollRef.current;
     if (!scroll) return;
     const previous = previousLayout.current;
+    const layout = {
+      messages: state.messages,
+      height: scroll.scrollHeight,
+      viewportHeight: scroll.clientHeight,
+      width: scroll.clientWidth,
+    };
     const anchor = widthAnchor.current;
     widthAnchor.current = null;
     if (previous.conversation !== state.activeConversationId) {
@@ -385,15 +397,15 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
       state.messages.some((message) => message.id === previous.firstId)
     ) {
       scroll.scrollTop += scroll.scrollHeight - previous.height;
-    } else if (followLatest.current) {
+    } else if (followLatest.current && hasTranscriptLayoutUpdate(previous, layout)) {
       scroll.scrollTop = scroll.scrollHeight;
     }
     previousLayout.current = {
       conversation: state.activeConversationId,
       firstId: state.messages[0]?.id,
-      height: scroll.scrollHeight,
+      ...layout,
     };
-  }, [state.messages, state.activeConversationId, state.busy, contentWidth]);
+  }, [state.messages, state.activeConversationId, state.busy, contentWidth, draft]);
 
   const changeContentWidth = (value: ContentWidth) => {
     if (value === contentWidth) return;
