@@ -34,4 +34,4 @@ form.addEventListener('submit', async event => {
   catch { error.textContent = '配对结果尚不确定，请检查设备列表。请求不会自动重发。'; }
   finally { clear(); pending = false; if (state) render(state); }
 });
-window.dotsPairing.initialize().then(render).catch(() => { clear(); error.textContent = '无法打开配对窗口，请检查本地令牌认证和连接状态。'; });
+window.dotsPairing.initialize().then(render).catch(() => { clear(); error.textContent = '无法打开配对窗口，请检查本机连接和设备身份状态。'; });

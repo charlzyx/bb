@@ -34,3 +34,20 @@ test('device pairing distinguishes a missing bridge, missing report, offline con
   assert.match(unknown, /官方客户端核对设备/); assert.match(unknown, /重连不代表撤销/);
   assert.doesNotMatch(unknown, /不支持配对|未提供此配对流程/);
 });
+
+
+test('explicit compatible local pairing remains actionable when native policy permits it', () => {
+  const runtime = parseRuntimeSettings({ ...demoRuntimeSettings, authMode: 'legacy', hasIdentity: true, pairingCapabilities: { invite: true, join: false, inviteReasons: [], joinReasons: ['already_has_identity'] } });
+  const html = renderToStaticMarkup(<DevicesPanel runtime={runtime} onOpenPairing={open} />);
+  assert.match(html, />配对新设备<\/button>/);
+  assert.doesNotMatch(html, /data-pairing-disabled-reason|<button[^>]*disabled=""[^>]*>配对新设备/);
+});
+
+test('unsafe transport reasons explain bounded local compatibility without revealing addresses', () => {
+  const runtime = parseRuntimeSettings({ ...demoRuntimeSettings, pairingCapabilities: { invite: false, join: false, inviteReasons: ['local_transport_required', 'relay_transport_required'], joinReasons: ['already_has_identity'] } });
+  const html = renderToStaticMarkup(<DevicesPanel runtime={runtime} onOpenPairing={open} />);
+  assert.match(html, /data-pairing-disabled-reason="local_transport_required"/);
+  assert.match(html, /data-pairing-disabled-reason="relay_transport_required"/);
+  assert.match(html, /不接受公网 HTTP/);
+  assert.match(html, /明确选择的本地兼容连接/);
+});

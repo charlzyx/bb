@@ -573,13 +573,13 @@ test("dots branding and Chinese chrome preserve original conversation and bot na
   assert.match(html, /想和 dots 聊些什么？/);
   assert.match(html, /开始聊天/);
   assert.match(html, /已有私聊会继续使用原对话/);
-  assert.match(html, /aria-label="搜索对话"/);
+  assert.match(html, /aria-label="搜索智能体与对话"/);
   assert.match(html, /aria-label="发送消息"/);
   assert.match(html, /给 dots 发消息/);
   assert.match(html, /aria-label="等待授权"/);
   assert.match(html, /Lorca 原始对话/);
   assert.match(html, /BB Bot 名称/);
-  assert.match(html, /value="original-bot-id"/);
+  assert.match(html, /data-selected-agent="original-bot-id"/);
   assert.match(html, /data-app-mark="ghost" src="\.\/app-icon\/64\.png"/);
   assert.match(html, /data-app-mark="ghost" src="\.\/app-icon\/128\.png"/);
   assert.doesNotMatch(html, /dots\.svg|<circle cx="10" cy="10" r="3.5"/);
@@ -819,7 +819,7 @@ test("Message avatars preserve bot identity and use the bundled Ghost only for u
 });
 
 
-test("Composer bot selector shows the selected avatar and retains native labels and disabled states", () => {
+test("Composer bot selector shows the selected avatar and retains accessible labels and disabled states", () => {
   const state: LorcaShellState = {
     connection: { status: "connected", endpoint: "ws://127.0.0.1:4862/ws" },
     conversations: [], activeConversationId: null, messages: [],
@@ -829,19 +829,20 @@ test("Composer bot selector shows the selected avatar and retains native labels 
   };
   const picker = (value: LorcaShellState) => {
     const html = renderToStaticMarkup(<LorcaShell state={value} actions={actions} />);
-    const start = html.indexOf('class="lorca-agent-picker"');
+    const start = html.indexOf('data-selected-agent=');
     assert.notEqual(start, -1);
-    return html.slice(start, html.indexOf("</select>", start) + 9);
+    return html.slice(start, html.indexOf("</button>", start) + 9);
   };
   const enabled = picker(state);
   assert.match(enabled, /data-avatar-bot="selected-bot"/);
   assert.match(enabled, /<img[^>]+data-avatar-image/);
-  assert.match(enabled, /<select aria-label="选择智能体"/);
-  assert.match(enabled, /<option value="selected-bot" selected="">Selected Bot<\/option>/);
-  assert.doesNotMatch(enabled, /data-icon="Bot"|<select[^>]+disabled/);
-  assert.doesNotMatch(enabled.slice(enabled.indexOf("<select")), /<img|<svg/);
+  assert.match(enabled, /aria-label="选择智能体"/);
+  assert.match(enabled, /data-selected-agent="selected-bot"/);
+  assert.match(enabled, /Selected Bot/);
+  assert.doesNotMatch(enabled, /data-icon="Bot"|disabled=""|<select/);
+  assert.match(enabled, /aria-haspopup="dialog"/);
   for (const patch of [{ busy: true }, { loading: true }, { agents: [], selectedAgentId: null }]) {
-    assert.match(picker({ ...state, ...patch }), /<select[^>]+disabled=""/);
+    assert.match(picker({ ...state, ...patch }), /disabled=""/);
   }
   for (const activeConversationId of ["existing-dm", "existing-group"]) {
     const existing = renderToStaticMarkup(<LorcaShell state={{ ...state, activeConversationId }} actions={actions} />);
@@ -926,7 +927,8 @@ test("Existing chat composer has one control row and keeps keyboard guidance acc
     runnerSummary: { kind: "multiple" }, attachmentsEnabled: true,
   };
   const html = renderToStaticMarkup(<LorcaShell state={state} actions={{ ...actions, onPickAttachments() {} }} />);
-  assert.doesNotMatch(html, /lorca-agent-picker|Must not be shown as the group recipient|lorca-composer-footnote|由本地运行环境提供支持/);
+  const composer = html.slice(html.indexOf('class="lorca-composer'));
+  assert.doesNotMatch(composer, /lorca-agent-picker|Must not be shown as the group recipient|lorca-composer-footnote|由本地运行环境提供支持/);
   assert.match(html, /aria-label="添加附件"/);
   assert.match(html, /data-runner-kind="multiple"/);
   assert.match(html, /aria-label="停止回复"/);

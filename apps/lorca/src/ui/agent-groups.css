@@ -1,0 +1,271 @@
+:where(.lorca-agent-groups) {
+  min-width: 0;
+  padding: 4px 0 14px;
+  color: var(--foreground);
+  font-size: var(--text-sm);
+}
+:where(.lorca-agent-groups) .lorca-agent-groups-heading,
+:where(.lorca-agent-groups) .lorca-agent-group-heading,
+:where(.lorca-agent-groups) .lorca-agent-group-member {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 2px;
+}
+:where(.lorca-agent-groups) .lorca-agent-groups-heading {
+  justify-content: space-between;
+  min-height: 30px;
+  padding-left: 9px;
+}
+:where(.lorca-agent-groups) h2,
+:where(.lorca-agent-groups) .lorca-agent-ungrouped h3 {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--subtle-foreground);
+}
+:where(.lorca-agent-groups) .lorca-agent-group {
+  margin-top: 4px;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-toggle,
+:where(.lorca-agent-groups) .lorca-agent-group-select {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--foreground);
+  text-align: left;
+  box-shadow: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-toggle {
+  min-height: 30px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-toggle:disabled {
+  cursor: default;
+  opacity: 1;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-select {
+  min-height: 36px;
+  font-size: var(--text-sm);
+}
+:where(.lorca-agent-groups) .lorca-agent-group-toggle:not(:disabled):hover,
+:where(.lorca-agent-groups) .lorca-agent-group-select:hover {
+  background: var(--state-hover);
+}
+:where(.lorca-agent-groups) .lorca-agent-group-select[aria-current="page"] {
+  background: var(--state-active);
+}
+:where(.lorca-agent-groups) .lorca-agent-group-toggle:focus-visible,
+:where(.lorca-agent-groups) .lorca-agent-group-select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-toggle > [data-icon-root] {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: var(--subtle-foreground);
+  transition: transform 160ms ease;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-toggle[aria-expanded="true"] > [data-icon-root] {
+  transform: rotate(90deg);
+}
+:where(.lorca-agent-groups) .lorca-agent-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-count {
+  flex-shrink: 0;
+  color: var(--subtle-foreground);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-action {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 5px;
+  color: var(--subtle-foreground);
+  -webkit-app-region: no-drag;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-action [data-icon-root] {
+  width: 15px;
+  height: 15px;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-members {
+  margin-left: 13px;
+}
+:where(.lorca-agent-groups) ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+:where(.lorca-agent-groups) .lorca-agent-primary {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+  background: var(--surface-recessed);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-chat-label {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--subtle-foreground);
+}
+:where(.lorca-agent-groups) .lorca-agent-status {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+:where(.lorca-agent-groups) .lorca-agent-status-waiting {
+  width: 7px;
+  height: 7px;
+  background: transparent;
+  border: 1px solid var(--muted-foreground);
+}
+:where(.lorca-agent-groups) .lorca-agent-status-error {
+  background: var(--destructive-text);
+}
+:where(.lorca-agent-groups) .lorca-agent-ungrouped h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 11px 8px 4px;
+}
+:where(.lorca-agent-groups) .lorca-agent-primary-empty,
+:where(.lorca-agent-groups) .lorca-agent-groups-local-note,
+:where(.lorca-agent-groups) .lorca-agent-group-empty,
+:where(.lorca-agent-groups) .lorca-agent-group-storage-notice {
+  margin: 4px 8px 7px;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--subtle-foreground);
+  overflow-wrap: anywhere;
+}
+:where(.lorca-agent-groups) .lorca-agent-groups-local-note {
+  margin-top: 12px;
+}
+:where(.lorca-agent-groups) .lorca-agent-group-storage-notice[role="alert"] {
+  color: var(--destructive-text);
+}
+:where(.lorca-agent-group-popover) {
+  width: min(306px, calc(100vw - 24px));
+  padding: 14px;
+  border: 1px solid var(--border-seam);
+  border-radius: 10px;
+  background: var(--surface-raised-solid);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  -webkit-app-region: no-drag;
+}
+:where(.lorca-agent-group-popover)[data-state="closed"] {
+  animation: none !important;
+}
+:where(.lorca-agent-group-popover) h3 {
+  margin: 0 0 12px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+:where(.lorca-agent-group-popover) .lorca-agent-group-editor-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+:where(.lorca-agent-group-popover) .lorca-agent-group-editor-title > span:last-child {
+  min-width: 0;
+}
+:where(.lorca-agent-group-popover) form > label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+:where(.lorca-agent-group-popover) select,
+:where(.lorca-agent-group-popover) input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--border-seam);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--foreground);
+  padding: 4px 8px;
+  font-size: var(--text-sm);
+}
+:where(.lorca-agent-group-popover) select:focus-visible,
+:where(.lorca-agent-group-popover) input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+:where(.lorca-agent-group-popover) p {
+  margin: 9px 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--subtle-foreground);
+  overflow-wrap: anywhere;
+}
+:where(.lorca-agent-group-popover) .lorca-agent-primary-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+:where(.lorca-agent-group-popover) input[type="checkbox"] {
+  accent-color: var(--foreground);
+}
+:where(.lorca-agent-group-popover) .lorca-agent-group-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 14px;
+}
+:where(.lorca-agent-group-popover) .lorca-agent-group-delete {
+  margin-right: auto;
+  color: var(--subtle-foreground);
+}
+:where(.lorca-agent-group-popover) .lorca-agent-group-error {
+  color: var(--destructive-text);
+}
+@media (hover: hover) and (pointer: fine) {
+  :where(.lorca-agent-groups) .lorca-agent-group-heading > .lorca-agent-group-action,
+  :where(.lorca-agent-groups) .lorca-agent-group-member > .lorca-agent-group-action {
+    opacity: 0;
+  }
+  :where(.lorca-agent-groups) .lorca-agent-group-heading:hover > .lorca-agent-group-action,
+  :where(.lorca-agent-groups) .lorca-agent-group-heading:focus-within > .lorca-agent-group-action,
+  :where(.lorca-agent-groups) .lorca-agent-group-member:hover > .lorca-agent-group-action,
+  :where(.lorca-agent-groups) .lorca-agent-group-member:focus-within > .lorca-agent-group-action,
+  :where(.lorca-agent-groups) .lorca-agent-group-action[data-state="open"] {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(.lorca-agent-groups) .lorca-agent-group-toggle > [data-icon-root] {
+    transition: none;
+  }
+  :where(.lorca-agent-group-popover) {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,192 @@
+import assert from "node:assert/strict";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { installGroupFixture } from "./group-ui-fixture.mjs";
+import { checkAgentPickerSurfaces } from "./agent-picker-surfaces.mjs";
+
+let playwright;
+try {
+  playwright = await import("playwright");
+} catch {
+  if (!process.env.PLAYWRIGHT_MODULE) throw new Error("Install Playwright in the workspace, or set PLAYWRIGHT_MODULE to an installed Playwright module path.");
+  playwright = await import(process.env.PLAYWRIGHT_MODULE);
+}
+const base = process.env.LORCA_UI_URL || "http://127.0.0.1:5178";
+const output = process.env.LORCA_SCREENSHOT_DIR || fileURLToPath(new URL("../../../docs/lorca-screenshots/", import.meta.url));
+mkdirSync(output, { recursive: true });
+const executablePath = process.env.CHROMIUM_PATH || (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined);
+const browser = await playwright.chromium.launch({ headless: true, executablePath, chromiumSandbox: true, args: ["--enable-automation"] });
+const failures = [];
+let failurePage;
+const captureErrors = (page) => {
+  page.on("pageerror", (error) => failures.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") failures.push(message.text()); });
+};
+async function screenshot(page, name) {
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('img[data-app-mark="ghost"], .lorca-agent-groups img[data-avatar-image]')).every((image) => image.complete && image.naturalWidth > 0));
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${name}: no horizontal page overflow`);
+  await page.screenshot({ path: `${output}/${name}.png`, animations: "disabled" });
+}
+try {
+  const command = await browser.newBrowserCDPSession();
+  const { arguments: args } = await command.send("Browser.getBrowserCommandLine");
+  await command.detach();
+  assert.equal(args.includes("--no-sandbox"), false);
+  for (const theme of ["light", "dark"]) {
+    const context = await browser.newContext({ viewport: { width: 1240, height: 820 }, deviceScaleFactor: 1 });
+    const page = await context.newPage();
+    failurePage = page;
+    captureErrors(page);
+    await page.addInitScript(installGroupFixture, { theme });
+    await page.goto(base, { waitUntil: "networkidle" });
+    const tree = page.getByRole("region", { name: "智能体与群聊分组", exact: true });
+    const create = tree.getByRole("button", { name: "创建分组", exact: true });
+    const popup = page.locator(".lorca-agent-group-popover");
+    const search = page.locator(".lorca-search input");
+    await create.waitFor();
+    await page.waitForFunction(() => document.querySelector("[data-group-create]")?.disabled === false);
+    const makeGroup = async (name) => {
+      await create.click();
+      await popup.getByRole("textbox", { name: "分组名称", exact: true }).fill(name);
+      await popup.getByRole("button", { name: "创建", exact: true }).click();
+      await popup.waitFor({ state: "hidden" });
+    };
+    const group = (name) => tree.locator(".lorca-agent-group").filter({ has: page.getByRole("button", { name: `管理分组 ${name}`, exact: true }) });
+    const openGroup = async (name) => { await group(name).hover(); await tree.getByRole("button", { name: `管理分组 ${name}`, exact: true }).click(); };
+    const openAgent = async (id, name) => { await tree.locator(`[data-agent-select="${id}"]`).locator("..").hover(); await tree.getByRole("button", { name: `整理智能体 ${name}`, exact: true }).click(); };
+    const assign = async (id, name, target, primary = false) => {
+      await openAgent(id, name);
+      await popup.getByRole("combobox", { name: "所属分组", exact: true }).selectOption({ label: target });
+      if (primary) await popup.getByRole("checkbox", { name: "标记为组内主力", exact: true }).check();
+      await popup.getByRole("button", { name: "保存", exact: true }).click();
+      await popup.waitFor({ state: "hidden" });
+    };
+    const assignChat = async (id, name, target) => {
+      await tree.locator(`[data-group-chat-select="${id}"]`).locator("..").hover();
+      await tree.getByRole("button", { name: `整理群聊 ${name}`, exact: true }).click();
+      assert.equal(await popup.getByRole("checkbox").count(), 0, "Group chat classification has no primary-agent control");
+      assert.match(await popup.innerText(), /不更改群成员或创建聊天/);
+      await popup.getByRole("combobox", { name: "所属分组", exact: true }).selectOption({ label: target });
+      await popup.getByRole("button", { name: "保存", exact: true }).click();
+      await popup.waitFor({ state: "hidden" });
+    };
+    assert.equal(await tree.locator("[data-agent-select]").count(), 4);
+    assert.equal(await tree.locator("[data-group-chat-select]").count(), 2);
+    await create.press("Enter");
+    await popup.getByRole("textbox", { name: "分组名称", exact: true }).fill("Esc 放弃的分组");
+    await page.keyboard.press("Escape");
+    await popup.waitFor({ state: "hidden" });
+    await page.waitForFunction(() => document.activeElement === document.querySelector("[data-group-create]"), null, { timeout: 1000 });
+    assert.equal(await create.evaluate((element) => document.activeElement === element), true, "Escape returns keyboard focus to the create trigger");
+    assert.equal(await tree.locator("[data-agent-group]").count(), 0);
+    await makeGroup("日常工作");
+    await makeGroup("稍后整理");
+    await openGroup("稍后整理");
+    await popup.getByRole("textbox", { name: "分组名称", exact: true }).fill("交叉核对");
+    await popup.getByRole("button", { name: "保存", exact: true }).click();
+    await popup.waitFor({ state: "hidden" });
+    await assign("group-writer", "合成写作助手", "日常工作", true);
+    await assign("group-code", "合成代码助手", "日常工作", true);
+    await openAgent("group-review", "合成核对助手");
+    await popup.getByRole("combobox", { name: "所属分组", exact: true }).selectOption({ label: "日常工作" });
+    assert.equal(await popup.getByRole("checkbox", { name: "标记为组内主力", exact: true }).isDisabled(), true);
+    assert.match(await popup.innerText(), /该组已有 2 位主力/);
+    await screenshot(page, `desktop-agent-group-primary-limit-${theme}`);
+    await popup.getByRole("button", { name: "保存", exact: true }).click();
+    await popup.waitFor({ state: "hidden" });
+    await assign("group-free", "合成备用助手", "交叉核对");
+    await assignChat("group-writer", "合成讨论群聊", "日常工作");
+    await assignChat("group-room", "合成备用群聊", "交叉核对");
+    assert.equal(await group("日常工作").locator(".lorca-agent-primary").count(), 2);
+    assert.match(await group("交叉核对").innerText(), /未设主力/);
+    assert.equal(await tree.locator("[data-agent-select]").count(), 4);
+    assert.equal(await tree.locator("[data-group-chat-select]").count(), 2);
+    assert.equal(await group("日常工作").locator('[data-group-chat-select="group-writer"]').locator("..").locator(".lorca-agent-primary").count(), 0, "A chat sharing a bot's ID never inherits its primary marker");
+    assert.equal(await group("日常工作").locator('[data-group-chat-select="group-writer"] .lorca-avatar').count(), 2);
+    await page.waitForFunction(() => document.querySelector('.lorca-agent-groups [data-avatar-bot="group-writer"] img')?.naturalWidth === 32);
+    const image = await tree.locator('[data-agent-select="group-writer"] img').evaluate((element) => ({ source: element.src, filter: getComputedStyle(element).filter, opacity: getComputedStyle(element).opacity }));
+    assert.equal(image.source, await page.evaluate(() => window.__groupUiTest.avatar));
+    assert.equal(image.filter, "none");
+    assert.equal(image.opacity, "1");
+    await screenshot(page, `desktop-agent-groups-${theme}`);
+    await group("日常工作").locator(".lorca-agent-group-toggle").click();
+    assert.equal(await group("日常工作").locator(".lorca-agent-group-toggle").getAttribute("aria-expanded"), "false");
+    assert.equal(await tree.locator('[data-agent-select="group-review"]').count(), 0);
+    await search.fill("日常工作");
+    assert.equal(await group("日常工作").locator(".lorca-agent-group-toggle").getAttribute("aria-expanded"), "true");
+    assert.equal(await group("日常工作").locator("[data-group-select]").count(), 4);
+    assert.equal(await page.locator(".lorca-sidebar-empty").count(), 0, "A matching local group name must not show a contradictory empty-chat message");
+    await search.fill("核对助手");
+    assert.equal(await group("日常工作").locator(".lorca-agent-group-toggle").getAttribute("aria-expanded"), "true");
+    assert.equal(await tree.locator('[data-agent-select="group-review"]').count(), 1);
+    assert.equal(await tree.locator('[data-agent-select="group-writer"]').count(), 0);
+    await search.fill("讨论群聊");
+    assert.equal(await group("日常工作").locator(".lorca-agent-group-toggle").getAttribute("aria-expanded"), "true");
+    assert.equal(await tree.locator('[data-group-chat-select="group-writer"]').count(), 1);
+    assert.equal(await tree.locator("[data-agent-select]").count(), 0, "Searching a chat finds its typed entity without matching the same-ID bot");
+    await search.fill("");
+    assert.equal(await group("日常工作").locator(".lorca-agent-group-toggle").getAttribute("aria-expanded"), "false", "Search expansion does not overwrite the saved collapse state");
+    await page.reload({ waitUntil: "networkidle" });
+    await create.waitFor();
+    assert.equal(await group("日常工作").locator(".lorca-agent-group-toggle").getAttribute("aria-expanded"), "false");
+    await group("日常工作").locator(".lorca-agent-group-toggle").click();
+    assert.equal(await group("日常工作").locator(".lorca-agent-primary").count(), 2, "Membership, names and primary flags survive a reload");
+    assert.equal(await group("日常工作").locator('[data-group-chat-select="group-writer"]').count(), 1);
+    const priorRecentChats = await page.locator(".lorca-chat-item").count();
+    await openGroup("交叉核对");
+    await popup.getByRole("button", { name: "删除分组…", exact: true }).click();
+    assert.match(await popup.innerText(), /智能体和聊天不会删除/);
+    await screenshot(page, `desktop-agent-group-delete-${theme}`);
+    await popup.getByRole("button", { name: "删除分组", exact: true }).click();
+    await popup.waitFor({ state: "hidden" });
+    assert.equal(await group("交叉核对").count(), 0);
+    assert.equal(await tree.locator('.lorca-agent-ungrouped [data-agent-select="group-free"]').count(), 1);
+    assert.equal(await tree.locator('.lorca-agent-ungrouped [data-group-chat-select="group-room"]').count(), 1);
+    assert.equal(await tree.locator("[data-agent-select]").count(), 4);
+    assert.equal(await page.locator(".lorca-chat-item").count(), priorRecentChats, "Deleting a category never deletes an existing chat");
+    await page.evaluate(() => window.__groupUiTest.blockStorage(true));
+    await openGroup("日常工作");
+    await popup.getByRole("textbox", { name: "分组名称", exact: true }).fill("不应保存的名字");
+    await popup.getByRole("button", { name: "保存", exact: true }).click();
+    await popup.getByRole("alert").waitFor();
+    assert.match(await popup.getByRole("alert").innerText(), /本地存储不可用/);
+    assert.equal(await group("日常工作").count(), 1);
+    assert.equal(await group("不应保存的名字").count(), 0);
+    await popup.getByRole("button", { name: "取消", exact: true }).click();
+    await popup.waitFor({ state: "hidden" });
+    await page.evaluate(() => window.__groupUiTest.blockStorage(false));
+    await tree.locator('[data-group-chat-select="group-writer"]').click();
+    await page.locator(".lorca-header-title").filter({ hasText: "合成讨论群聊" }).waitFor();
+    assert.equal(await tree.locator('[data-group-chat-select="group-writer"]').getAttribute("aria-current"), "page");
+    assert.equal(await tree.locator('[data-agent-select="group-writer"]').getAttribute("aria-current"), null);
+    await tree.locator('[data-agent-select="group-writer"]').click();
+    await page.locator('.lorca-chat-item[aria-current="page"]').filter({ hasText: "合成分组 · 已有私聊" }).waitFor();
+    await tree.locator('[data-agent-select="group-code"]').click();
+    assert.equal(await page.locator('.lorca-chat-item[aria-current="page"]').count(), 0, "An agent without a DM only opens a local new-chat draft");
+    assert.equal(await page.evaluate(() => window.__groupUiTest.requests.some((request) => request.method !== "bootstrap")), false, "Grouping and selecting an agent never call create/send/configuration RPCs");
+    await page.evaluate(() => window.__groupUiTest.changeIdentity("synthetic-group-account-two"));
+    await page.waitForFunction(() => document.querySelector("[data-group-create]")?.disabled === false && document.querySelectorAll("[data-agent-group]").length === 0);
+    assert.equal(await tree.locator(".lorca-agent-ungrouped [data-agent-select]").count(), 4, "Another account starts with ungrouped agents and cannot inherit the prior account's categories");
+    assert.equal(await tree.locator(".lorca-agent-ungrouped [data-group-chat-select]").count(), 2);
+    await page.evaluate(() => window.__groupUiTest.changeIdentity("synthetic-group-account-one"));
+    await group("日常工作").waitFor();
+    assert.equal(await group("交叉核对").count(), 0);
+    assert.equal(await group("日常工作").locator(".lorca-agent-primary").count(), 2);
+    assert.equal(await group("日常工作").locator('[data-group-chat-select="group-writer"]').count(), 1);
+    assert.equal(await page.evaluate(() => window.__groupUiTest.requests.some((request) => request.method !== "bootstrap")), false);
+    await context.close();
+  }
+  await checkAgentPickerSurfaces({ browser, base, screenshot, captureErrors, setFailurePage: (page) => { failurePage = page; } });
+  assert.deepEqual(failures, []);
+  console.log("Agent and group-chat grouping plus searchable picker smoke passed: typed identity isolation, create/rename, membership, bot-only two-primary limit, search/collapse, delete-only-classification, reload/account isolation, failed local saves, actual avatars and explicit no-RPC selection.");
+} catch (error) {
+  if (failurePage && !failurePage.isClosed()) {
+    await failurePage.screenshot({ path: `${output}/group-ui-smoke-failure.png`, animations: "disabled", timeout: 5000 }).catch(() => undefined);
+    const fixture = await failurePage.evaluate(() => ({ requests: window.__groupUiTest?.requests, stored: window.__groupUiTest?.stored() })).catch(() => null);
+    writeFileSync(`${output}/group-ui-smoke-failure.json`, JSON.stringify({ fixture, failures }, null, 2));
+  }
+  throw error;
+} finally {
+  await browser.close();
+}

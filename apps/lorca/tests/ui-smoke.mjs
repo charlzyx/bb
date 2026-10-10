@@ -540,7 +540,7 @@ try {
   assert.equal(faviconBytes.readUInt32BE(16), 32);
   assert.equal(faviconBytes.readUInt32BE(20), 32);
   assert.deepEqual(faviconBytes, readFileSync(new URL("../public/app-icon/32.png", import.meta.url)), "Favicon is the selected Ghost artwork asset");
-  await desktop.getByRole("searchbox", { name: "搜索对话" }).waitFor();
+  await desktop.getByRole("searchbox", { name: "搜索智能体与对话" }).waitFor();
   await desktop
     .getByRole("button", { name: "发送消息", exact: true })
     .waitFor();
@@ -610,10 +610,10 @@ try {
   }
   await desktop.keyboard.press("Control+k");
   await desktop
-    .getByRole("searchbox", { name: "搜索对话" })
+    .getByRole("searchbox", { name: "搜索智能体与对话" })
     .fill("nonexistent fixture title");
-  await desktop.getByText("没有匹配的对话", { exact: true }).waitFor();
-  await desktop.getByRole("searchbox", { name: "搜索对话" }).fill("");
+  await desktop.getByText("没有匹配的分组、智能体或群聊。", { exact: true }).waitFor();
+  await desktop.getByRole("searchbox", { name: "搜索智能体与对话" }).fill("");
   await desktop.keyboard.press("Control+n");
   await desktop
     .getByRole("textbox", { name: "给 dots 发消息" })
@@ -726,7 +726,7 @@ try {
   await settingsDesktop.getByText("MCP 清单不可用", { exact: true }).waitFor();
   await screenshot(settingsDesktop, "desktop-settings-mcp-unavailable");
   assert.equal(await settingsDesktop.locator(".lorca-agent-picker").count(), 1, "A new-chat agent picker remains available while inspecting runtime settings");
-  assert.equal(await settingsDesktop.locator(".lorca-agent-picker select").inputValue(), "bot-demo", "Inspecting a device never reassigns the selected agent");
+  assert.equal(await settingsDesktop.locator(".lorca-agent-picker").getAttribute("data-selected-agent"), "bot-demo", "Inspecting a device never reassigns the selected agent");
   assert.equal(
     await settingsDesktop.locator("#root").getAttribute("inert"),
     null,
@@ -1005,7 +1005,7 @@ try {
     "开始聊天",
     "Created chat stays unselected until send succeeds",
   );
-  assert.equal(await controlled.getByRole("combobox", { name: "选择智能体", exact: true }).isDisabled(), true, "Bot selection stays disabled while the first send is pending");
+  assert.equal(await controlled.getByRole("button", { name: "选择智能体", exact: true }).isDisabled(), true, "Bot selection stays disabled while the first send is pending");
   await controlled.evaluate(() => window.__lorcaUiTest.rejectSend());
   await controlled
     .getByText("Synthetic send failure", { exact: true })
@@ -1312,18 +1312,24 @@ try {
   avatars.on("request", (request) => { if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== new URL(base).origin) externalAvatarRequests.push(request.url()); });
   await avatars.addInitScript(installAvatarFixture);
   await avatars.goto(base, { waitUntil: "networkidle" });
-  const avatarPicker = avatars.getByRole("combobox", { name: "选择智能体", exact: true });
+  const avatarPicker = avatars.getByRole("button", { name: "选择智能体", exact: true });
   assert.equal(await avatarPicker.isEnabled(), true, "Bot selection remains enabled before starting a chat");
   await avatars.locator('.lorca-agent-picker [data-avatar-bot="avatar-photo"] img').waitFor();
-  await avatarPicker.selectOption("avatar-symbol");
+  await avatarPicker.click();
+  await avatars.locator('[data-picker-agent="avatar-symbol"]').click();
   assert.equal(await avatars.locator('.lorca-agent-picker [data-avatar-bot="avatar-symbol"] [data-icon="ComputerTerminal01"]').count(), 1, "Composer uses the selected bot's symbol fallback");
   assert.equal(await avatars.locator(".lorca-agent-picker img").count(), 0);
   await avatarPicker.focus();
-  await avatarPicker.press("ArrowUp");
-  await avatars.waitForFunction(() => document.querySelector('.lorca-agent-picker select')?.value === "avatar-photo");
+  await avatarPicker.press("Enter");
+  await avatars.getByRole("searchbox", { name: "搜索智能体", exact: true }).fill("Photo Bot");
+  await avatars.getByRole("searchbox", { name: "搜索智能体", exact: true }).fill("");
+  await avatars.locator('[data-picker-agent="avatar-photo"]').click();
   await avatars.locator('.lorca-agent-picker [data-avatar-bot="avatar-photo"] img').waitFor();
-  assert.equal(await avatarPicker.evaluate((element) => element.tagName), "SELECT", "Native keyboard selection semantics are preserved");
-  assert.equal(await avatars.locator(".lorca-agent-picker option img").count(), 0, "Native options remain safe text-only entries");
+  assert.equal(await avatarPicker.evaluate((element) => element.tagName), "BUTTON", "Agent picker has an accessible popover trigger");
+  await avatarPicker.click();
+  await avatars.getByRole("searchbox", { name: "搜索智能体", exact: true }).press("Escape");
+  await avatars.waitForFunction(() => document.activeElement === document.querySelector(".lorca-agent-picker"), null, { timeout: 1000 });
+  assert.equal(await avatarPicker.evaluate(element => document.activeElement === element), true, "Escape returns focus to the picker");
   await chooseChat(avatars, "合成头像 · 单聊");
   assert.equal(await avatarPicker.count(), 0, "Existing-chat composers do not repeat the agent picker");
   await avatars.waitForFunction(() => Array.from(document.querySelectorAll('[data-avatar-bot="avatar-photo"] img')).every((image) => image.complete && image.naturalWidth === 64) && document.querySelectorAll('[data-avatar-bot="avatar-photo"] img').length >= 3);
@@ -1474,7 +1480,7 @@ try {
           "Desktop settings panes and read-only runner inspection",
           "Appearance survives view reload within the session",
           "Desktop settings Escape and app-root focus behavior",
-          "Bot avatars in sidebar, header, messages and native composer selector",
+          "Bot avatars in sidebar, header, messages and searchable composer picker",
           "Composer avatar follows keyboard selection and preserves disabled states",
           "Avatar replacement, identity clearing and no renderer remote-image fetches",
           "Neutral default, symbol and missing-cache avatars across light/dark themes",

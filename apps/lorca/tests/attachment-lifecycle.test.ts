@@ -150,6 +150,8 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
   let nativeRegistry: any;
   let nativeAvatars: any;
   let nativeBridge: any;
+  let nativeAttachmentSession: any;
+  let pickerCalls = 0, quitAttempts = 0, allowedQuits = 0;
   const nativeCalls: { method: string; params: Record<string, unknown> }[] = [];
   class NativeBridge extends EventEmitter {
     status: BridgeStatus = { status: "connected", endpoint: "ws://127.0.0.1:4862/ws", generation: 1, authMode: "token" };
@@ -187,9 +189,9 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
     async loadFile(file: string) { this.webContents.mainFrame.url = pathToFileURL(file).href; }
   }
   const electron = {
-    app: Object.assign(new EventEmitter(), { whenReady: () => Promise.resolve() }), BrowserWindow: FakeWindow,
+    app: Object.assign(new EventEmitter(), { whenReady: () => Promise.resolve(), quit(this: EventEmitter) { quitAttempts++; const event = { prevented: false, preventDefault() { this.prevented = true; } }; this.emit('before-quit', event); if (!event.prevented) allowedQuits++; } }), BrowserWindow: FakeWindow,
     ipcMain: { handle: (channel: string, handler: (...args: any[]) => any) => handlers.set(channel, handler) },
-    dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [file] }) }, clipboard: {},
+    dialog: { showOpenDialog: async () => { pickerCalls++; return { canceled: false, filePaths: [file] }; } }, clipboard: {},
     Menu: { setApplicationMenu() {}, buildFromTemplate() {} }, nativeImage: {},
   };
   const source = await readFile(new URL("../native/main.cjs", import.meta.url), "utf8");
@@ -203,6 +205,10 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
       }
       if (name === "./bridge.cjs") return { ...actualBridge, LorcaBridge: NativeBridge };
       if (name === "./watching.cjs") return require("../native/watching.cjs");
+      if (name === "./attachment-session.cjs") {
+        const module = require("../native/attachment-session.cjs");
+        return { ...module, AttachmentSession: class extends module.AttachmentSession { constructor(options: unknown) { super(options); nativeAttachmentSession = this; } } };
+      }
       if (name === "./attachments.cjs") return { AttachmentSelections: class extends AttachmentSelections { constructor() { super(); nativeRegistry = this; } } };
       if (name === "./branding.cjs") return { APP_NAME: "dots", configureApplicationName() {}, configureApplicationBranding() {} };
       if (name === "./menu.cjs") return { applicationMenuTemplate: () => [] };
@@ -222,21 +228,47 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
   assert.equal(preferences.contextIsolation, true); assert.equal(preferences.nodeIntegration, false); assert.equal(preferences.sandbox, true);
   assert.equal(preferences.webSecurity, true); assert.equal(preferences.allowRunningInsecureContent, false); assert.equal(preferences.webviewTag, false);
   const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame };
+  let attachmentScope = "", attachmentTicket = "";
+  const nativePick = async () => {
+    attachmentScope = `g${nativeBridge.status.generation}:a0:n0`;
+    attachmentTicket = (await handlers.get("lorca:set-attachment-scope")!(event, attachmentScope)).ticket;
+    return (await handlers.get("lorca:pick-attachments")!(event, attachmentScope, attachmentTicket)).attachments;
+  };
   assert.throws(() => handlers.get("lorca:set-watching-chat")!(event, "chat-demo"), /尚未同步/);
   assert.equal(nativeCalls.length, 0);
-  const [selected] = await handlers.get("lorca:pick-attachments")!(event);
+  const [selected] = await nativePick();
+  const attachmentInput = { source: "drop", files: [{ kind: "path", path: file, name: "synthetic.txt", size: 1, mime: "", lastModified: 1 }] };
+  const attachmentParams = { chat_id: "synthetic-chat", text: "", selection_ids: [selected.id] };
+  for (const badEvent of [{ ...event, senderFrame: { ...event.senderFrame } }, { ...event, sender: new Contents() }]) {
+    for (const [channel, args] of [
+      ["lorca:set-attachment-scope", [attachmentScope]],
+      ["lorca:import-attachments", [attachmentScope, attachmentTicket, attachmentInput]],
+      ["lorca:pick-attachments", [attachmentScope, attachmentTicket]],
+      ["lorca:send-attachments", [attachmentScope, attachmentTicket, attachmentParams]],
+    ] as const) await assert.rejects(handlers.get(channel)!(badEvent, ...args), /来源不可信/);
+  }
+  for (const [channel, args] of [
+    ["lorca:import-attachments", [attachmentInput]], ["lorca:pick-attachments", []], ["lorca:send-attachments", [attachmentParams]],
+  ] as const) await assert.rejects(handlers.get(channel)!(event, attachmentScope, "0".repeat(64), ...args), /所属草稿、账号或连接已变化/);
+  assert.equal(pickerCalls, 1); assert.equal(nativeCalls.length, 0); assert.equal(nativeRegistry.files.size, 1);
+  window.webContents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: true });
+  window.webContents.emit("did-start-navigation", {}, "file:///synthetic#composer", true, true);
+  assert.equal(nativeRegistry.files.size, 1);
   await handlers.get("lorca:connect")!(event, "ws://localhost:4862/ws");
   assert.equal(nativeRegistry.files.size, 1);
-  assert.throws(() => handlers.get("lorca:release-attachments")!({ ...event, senderFrame: { ...event.senderFrame } }, [selected.id]), /来源不可信/);
+  await assert.rejects(handlers.get("lorca:release-attachments")!({ ...event, senderFrame: { ...event.senderFrame } }, [selected.id]), /来源不可信/);
   assert.equal(nativeRegistry.files.size, 1);
-  await handlers.get("lorca:send-attachments")!(event, { chat_id: "synthetic-chat", text: "", message_id: "synthetic-message", selection_ids: [selected.id] });
+  await handlers.get("lorca:send-attachments")!(event, attachmentScope, attachmentTicket, { chat_id: "synthetic-chat", text: "", message_id: "synthetic-message", selection_ids: [selected.id] });
   assert.equal(nativeRegistry.files.size, 0);
-  const [unused] = await handlers.get("lorca:pick-attachments")!(event);
-  handlers.get("lorca:release-attachments")!(event, [unused.id]); assert.equal(nativeRegistry.files.size, 0);
-  await handlers.get("lorca:pick-attachments")!(event);
+  const [unused] = await nativePick();
+  await handlers.get("lorca:release-attachments")!(event, [unused.id]); assert.equal(nativeRegistry.files.size, 0);
+  await nativePick();
+  window.webContents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+  assert.equal(nativeRegistry.files.size, 0);
+  await nativePick();
   await handlers.get("lorca:connect")!(event, "ws://localhost:4863/ws");
   assert.equal(nativeRegistry.files.size, 0); assert.equal(nativeBridge.status.generation, 2);
-  await handlers.get("lorca:pick-attachments")!(event);
+  await nativePick();
   nativeBridge.emit("status", { ...nativeBridge.getStatus(), status: "disconnected" });
   assert.equal(nativeRegistry.files.size, 0);
   assert.match(await readFile(file, "utf8"), /^Synthetic attachment/);
@@ -289,4 +321,8 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
   assert.equal(nativeBridge.closes, 1);
   assert.deepEqual(nativeCalls.slice(-1).map(item => [item.method, item.params.chat_id]), [["ui.watching", null]]);
   assert.throws(() => handlers.get("lorca:set-watching-chat")!(event, "chat-demo"), /来源不可信/);
+  const shutdown = deferred<void>(); nativeAttachmentSession.shutdown = () => shutdown.promise;
+  electron.app.quit(); electron.app.quit();
+  assert.equal(quitAttempts, 2); assert.equal(allowedQuits, 0);
+  shutdown.resolve(); await tick(); assert.equal(allowedQuits, 1); assert.equal(quitAttempts, 3);
 });

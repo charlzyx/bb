@@ -12,6 +12,7 @@ const marker = 'SYNTHETIC_PAIR_SECRET_MUST_NOT_ESCAPE';
 const nonce = Buffer.alloc(16, 3).toString('base64url');
 const code = `lorca://pair?relay=${encodeURIComponent('https://synthetic.invalid/relay')}&id=${Buffer.alloc(32, 1).toString('base64url')}&ek=${Buffer.alloc(32, 2).toString('base64url')}&n=${nonce}`;
 const identityId = parsePairingString(code).identityId;
+const codeFor = (url: string) => code.replace(encodeURIComponent('https://synthetic.invalid/relay'), encodeURIComponent(url));
 const source = (joined = true) => ({ has_identity: joined, identity_id: joined ? identityId : null, this_device_id: joined ? 'local-device' : null, relay_url: joined ? 'https://synthetic.invalid/relay' : null, relay_connected: false });
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function deferred() { let resolve: (value: unknown) => void = () => {}; let reject: (value: unknown) => void = () => {}; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
@@ -70,17 +71,17 @@ function setup(joined = true) {
 }
 const writes = (bridge: FakeBridge) => bridge.calls.filter(call => !['bootstrap', 'pair.status'].includes(call.method));
 
-test('pairing parser binds canonical keys, exact fields and HTTPS destination without accepting ambiguous URLs', () => {
+test('pairing parser binds canonical keys, exact fields and allowed transport without accepting ambiguous URLs', () => {
   assert.match(identityId, /^[0-9a-f]{16}$/); assert.equal(parsePairingString(code).nonce, nonce);
   for (const value of [null, '', `prefix${code}`, `${code}&id=extra`, `${code}&secret=${marker}`, `${code}#fragment`, code.replace('https%3A', 'http%3A'), code.replace('synthetic.invalid', 'user%40synthetic.invalid'), code.replace('synthetic.invalid', 'synthetic.invalid%3Fkey%3Dsecret'), code.replace(nonce, 'bad'), code.replace('&ek=', '&ek=%00'), `${code}${'x'.repeat(8192)}`]) assert.throws(() => parsePairingString(value));
   for (const method of ['pair.start', 'pair.accept', 'pair.status', 'pair.cancel', 'pair.abort']) assert.throws(() => validateRequest(method, {}));
 });
 
-test('capabilities are local token-mode gates and never claim remote method support or relay connectivity', () => {
+test('capabilities permit explicit legacy loopback transport without claiming method support or relay connectivity', () => {
   const ctx = setup();
   assert.deepEqual(ctx.flow.capabilities(source()), { invite: true, join: false, inviteReasons: [], joinReasons: ['already_has_identity'] });
   assert.deepEqual(ctx.flow.capabilities(source(false)), { invite: false, join: true, inviteReasons: ['identity_required', 'relay_missing'], joinReasons: [] });
-  ctx.bridge.status.authMode = 'legacy'; assert.deepEqual(ctx.flow.capabilities(source()), { invite: false, join: false, inviteReasons: ['token_auth_required'], joinReasons: ['token_auth_required', 'already_has_identity'] });
+  ctx.bridge.status.authMode = 'legacy'; assert.deepEqual(ctx.flow.capabilities(source()), { invite: true, join: false, inviteReasons: [], joinReasons: ['already_has_identity'] });
   ctx.bridge.status.authMode = 'token'; ctx.bridge.status.status = 'disconnected'; assert.deepEqual(ctx.flow.capabilities(source(false)), { invite: false, join: false, inviteReasons: ['not_connected', 'identity_required', 'relay_missing'], joinReasons: ['not_connected'] });
   assert.deepEqual(ctx.flow.capabilities({ has_identity: 'yes' }), { invite: false, join: false, inviteReasons: ['not_connected', 'identity_fields_missing'], joinReasons: ['not_connected', 'identity_fields_missing'] }); ctx.dispose();
 });
@@ -266,11 +267,11 @@ test('unknown outcomes lock only that daemon pairing mode without blocking ordin
 });
 
 
-test('capabilities report simultaneous client authentication and relay restrictions without exposing the address', async () => {
-  const ctx = setup(); ctx.bridge.status.authMode = 'legacy';
+test('capabilities reject nonlocal bridge transport and public HTTP relay without exposing either address', async () => {
+  const ctx = setup(); ctx.bridge.status.authMode = 'legacy'; ctx.bridge.status.endpoint = 'ws://192.168.1.50:4862/ws';
   ctx.bridge.bootstrap.relay_url = `http://synthetic.invalid/${marker}`;
   const capabilities = ctx.flow.capabilities(ctx.bridge.bootstrap);
-  assert.deepEqual(capabilities.inviteReasons, ['token_auth_required', 'https_relay_required']);
+  assert.deepEqual(capabilities.inviteReasons, ['local_transport_required', 'relay_transport_required']);
   assert.equal(capabilities.invite, false); assert.equal(capabilities.join, false);
   assert.equal(JSON.stringify(capabilities).includes(marker), false);
   const result = await ctx.flow.open('invite'); assert.deepEqual(result, { status: 'failed' });
@@ -284,4 +285,132 @@ test('capabilities explain missing identity fields, relay and unknown-result loc
   const original = ctx.bridge.handler; ctx.bridge.handler = async (method, params) => { if (method === 'pair.start') throw new Error(marker); return original(method, params); };
   const { pending, child } = await ctx.begin(); await ctx.invoke('submit', child, {}); ctx.invoke('close', child); await pending;
   assert.deepEqual(ctx.flow.capabilities(source()).inviteReasons, ['unknown_outcome']); ctx.dispose();
+});
+
+test('HTTP relay admission accepts literal loopback and private LAN ranges while preserving the actual code', () => {
+  for (const url of ['http://127.0.0.1:4860', 'http://127.255.255.254/relay', 'http://10.0.0.1:3000/relay', 'http://172.16.0.1', 'http://172.31.255.254:8080', 'http://192.168.1.10/relay', 'http://[::1]:4860', 'http://[0:0:0:0:0:0:0:1]/relay', 'http://[fc00::1]:8080', 'http://[fd12:3456:789a::1]/relay', 'https://synthetic.invalid/relay']) {
+    const input = codeFor(url), parsed = parsePairingString(input);
+    assert.equal(parsed.code, input, 'Admission never rewrites the code or silently changes the relay');
+    assert.equal(parsed.relay, new URL(url).href, url);
+    assert.equal(parsed.origin, new URL(url).origin, url);
+    assert.equal(parsed.identityId, identityId);
+  }
+});
+
+test('HTTP relay admission rejects public and ambiguous hosts without DNS or network activity', () => {
+  for (const url of ['http://8.8.8.8', 'http://172.15.255.255', 'http://172.32.0.1', 'http://192.169.0.1', 'http://100.64.0.1', 'http://169.254.1.1', 'http://169.254.169.254', 'http://0.0.0.0', 'http://[::]', 'http://[fe80::1]', 'http://[2001:db8::1]', 'http://[::ffff:127.0.0.1]', 'http://[::ffff:10.0.0.1]', 'http://localhost', 'http://LOCALHOST:3000', 'http://router.local', 'http://localhost.evil.invalid', 'http://localhost.', 'http://127.0.0.1.evil.invalid', 'http://synthetic.invalid', 'http://127.1', 'http://2130706433', 'http://0x7f000001', 'http://0177.0.0.1', 'http://192.168.001.1', 'http://%31%32%37.0.0.1', 'http://user@127.0.0.1', 'http://127.0.0.1?token=secret', 'http://127.0.0.1#fragment', 'http://127.0.0.1\\@synthetic.invalid', 'http://127.0.0.1:0', 'http://127.0.0.1:65536', 'ftp://127.0.0.1', 'file:///tmp/synthetic', 'http://[fe80::1%25en0]']) assert.throws(() => parsePairingString(codeFor(url)), url);
+});
+
+test('token and explicit legacy capabilities permit private HTTP without probing or mutating a daemon', () => {
+  const ctx = setup();
+  for (const authMode of ['token', 'legacy']) {
+    ctx.bridge.status.authMode = authMode;
+    for (const endpoint of ['ws://127.0.0.1:4862/ws', 'ws://localhost:4862/ws']) {
+      ctx.bridge.status.endpoint = endpoint;
+      assert.equal(ctx.flow.capabilities({ ...source(), relay_url: 'http://192.168.1.20:3000' }).invite, true);
+      assert.equal(ctx.flow.capabilities(source(false)).join, true);
+    }
+  }
+  for (const authMode of ['none', '', 'automatic']) {
+    ctx.bridge.status.authMode = authMode;
+    assert.deepEqual(ctx.flow.capabilities(source()).inviteReasons, ['local_transport_required']);
+  }
+  assert.deepEqual(ctx.bridge.calls, []);
+  ctx.dispose();
+});
+
+test('legacy HTTPS invitation requires native confirmation and explicitly discloses the missing local token', async () => {
+  const ctx = setup(); ctx.bridge.status.authMode = 'legacy'; ctx.response(0);
+  const { pending, child } = await ctx.begin();
+  assert.notEqual(child, ctx.parent);
+  await ctx.invoke('submit', child, {});
+  assert.equal(writes(ctx.bridge).length, 0);
+  assert.match(String(ctx.prompts[0].detail), /没有本机 serve-token 认证/);
+  assert.match(String(ctx.prompts[0].detail), /本机其他进程/);
+  assert.match(String(ctx.prompts[0].detail), /网页也可能操作服务/);
+  assert.match(String(ctx.prompts[0].detail), /不能补回服务缺失的认证/);
+  assert.match(String(ctx.prompts[0].detail), /DEK/);
+  assert.doesNotMatch(String(ctx.prompts[0].detail), /此中继使用 HTTP，没有 TLS/);
+  ctx.invoke('close', child); assert.deepEqual(await pending, { status: 'cancelled' }); ctx.dispose();
+});
+
+test('private HTTP invitation reveals transport risks but no key or nonce and sends only after confirmation', async () => {
+  for (const authMode of ['token', 'legacy']) {
+    const ctx = setup(); ctx.bridge.status.authMode = authMode; ctx.bridge.bootstrap.relay_url = 'http://192.168.1.20:3000/relay';
+    const lanCode = codeFor(ctx.bridge.bootstrap.relay_url), original = ctx.bridge.handler;
+    ctx.bridge.handler = async (method, params) => method === 'pair.start' ? { nonce, pairing_string: lanCode } : original(method, params);
+    const { pending, child } = await ctx.begin();
+    assert.deepEqual(writes(ctx.bridge), []);
+    await ctx.invoke('submit', child, {});
+    assert.equal((ctx.invoke('init', child) as { phase: string }).phase, 'waiting');
+    assert.equal(writes(ctx.bridge).length, 1);
+    const detail = String(ctx.prompts[0].detail);
+    assert.match(detail, /没有 TLS 保护/); assert.match(detail, /中继访问令牌/); assert.match(detail, /窃听、篡改或冒用/); assert.match(detail, /代理或重定向/);
+    assert.equal(detail.includes('没有本机 serve-token 认证'), authMode === 'legacy');
+    assert.equal(detail.includes(lanCode), false); assert.equal(detail.includes(nonce), false);
+    assert.equal(detail.includes(Buffer.alloc(32, 2).toString('base64url')), false);
+    ctx.invoke('close', child); await pending; await tick();
+    assert.deepEqual(writes(ctx.bridge).map(call => call.method), ['pair.start', 'pair.cancel']); ctx.dispose();
+  }
+});
+
+test('legacy private HTTP joining preserves the isolated long-running operation and authoritative completion checks', async () => {
+  const ctx = setup(false); ctx.bridge.status.authMode = 'legacy';
+  const relayUrl = 'http://10.0.0.8:3000/relay', lanCode = codeFor(relayUrl), original = ctx.bridge.handler;
+  ctx.bridge.handler = async (method, params) => {
+    if (method !== 'pair.accept') return original(method, params);
+    ctx.bridge.bootstrap = { ...source(), relay_url: relayUrl, this_device_id: 'joined-device' };
+    ctx.bridge.emit('event', { event: 'identity.changed', data: { has_identity: true } });
+    ctx.bridge.emit('event', { event: 'snapshot', data: ctx.bridge.bootstrap });
+    return { id: 'joined-device', name: 'Synthetic PC', os: 'linux', identity_id: identityId };
+  };
+  const { pending, child } = await ctx.begin();
+  await ctx.invoke('submit', child, { pairingString: lanCode, deviceName: 'Synthetic PC' });
+  const request = writes(ctx.bridge)[0];
+  assert.equal(request.method, 'pair.accept'); assert.equal(request.params.pairing_string, lanCode);
+  assert.deepEqual(request.options, { timeoutMs: 610000 });
+  const detail = String(ctx.prompts[0].detail);
+  assert.match(detail, /持久保存/); assert.match(detail, /没有本机 serve-token 认证/); assert.match(detail, /没有 TLS 保护/); assert.match(detail, /不保证每次都在本机再次询问/);
+  assert.equal(detail.includes(lanCode), false);
+  ctx.invoke('close', child);
+  assert.deepEqual(await pending, { status: 'completed', device: { id: 'joined-device', name: 'Synthetic PC', os: 'linux' } }); ctx.dispose();
+});
+
+test('public HTTP joining is rejected before confirmation or mutation with a transport-specific safe error', async () => {
+  const ctx = setup(false); ctx.bridge.status.authMode = 'legacy';
+  const { pending, child } = await ctx.begin();
+  const response = await ctx.invoke('submit', child, { pairingString: codeFor(`http://synthetic.invalid/${marker}`) });
+  assert.match((response as { error: string }).error, /HTTPS.*私有局域网/);
+  assert.equal(JSON.stringify(response).includes(marker), false);
+  assert.equal(ctx.prompts.length, 0); assert.equal(writes(ctx.bridge).length, 0);
+  ctx.invoke('close', child); assert.deepEqual(await pending, { status: 'cancelled' }); ctx.dispose();
+});
+
+test('same-generation auth-mode and loopback-endpoint changes invalidate consent before invitation', async () => {
+  for (const change of ['auth', 'endpoint']) {
+    const ctx = setup(); ctx.bridge.status.authMode = 'legacy';
+    ctx.dialog.showMessageBox = async () => {
+      if (change === 'auth') ctx.bridge.status.authMode = 'token';
+      else ctx.bridge.status.endpoint = 'ws://127.0.0.1:4863/ws';
+      return { response: 1 };
+    };
+    const { pending, child } = await ctx.begin(); await ctx.invoke('submit', child, {});
+    assert.equal(writes(ctx.bridge).length, 0, change);
+    ctx.flow.close(); assert.deepEqual(await pending, { status: 'failed' }); ctx.dispose();
+  }
+});
+
+test('late legacy invite results cannot cancel or display secrets in a changed endpoint or auth mode', async () => {
+  for (const change of ['auth', 'endpoint']) {
+    const ctx = setup(), late = deferred(), original = ctx.bridge.handler; ctx.bridge.status.authMode = 'legacy';
+    ctx.bridge.handler = async (method, params) => method === 'pair.start' ? late.promise : original(method, params);
+    const { pending, child } = await ctx.begin(); const submitting = ctx.invoke('submit', child, {}); await tick();
+    if (change === 'auth') ctx.bridge.status.authMode = 'token';
+    else ctx.bridge.status.endpoint = 'ws://127.0.0.1:4863/ws';
+    ctx.bridge.emit('status', ctx.bridge.getStatus());
+    assert.deepEqual(await pending, { status: 'unknownOutcome' });
+    late.resolve({ nonce, pairing_string: code }); await submitting;
+    assert.deepEqual(writes(ctx.bridge).map(call => call.method), ['pair.start']);
+    assert.equal(JSON.stringify(child.webContents.updates).includes(code), false); ctx.dispose();
+  }
 });

@@ -48,7 +48,7 @@ export function parseSettingsEditor(value: unknown): SettingsEditor {
     },
   };
 }
-const pairingReasons = ["not_connected", "token_auth_required", "identity_required", "already_has_identity", "identity_fields_missing", "relay_missing", "https_relay_required", "unknown_outcome", "bridge_unavailable", "not_reported"] as const;
+const pairingReasons = ["not_connected", "token_auth_required", "local_transport_required", "relay_transport_required", "identity_required", "already_has_identity", "identity_fields_missing", "relay_missing", "https_relay_required", "unknown_outcome", "bridge_unavailable", "not_reported"] as const;
 export function parsePairingCapabilities(value: unknown): PairingCapabilities {
   const input = object(value, "pairingCapabilities");
   const invite = flag(input.invite, "pairingCapabilities.invite"), join = flag(input.join, "pairingCapabilities.join");

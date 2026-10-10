@@ -3,6 +3,7 @@ const path = require('node:path');
 const { pathToFileURL, fileURLToPath } = require('node:url');
 const { LorcaBridge, isTrustedSender, validateCopyText } = require('./bridge.cjs');
 const { AttachmentSelections } = require('./attachments.cjs');
+const { AttachmentSession } = require('./attachment-session.cjs');
 const { BotAvatars } = require('./bot-avatars.cjs');
 const { WatchingChat } = require('./watching.cjs');
 const { applicationMenuTemplate } = require('./menu.cjs');
@@ -26,7 +27,11 @@ const watching = new WatchingChat(bridge);
 let pendingRoster = null;
 let pairingCapabilities = { invite: false, join: false };
 let observedGeneration = bridge.getStatus().generation;
+let attachmentIdentity;
 settings.onSnapshot = snapshot => {
+  const identity = `${snapshot.has_identity}:${snapshot.identity_id ?? ''}`;
+  if (attachmentIdentity !== undefined && identity !== attachmentIdentity) void attachments.invalidate();
+  attachmentIdentity = identity;
   pairingCapabilities = pairing.capabilities(snapshot);
   avatars.observeSnapshot(snapshot);
   watching.observeSnapshot(snapshot);
@@ -43,7 +48,7 @@ settings.onSnapshot = snapshot => {
 };
 let window = null;
 let applicationIcon;
-let choosing = false;
+const attachments = new AttachmentSession({ selections, bridge, inventory: settings, chooseFiles: () => dialog.showOpenDialog(window, { title: '向 dots 添加附件', buttonLabel: '添加附件', properties: ['openFile', 'multiSelections'] }) });
 const secureSettings = createSecureSettingsEditor({ BrowserWindow, ipcMain, bridge, getParent: () => window, getIcon: () => applicationIcon });
 const pairing = createPairingFlow({ BrowserWindow, ipcMain, dialog, bridge, inventory: settings, getParent: () => window, getIcon: () => applicationIcon });
 settings.editor = new SettingsEditor(bridge, settings, {
@@ -72,7 +77,7 @@ function updateForeground() {
   watching.setForeground(Boolean(window && !window.isDestroyed() && window.isFocused() && window.isVisible() && !window.isMinimized()));
 }
 bridge.on('event', value => {
-  if (value.event === 'identity.changed') { selections.clear(); pendingRoster = null; }
+  if (value.event === 'identity.changed') { void attachments.invalidate(); attachmentIdentity = undefined; pendingRoster = null; }
   try {
     const projected = sanitizeRendererEvent(value, settings.identity ?? '');
     if (value.event === 'roster.changed') {
@@ -88,7 +93,7 @@ bridge.on('event', value => {
   }
 });
 bridge.on('status', value => {
-  if (value.status !== 'connected' || value.generation !== observedGeneration) { selections.clear(); pendingRoster = null; }
+  if (value.status !== 'connected' || value.generation !== observedGeneration) { void attachments.invalidate(); pendingRoster = null; }
   observedGeneration = value.generation;
   send('lorca:status-update', value);
 });
@@ -131,25 +136,24 @@ ipcMain.handle('lorca:request', async (event, method, params) => {
     return projected;
   } catch (error) { throw safeRendererError(error); }
 });
-ipcMain.handle('lorca:pick-attachments', async event => {
+ipcMain.handle('lorca:set-attachment-scope', async (event, scope) => {
   ensureSender(event);
-  if (choosing) throw new Error('已有一个文件选择窗口打开');
-  choosing = true;
-  const generation = bridge.getStatus().generation;
-  const selectionEpoch = selections.epoch;
-  try {
-    const result = await dialog.showOpenDialog(window, { title: '向 dots 添加附件', buttonLabel: '添加附件', properties: ['openFile', 'multiSelections'] });
-    ensureSender(event);
-    if (bridge.getStatus().generation !== generation || selections.epoch !== selectionEpoch) throw new Error('Lorca 连接已变化，请重新选择文件');
-    return result.canceled ? [] : await selections.add(result.filePaths);
-  } catch (error) { throw safeRendererError(error); } finally { choosing = false; }
+  try { return await attachments.setScope(scope, () => ensureSender(event)); } catch (error) { throw safeRendererError(error); }
 });
-ipcMain.handle('lorca:release-attachments', (event, ids) => { ensureSender(event); selections.release(ids); return null; });
-ipcMain.handle('lorca:send-attachments', async (event, params) => {
+ipcMain.handle('lorca:import-attachments', async (event, scope, ticket, value) => {
+  ensureSender(event);
+  try { return await attachments.stage(scope, ticket, value, () => ensureSender(event)); } catch (error) { throw safeRendererError(error); }
+});
+ipcMain.handle('lorca:pick-attachments', async (event, scope, ticket) => {
+  ensureSender(event);
+  try { return await attachments.pick(scope, ticket, () => ensureSender(event)); } catch (error) { throw safeRendererError(error); }
+});
+ipcMain.handle('lorca:release-attachments', async (event, ids) => { ensureSender(event); await attachments.release(ids, () => ensureSender(event)); return null; });
+ipcMain.handle('lorca:send-attachments', async (event, scope, ticket, params) => {
   ensureSender(event);
   const fence = settings.capture();
   try {
-    const result = await selections.send(bridge, params);
+    const result = await attachments.send(scope, ticket, params, () => ensureSender(event));
     ensureSender(event);
     settings.check(fence);
     return sanitizeRendererResult('chats.send', result);
@@ -166,7 +170,10 @@ function createWindow() {
   for (const event of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore']) window.on(event, updateForeground);
   updateForeground();
   const contents = window.webContents;
-  contents.on('render-process-gone', () => { watching.select(null); watching.setForeground(false); selections.clear(); bridge.close(); });
+  contents.on('render-process-gone', () => { watching.select(null); watching.setForeground(false); void attachments.invalidate(); bridge.close(); });
+  contents.on('did-start-navigation', (event, _url, inPlace, isMainFrame) => {
+    if ((event.isMainFrame ?? isMainFrame) && !(event.isSameDocument ?? inPlace)) void attachments.invalidate();
+  });
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   contents.on('will-navigate', event => event.preventDefault());
   contents.on('will-redirect', event => event.preventDefault());
@@ -191,7 +198,7 @@ function createWindow() {
     const connect = devURL ? 'http://127.0.0.1:5178 ws://127.0.0.1:5178' : "'none'";
     callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ${connect}; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'`] } });
   });
-  window.on('closed', () => { window = null; watching.setForeground(false); watching.select(null); selections.clear(); bridge.close(); });
+  window.on('closed', () => { window = null; watching.setForeground(false); watching.select(null); void attachments.invalidate(); bridge.close(); });
   if (devURL) void window.loadURL(devURL); else void window.loadFile(indexPath);
 }
 app.whenReady().then(() => {
@@ -200,5 +207,15 @@ app.whenReady().then(() => {
   createWindow();
 });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
-app.on('before-quit', () => { watching.dispose(); avatars.dispose(); secureSettings.close(); pairing.close(); bridge.close(); });
+let quitting = false;
+let readyToQuit = false;
+app.on('before-quit', event => {
+  if (readyToQuit) return;
+  event.preventDefault();
+  if (quitting) return;
+  quitting = true;
+  watching.dispose(); avatars.dispose(); secureSettings.close(); pairing.close(); bridge.close();
+  if (window && !window.isDestroyed()) window.destroy();
+  void attachments.shutdown().catch(() => {}).finally(() => { readyToQuit = true; app.quit(); });
+});
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

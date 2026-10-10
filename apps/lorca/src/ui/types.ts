@@ -19,6 +19,7 @@ export interface LorcaBotAppearance {
 }
 
 export interface LorcaConversation {
+  kind?: "dm" | "group";
   id: string;
   title: string;
   updatedAt: string;
@@ -30,6 +31,7 @@ export interface LorcaAgent {
   id: string;
   label: string;
   appearance?: LorcaBotAppearance;
+  status?: "running" | "waiting";
 }
 
 export type LorcaMessage =
@@ -112,6 +114,8 @@ export interface SettingsActionResult {
 export type PairingDisabledReason =
   | "not_connected"
   | "token_auth_required"
+  | "local_transport_required"
+  | "relay_transport_required"
   | "identity_required"
   | "already_has_identity"
   | "identity_fields_missing"
@@ -197,7 +201,8 @@ export interface LorcaShellState {
   queue: { id: string; text: string; canSendNow?: boolean }[];
   demo: boolean;
   draftScope?: number;
-  pendingAttachments?: { id: string; name: string }[];
+  localGroupNamespace?: string;
+  pendingAttachments?: { id: string; name: string; size?: number; mime?: string; previewUrl?: string }[];
   attachmentsEnabled?: boolean;
   runtimeSettings?: RuntimeSettings;
   settingsLoading?: boolean;
@@ -216,6 +221,7 @@ export interface LorcaShellActions {
   onSendNow: (id: string) => void;
   onLoadOlder: () => void;
   onSelectAgent: (id: string) => void;
+  onOpenAgentChat?: (id: string) => void;
   onSaveEndpoint: (url: string) => Promise<void>;
   onReconnect: () => void;
   onRefreshSettings: (runnerId?: string, options?: { includeMcp?: boolean }) => void;

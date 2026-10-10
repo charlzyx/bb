@@ -9,6 +9,15 @@ export interface BridgeStatus {
 export interface PickedAttachment {
   id: string;
   name: string;
+  size?: number;
+  mime?: string;
+  previewUrl?: string;
+}
+export interface AttachmentImportEvent {
+  scope: string;
+  attachments: PickedAttachment[];
+  duplicates: number;
+  error?: string;
 }
 export interface LorcaBridge {
   connect(endpoint: string): Promise<BridgeStatus>;
@@ -24,6 +33,9 @@ export interface LorcaBridge {
   copyText?(text: string): Promise<void>;
   pickAttachments?(): Promise<PickedAttachment[]>;
   releaseAttachments?(ids: string[]): Promise<void>;
+  setAttachmentScope?(scope: string | null): Promise<void>;
+  onAttachmentImport?(callback: (event: AttachmentImportEvent) => void): () => void;
+  onAttachmentText?(callback: (text: string) => void): () => void;
   sendAttachments?(params: {
     chat_id: string;
     text: string;

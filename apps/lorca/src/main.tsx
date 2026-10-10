@@ -7,6 +7,8 @@ import type { LorcaBridge } from "./core/bridge";
 import "@fontsource-variable/inter";
 import "./styles.css";
 import "./ui/tool-groups.css";
+import "./ui/agent-groups.css";
+import "./ui/agent-picker.css";
 import { appZh } from "./locale/app.zh-CN";
 
 const demo = new URLSearchParams(location.search).get("demo") === "1";

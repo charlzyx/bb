@@ -1,7 +1,8 @@
 const path = require('node:path');
+const { isIP } = require('node:net');
 const { createHash, randomUUID } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
-const { isTrustedSender } = require('./bridge.cjs');
+const { isTrustedSender, validateEndpoint } = require('./bridge.cjs');
 
 const ERROR = '配对状态或连接已变化，请检查设备列表后再继续。';
 const UNKNOWN = '配对结果尚不确定。请先在官方客户端核对设备；此进程暂不允许再次生成或加入。请求不会自动重发，连接变化或重启也不代表撤销。新设备可能仍在后台加入；配对码最长有效十分钟。';
@@ -11,11 +12,32 @@ function invalid() { throw new Error('配对信息无效，请在另一台设备
 function object(value) { if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) invalid(); return value; }
 function text(value, maximum = 256, empty = false) { if (typeof value !== 'string' || value.length > maximum || /[\u0000-\u001f\u007f]/.test(value) || (!empty && !value.trim())) invalid(); return value; }
 function canonicalBase64(value, bytes) { text(value, 128); if (!/^[A-Za-z0-9_-]+$/.test(value) || Buffer.from(value, 'base64url').length !== bytes || Buffer.from(value, 'base64url').toString('base64url') !== value) invalid(); return value; }
+function privateHttpHost(host) {
+  if (isIP(host) === 4) {
+    const [first, second] = host.split('.').map(Number);
+    return first === 127 || first === 10 || first === 172 && second >= 16 && second <= 31 || first === 192 && second === 168;
+  }
+  if (!host.startsWith('[') || !host.endsWith(']') || isIP(host.slice(1, -1)) !== 6) return false;
+  const canonical = new URL(`http://${host}`).hostname.toLowerCase();
+  return canonical === '[::1]' || /^\[f[cd][0-9a-f]{2}:/.test(canonical);
+}
 function relay(value) {
   text(value, 2048);
   let url; try { url = new URL(value); } catch { invalid(); }
-  if (url.protocol !== 'https:' || !url.hostname || url.username || url.password || url.search || url.hash || /[\\\s]/.test(value)) invalid();
-  return { href: url.href, origin: url.origin };
+  if (!['https:', 'http:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash || /[\\\s]/.test(value) || url.port === '0') invalid();
+  const authority = /^(?:https?):\/\/(\[[^\]]+\]|[^:/?#]+)(?::[0-9]{1,5})?(?:\/[^?#]*)?$/i.exec(value);
+  if (!authority || url.protocol === 'http:' && !privateHttpHost(authority[1])) invalid();
+  return { href: url.href, origin: url.origin, insecure: url.protocol === 'http:' };
+}
+function localTransport(status) {
+  if (!['token', 'legacy'].includes(status.authMode)) return false;
+  try { validateEndpoint(status.endpoint); return true; } catch { return false; }
+}
+function transportWarning(current, destination) {
+  const parts = [];
+  if (current.connection.authMode === 'legacy') parts.push('当前已显式启用本机兼容连接，没有本机 serve-token 认证。本机其他进程也可能访问该 Lorca 服务；若服务未校验网页来源，能访问此端口的网页也可能操作服务。此窗口不能补回服务缺失的认证，请仅继续使用你信任的本机服务。');
+  if (destination.insecure) parts.push('此中继使用 HTTP，没有 TLS 保护。即使配对请求与账户密钥回复已加密，中继访问令牌及通信元数据仍可能被同网攻击者窃听、篡改或冒用。只应在你信任的本机或局域网中继续。地址检查不保证后端实际流量仅在局域网，Lorca 服务的代理或重定向仍可能改变目的地。');
+  return parts.length ? `\n\n连接风险：\n${parts.join('\n\n')}` : '';
 }
 function parsePairingString(value) {
   const code = text(value, 8192).trim();
@@ -59,7 +81,7 @@ function createPairingFlow({ BrowserWindow, ipcMain, dialog, bridge, inventory, 
     const result = () => ({ invite: inviteReasons.length === 0, join: joinReasons.length === 0, inviteReasons, joinReasons });
     const status = bridge.getStatus();
     if (status.status !== 'connected') addBoth('not_connected');
-    if (status.authMode !== 'token') addBoth('token_auth_required');
+    if (!localTransport(status)) addBoth('local_transport_required');
     try {
       if (unknownScopes.has(scopeKey(status, 'invite'))) inviteReasons.push('unknown_outcome');
       if (unknownScopes.has(scopeKey(status, 'join'))) joinReasons.push('unknown_outcome');
@@ -71,13 +93,13 @@ function createPairingFlow({ BrowserWindow, ipcMain, dialog, bridge, inventory, 
       if (!source.identityId || !source.deviceId) inviteReasons.push('identity_fields_missing');
     } else inviteReasons.push('identity_required');
     if (!source.relay) inviteReasons.push('relay_missing');
-    else { try { relay(source.relay); } catch { inviteReasons.push('https_relay_required'); } }
+    else { try { relay(source.relay); } catch { inviteReasons.push('relay_transport_required'); } }
     return result();
   }
   function guard(current, joining = false) {
     current.trusted();
     const status = bridge.getStatus();
-    if (current.released || status.status !== 'connected' || status.authMode !== 'token' || status.generation !== current.fence.generation || current.invalid) throw new Error(ERROR);
+    if (current.released || status.status !== 'connected' || !localTransport(status) || status.endpoint !== current.connection.endpoint || status.authMode !== current.connection.authMode || status.generation !== current.fence.generation || current.invalid) throw new Error(ERROR);
     if (!joining) inventory.check(current.fence);
     else if (inventory.identity !== undefined && inventory.identity !== 'false:' && inventory.identity !== `true:${current.expected.identityId}`) throw new Error(ERROR);
   }
@@ -158,7 +180,7 @@ function createPairingFlow({ BrowserWindow, ipcMain, dialog, bridge, inventory, 
   }
   async function startInvite(current) {
     const destination = relay(current.source.relay);
-    const accepted = await confirm(current, `配对码最长十分钟内单次有效。任何持有码的人都可自动获得此账号的账户解密密钥（DEK），同步聊天记录及服务商凭据，没有第二次审批。请仅交给你信任的新设备。\n\n新设备还可通过账号安排智能体在已配对的执行器上工作，并管理执行器功能。智能体可按其访问权限和自动审查规则读取/修改文件、调用工具或运行程序；不保证每次都在执行器本机再次询问。\n\n生成操作可能注册本机并创建中继访问凭据。\n中继：${destination.origin}\n账号标识：${current.source.identityId}\n本机标识：${current.source.deviceId}\n\n关闭窗口仅停止显示或等待；尽力撤销不能撤回已经授予的设备访问。`);
+    const accepted = await confirm(current, `配对码最长十分钟内单次有效。任何持有码的人都可自动获得此账号的账户解密密钥（DEK），同步聊天记录及服务商凭据，没有第二次审批。请仅交给你信任的新设备。\n\n新设备还可通过账号安排智能体在已配对的执行器上工作，并管理执行器功能。智能体可按其访问权限和自动审查规则读取/修改文件、调用工具或运行程序；不保证每次都在执行器本机再次询问。\n\n生成操作可能注册本机并创建中继访问凭据。\n中继：${destination.origin}\n账号标识：${current.source.identityId}\n本机标识：${current.source.deviceId}\n\n关闭窗口仅停止显示或等待；尽力撤销不能撤回已经授予的设备访问。${transportWarning(current, destination)}`);
     if (!accepted) { setPhase(current, 'ready', '尚未生成配对码。'); return; }
     await read(current); guard(current); if (current.closed) throw new Error(ERROR);
     current.submitted = true; setPhase(current, 'creating', '正在生成配对码，请勿重复操作。');
@@ -175,7 +197,7 @@ function createPairingFlow({ BrowserWindow, ipcMain, dialog, bridge, inventory, 
     const values = object(input); if (Object.keys(values).some(key => !['pairingString', 'deviceName'].includes(key))) invalid();
     const parsed = parsePairingString(values.pairingString);
     const deviceName = values.deviceName === undefined ? '' : text(values.deviceName, 128, true).trim();
-    const accepted = await confirm(current, `本机将获得并持久保存该账号的账户解密密钥（DEK），同步聊天记录及服务商凭据。请确认配对码来自你自己的可信设备。\n\n若本机运行 Lorca 执行器，加入后同账号的其他设备也可安排智能体在本机工作，并管理本机的执行器功能。智能体可按其访问权限和自动审查规则读取/修改文件、调用工具或运行程序；不保证每次都在本机再次询问。\n\n中继：${parsed.origin}\n账号标识：${parsed.identityId}\n本机名称：${deviceName || '使用本机现有名称'}\n\n此请求会取代同一本地服务中其他客户端正在等待的加入请求。关闭窗口不会停止服务中的加入操作，也不会撤销已经授予的设备访问。`);
+    const accepted = await confirm(current, `本机将获得并持久保存该账号的账户解密密钥（DEK），同步聊天记录及服务商凭据。请确认配对码来自你自己的可信设备。\n\n若本机运行 Lorca 执行器，加入后同账号的其他设备也可安排智能体在本机工作，并管理本机的执行器功能。智能体可按其访问权限和自动审查规则读取/修改文件、调用工具或运行程序；不保证每次都在本机再次询问。\n\n中继：${parsed.origin}\n账号标识：${parsed.identityId}\n本机名称：${deviceName || '使用本机现有名称'}\n\n此请求会取代同一本地服务中其他客户端正在等待的加入请求。关闭窗口不会停止服务中的加入操作，也不会撤销已经授予的设备访问。${transportWarning(current, relay(parsed.relay))}`);
     if (!accepted) { setPhase(current, 'ready', '尚未发送加入请求。'); return; }
     await read(current); guard(current); if (current.closed) throw new Error(ERROR);
     current.expected = { identityId: parsed.identityId, relay: parsed.relay }; current.acceptSubmitted = true; current.submitted = true;
@@ -208,7 +230,7 @@ function createPairingFlow({ BrowserWindow, ipcMain, dialog, bridge, inventory, 
     const current = trusted(event);
     if (current.operation || current.phase !== 'ready') return { ok: false, error: '已有配对操作正在处理，请勿重复提交。' };
     if (current.mode === 'invite') { try { if (Object.keys(object(values)).length) invalid(); } catch { return { ok: false, error: '配对参数无效。' }; } }
-    else { try { const input = object(values); if (Object.keys(input).some(key => !['pairingString', 'deviceName'].includes(key))) invalid(); parsePairingString(input.pairingString); if (input.deviceName !== undefined) text(input.deviceName, 128, true); } catch { return { ok: false, error: '请输入完整、有效且使用 HTTPS 中继的配对码，并检查设备名称。' }; } }
+    else { try { const input = object(values); if (Object.keys(input).some(key => !['pairingString', 'deviceName'].includes(key))) invalid(); parsePairingString(input.pairingString); if (input.deviceName !== undefined) text(input.deviceName, 128, true); } catch { return { ok: false, error: '请输入完整有效的配对码；中继须使用 HTTPS，或本机／私有局域网数值 IP 地址的 HTTP。请同时检查设备名称。' }; } }
     current.operation = true; setPhase(current, 'confirming', '请核对系统确认窗口中的授权范围。');
     try { if (current.mode === 'invite') await startInvite(current); else await join(current, values); return { ok: true }; }
     catch {
@@ -225,7 +247,7 @@ function createPairingFlow({ BrowserWindow, ipcMain, dialog, bridge, inventory, 
     const scope = scopeKey(bridge.getStatus(), mode);
     if (unknownScopes.has(scope)) throw new Error(UNKNOWN);
     if (active) throw new Error('已有配对流程或尚未结束的加入请求，请先等待结果。');
-    const current = { mode, scopeKey: scope, trusted: trustedCaller, fence: inventory.capture(), source: null, phase: 'ready', detail: '', code: null, nonce: null, expected: null, expiresAt: null, nextPoll: 0, operation: true, polling: false, submitted: false, acceptSubmitted: false, cancelSent: false, invalid: false, closed: false, released: false, settled: false, cleaned: false, window: null, parent: null, session: null, timer: null, result: null, resolve: null, onEvent: null, onStatus: null, onParentClosed: null };
+    const current = { mode, scopeKey: scope, trusted: trustedCaller, fence: inventory.capture(), connection: { endpoint: bridge.getStatus().endpoint, authMode: bridge.getStatus().authMode }, source: null, phase: 'ready', detail: '', code: null, nonce: null, expected: null, expiresAt: null, nextPoll: 0, operation: true, polling: false, submitted: false, acceptSubmitted: false, cancelSent: false, invalid: false, closed: false, released: false, settled: false, cleaned: false, window: null, parent: null, session: null, timer: null, result: null, resolve: null, onEvent: null, onStatus: null, onParentClosed: null };
     const result = new Promise(resolve => { current.resolve = resolve; }); active = current;
     current.onStatus = () => { try { guard(current, current.acceptSubmitted); } catch { closeCurrent(current, true); } };
     current.onEvent = event => {

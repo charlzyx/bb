@@ -20,7 +20,7 @@ import {
   upsertMessage,
   type Model,
 } from "./store";
-import type { BridgeStatus, LorcaBridge, PickedAttachment } from "./bridge";
+import type { AttachmentImportEvent, BridgeStatus, LorcaBridge, PickedAttachment } from "./bridge";
 import type {
   LorcaShellState,
   LorcaBotAppearance,
@@ -225,6 +225,9 @@ export class LorcaController {
   private pendingActions = new Set<string>();
   private pendingAttachments: PickedAttachment[] = [];
   private sendingAttachmentIds = new Set<string>();
+  private sendingAttachmentScope: { scope: string; generation: number; accountEpoch: number; endpoint: string; authMode: BridgeStatus["authMode"] } | null = null;
+  private attachmentScope: string | null | undefined;
+  private attachmentScopeFailed = false;
   private disposed = false;
   private state: LorcaShellState;
   constructor(
@@ -242,6 +245,7 @@ export class LorcaController {
     if (this.disposed) return;
     this.state = this.makeState();
     this.syncWatching();
+    this.syncAttachmentScope();
     for (const listener of this.listeners) listener();
   }
   private syncWatching(): void {
@@ -251,6 +255,40 @@ export class LorcaController {
     if (key === this.watchingKey) return;
     this.watchingKey = key;
     void this.bridge.setWatchingChat(id).catch(() => {});
+  }
+  private supportsAttachmentImports(): boolean {
+    return Boolean(this.bridge.setAttachmentScope && this.bridge.onAttachmentImport && this.bridge.releaseAttachments && this.bridge.sendAttachments);
+  }
+  private draftAttachmentScope(): string | null {
+    if (!this.supportsAttachmentImports() || this.disposed || this.demo || this.status.status !== "connected" || !this.model.hasIdentity) return null;
+    const sending = this.sendingAttachmentScope;
+    if (sending && sending.generation === this.generation && sending.accountEpoch === this.accountEpoch && sending.endpoint === this.status.endpoint && sending.authMode === this.status.authMode) return sending.scope;
+    if (!this.activeId && (!this.selectedBot || !this.model.bots.has(this.selectedBot))) return null;
+    const scope = `g${this.generation}:a${this.accountEpoch}:n${this.navigation}`;
+    return this.synchronized && !this.loading || this.attachmentScope === scope ? scope : null;
+  }
+  private syncAttachmentScope(): void {
+    if (!this.supportsAttachmentImports()) return;
+    const scope = this.draftAttachmentScope();
+    if (scope === this.attachmentScope) return;
+    this.attachmentScope = scope;
+    this.attachmentScopeFailed = false;
+    void this.bridge.setAttachmentScope!(scope).catch(() => {
+      if (this.disposed || this.attachmentScope !== scope) return;
+      this.attachmentScopeFailed = true;
+      this.error = "无法启用当前草稿的附件导入，请重新连接后重试。";
+      this.emit();
+    });
+  }
+  private receiveAttachmentImport(event: AttachmentImportEvent): void {
+    if (!event || typeof event !== "object") return;
+    const files = Array.isArray(event.attachments) ? event.attachments : [];
+    if (this.disposed || this.sending || this.loading || !this.synchronized || this.attachmentScopeFailed || typeof event.scope !== "string" || event.scope !== this.attachmentScope || event.scope !== this.draftAttachmentScope()) {
+      this.releaseUnusedAttachments(files);
+      return;
+    }
+    this.mergeAttachments(files, event.duplicates, event.error);
+    this.emit();
   }
   private avatarScope(): string {
     return JSON.stringify([this.status.endpoint, this.generation, this.accountEpoch, this.avatarEpoch, this.model.identityId]);
@@ -396,6 +434,7 @@ export class LorcaController {
           : this.status.detail;
     return {
       draftScope: this.accountEpoch,
+      localGroupNamespace: this.synchronized && this.status.status === "connected" && this.model.hasIdentity && this.model.identityId ? JSON.stringify([this.status.endpoint, this.model.identityId]) : undefined,
       runnerSummary: this.runnerSummary(chat),
       runtimeSettings: this.runtimeSettings ?? undefined,
       settingsLoading: this.settingsLoading,
@@ -409,6 +448,7 @@ export class LorcaController {
       conversations: [...this.model.chats.values()]
         .map((c): LorcaConversation => ({
           id: c.id,
+          kind: c.kind === "group" ? "group" as const : c.kind === "dm" ? "dm" as const : undefined,
           avatars: c.bot_ids.flatMap(id => {
             const appearance = this.appearance(id);
             return appearance ? [appearance] : [];
@@ -439,6 +479,7 @@ export class LorcaController {
         id: b.id,
         label: b.name,
         appearance: this.appearance(b.id),
+        status: [...this.model.chats.values()].some(c => c.messages.some(m => m.author.bot_id === b.id && ((m.body.kind === "permission" && m.body.decision === "pending") || (m.body.kind === "tool" && m.body.run?.state === "asking" && m.state !== "failed" && !m.error && !m.body.is_error)))) ? "waiting" as const : [...this.model.turns.values()].some(t => t.bot_id === b.id) ? "running" as const : undefined,
       })),
       selectedAgentId: this.selectedBot,
       busy: Boolean(chat && isRunning(this.model, chat.id)),
@@ -466,6 +507,8 @@ export class LorcaController {
       this.bridge.onEvent((event) => this.receive(event)),
       this.bridge.onStatus((status) => this.receiveStatus(status)),
     );
+    if (this.supportsAttachmentImports()) this.unsubscribers.push(this.bridge.onAttachmentImport!(event => this.receiveAttachmentImport(event)));
+    this.syncAttachmentScope();
     try {
       const status = await this.bridge.getStatus();
       if (this.disposed) return;
@@ -478,6 +521,8 @@ export class LorcaController {
   }
   dispose(): void {
     this.disposed = true;
+    this.navigation++;
+    this.syncAttachmentScope();
     this.visibleChatId = null;
     this.syncWatching();
     this.clearAvatars();
@@ -491,7 +536,7 @@ export class LorcaController {
   }
   private receiveStatus(status: BridgeStatus): void {
     if (this.disposed) return;
-    const newSession = status.generation !== this.generation || status.endpoint !== this.status.endpoint;
+    const newSession = status.generation !== this.generation || status.endpoint !== this.status.endpoint || status.authMode !== this.status.authMode;
     const becameConnected =
       status.status === "connected" && this.status.status !== "connected";
     this.status = status;
@@ -506,6 +551,7 @@ export class LorcaController {
       this.resetOlder();
     }
     if (newSession) {
+      this.navigation++;
       if (this.model.version && !this.model.identityId) {
         this.clearSettings();
         this.accountEpoch++;
@@ -573,10 +619,15 @@ export class LorcaController {
     return false;
   }
   private reconcileSelection(): void {
-    if (this.activeId && !this.model.chats.has(this.activeId))
+    if (this.activeId && !this.model.chats.has(this.activeId)) {
+      this.navigation++;
+      this.clearAttachments();
       this.activeId = null;
-    if (!this.selectedBot || !this.model.bots.has(this.selectedBot))
+    }
+    if (!this.selectedBot || !this.model.bots.has(this.selectedBot)) {
+      if (!this.activeId && this.selectedBot) { this.navigation++; this.clearAttachments(); }
       this.selectedBot = this.model.bots.keys().next().value ?? null;
+    }
   }
   private refreshTask: Promise<void> | null = null;
   refresh(): Promise<void> {
@@ -655,12 +706,14 @@ export class LorcaController {
     const perform = async () => {
       this.requireReady();
       if (!text.trim() && !this.pendingAttachments.length) return;
-      this.sending = true;
-      this.emit();
+      if (this.pendingAttachments.length && !this.bridge.sendAttachments) throw new Error("此连接不支持发送附件，请移除附件后重试。");
+      const selected = this.pendingAttachments.slice();
+      if (selected.length && this.attachmentScope) this.sendingAttachmentScope = { scope: this.attachmentScope, generation: this.generation, accountEpoch: this.accountEpoch, endpoint: this.status.endpoint, authMode: this.status.authMode };
       const generation = this.generation,
         accountEpoch = this.accountEpoch;
-      const selected = this.pendingAttachments.slice();
       this.sendingAttachmentIds = new Set(selected.map(file => file.id));
+      this.sending = true;
+      this.emit();
       try {
         let chatId = this.activeId;
         if (!chatId) {
@@ -734,6 +787,7 @@ export class LorcaController {
           };
         sent = { chatId };
       } finally {
+        this.sendingAttachmentScope = null;
         this.sendingAttachmentIds.clear();
         this.releaseAttachments(selected.filter(file => !this.pendingAttachments.some(pending => pending.id === file.id)));
         this.sending = false;
@@ -762,8 +816,40 @@ export class LorcaController {
     }
   }
   private releaseAttachments(files: PickedAttachment[]): void {
-    const ids = files.filter(file => !this.sendingAttachmentIds.has(file.id)).map(file => file.id);
+    const ids = [...new Set(files.filter(file => file && typeof file.id === "string" && file.id.length > 0 && file.id.length <= 256 && !/[\0\r\n]/.test(file.id) && !this.sendingAttachmentIds.has(file.id)).map(file => file.id))];
     if (ids.length && this.bridge.releaseAttachments) void this.bridge.releaseAttachments(ids).catch(() => {});
+  }
+  private releaseUnusedAttachments(files: PickedAttachment[]): void {
+    const retained = new Set(this.pendingAttachments.map(file => file.id));
+    this.releaseAttachments(files.filter(file => file && !retained.has(file.id)));
+  }
+  private mergeAttachments(files: PickedAttachment[], duplicateCount = 0, error?: string): void {
+    const ids = new Set(this.pendingAttachments.map(file => file.id));
+    let duplicates = Number.isSafeInteger(duplicateCount) && duplicateCount >= 0 ? Math.min(duplicateCount, 10000) : 0;
+    let invalid = 0, overflow = 0;
+    const rejected: PickedAttachment[] = [];
+    for (const file of files) {
+      if (!file || typeof file.id !== "string" || !file.id.trim() || file.id.length > 256 || /[\0\r\n]/.test(file.id) || typeof file.name !== "string" || !file.name.trim() || file.name.length > 1024 || /[\0\r\n]/.test(file.name)) {
+        invalid++;
+        rejected.push(file);
+        continue;
+      }
+      if (ids.has(file.id)) { duplicates++; continue; }
+      if (this.pendingAttachments.length >= 10) { overflow++; rejected.push(file); continue; }
+      const selected: PickedAttachment = { id: file.id, name: file.name };
+      if (typeof file.size === "number" && Number.isSafeInteger(file.size) && file.size >= 0 && file.size <= 100 * 1024 * 1024) selected.size = file.size;
+      if (typeof file.mime === "string" && file.mime.length <= 128 && !/[\0\r\n]/.test(file.mime)) selected.mime = file.mime;
+      if (typeof file.previewUrl === "string" && file.previewUrl.startsWith("blob:") && file.previewUrl.length <= 2048 && !/[\0\r\n]/.test(file.previewUrl)) selected.previewUrl = file.previewUrl;
+      ids.add(file.id);
+      this.pendingAttachments = [...this.pendingAttachments, selected];
+    }
+    this.releaseUnusedAttachments(rejected);
+    this.error = [
+      typeof error === "string" && error ? error.slice(0, 2048) : null,
+      duplicates ? `已跳过 ${duplicates} 个重复附件。` : null,
+      overflow ? `附件最多 10 个，已忽略 ${overflow} 个超出数量的附件。` : null,
+      invalid ? "部分附件信息无效，已忽略，请重新选择。" : null,
+    ].filter(Boolean).join(" ") || null;
   }
   private clearAttachments(): void {
     const files = this.pendingAttachments;
@@ -890,8 +976,19 @@ export class LorcaController {
       this.syncAvatars(false, true);
       this.emit();
     },
+    onOpenAgentChat: (id) => {
+      if (this.disposed || this.sending || !this.model.bots.has(id)) return;
+      const existing = [...this.model.chats.values()].find(chat => chat.kind === "dm" && chat.bot_ids.length === 1 && chat.bot_ids[0] === id);
+      if (existing) {
+        if (this.activeId !== existing.id) this.actions.onSelectConversation(existing.id);
+      } else if (this.activeId !== null || this.selectedBot !== id) {
+        this.actions.onNewConversation();
+        this.actions.onSelectAgent(id);
+      }
+    },
     onSelectAgent: (id) => {
       if (!this.sending && this.model.bots.has(id)) {
+        if (!this.activeId && id !== this.selectedBot) { this.navigation++; this.clearAttachments(); }
         this.selectedBot = id;
         this.syncAvatars(false, true);
         this.emit();
@@ -1002,7 +1099,9 @@ export class LorcaController {
       }
     },
     onReconnect: () => {
+      this.navigation++;
       this.clearAttachments();
+      this.syncAttachmentScope();
       void this.run(async () => {
         const generation = this.generation;
         const status = await this.bridge.connect(this.status.endpoint);
@@ -1017,6 +1116,8 @@ export class LorcaController {
     onPickAttachments: () => {
       void this.unique("pick-attachments", async () => {
         this.requireReady();
+        if (this.sending) throw new Error("请等待当前消息发送完成后再添加附件。");
+        if (!this.bridge.pickAttachments || !this.bridge.sendAttachments) throw new Error("此连接不支持添加附件。");
         const generation = this.generation,
           navigation = this.navigation,
           accountEpoch = this.accountEpoch;
@@ -1024,14 +1125,14 @@ export class LorcaController {
           const picked = await this.bridge.pickAttachments();
           if (
             !this.disposed &&
+            !this.sending &&
+            this.status.status === "connected" &&
             generation === this.generation &&
             navigation === this.navigation &&
             accountEpoch === this.accountEpoch
           ) {
-            const combined = [...this.pendingAttachments, ...picked];
-            this.pendingAttachments = combined.slice(0, 10);
-            this.releaseAttachments(combined.slice(10));
-          } else this.releaseAttachments(picked);
+            this.mergeAttachments(picked);
+          } else this.releaseUnusedAttachments(picked);
         }
       });
     },

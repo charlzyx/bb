@@ -2,6 +2,14 @@
 
 Verified on 2026-10-10. This is an experimental client, not a packaged release.
 
+## Local groups, searchable agent picker and attachment inputs
+
+The local grouping tree supports agents and existing group chats with distinct typed IDs, one classification per entity, up to two primary agents, collapse/search, explicit edits and account-isolated persistence. Group edits do not alter daemon membership or permissions. Reopening the current agent is idempotent and preserves draft attachments. The new-chat picker uses the shared BB Popover with avatars and search; established chats do not show a redundant recipient control.
+
+The final batch, including bounded LAN pairing compatibility, passed 537 local tests, TypeScript, build and lint. Independent focused review passed 52 tests. macOS isolated preflight passed the attachment browser surface suite and full real-Electron attachment suite, including trusted File drag, previews, deduplication, revoke/remove, size limits, rejected outside drop, navigation cleanup and explicit synthetic send. An explicitly authorized self-created PNG was placed on the macOS clipboard and pasted with real Cmd+V: trusted paste, preview and removal passed with zero messages sent. This does not establish Finder URI-only copied-file support. Clipboard tests do not inspect the prior user clipboard.
+
+The macOS preflight passed complete light/dark group and searchable-picker interactions, keyboard/IME behavior, short-window scrolling, account isolation, and the full existing browser suite with no console errors. Focus tracing confirmed the dependency restores focus after an asynchronous unmount task; tests now wait at most one second for the exact expected element while preserving the assertion. Two stale selectors were corrected during this preflight, before CI. Exact-commit CI is the remaining publication check. Bounded LAN pairing compatibility separately passed 27 native tests and 44 independent bridge/pairing checks; no real pairing was attempted. No production app was replaced during preflight, and no real user account, pairing or model service was used.
+
 ## Device pairing, settings scope and sidebar footer follow-up
 
 This follow-up aligns the existing settings controls with the official groups: General, Providers, Automatic review, Plugins, Agents, Devices and Advanced. Agent/plugin/device views share a read-only device selection. Selecting a device does not reassign an agent. Phones and unknown device roles cannot be used as MCP runners; the native inventory supports an explicit device-only read that does not issue `mcp.list`. Provider credentials and automatic-review policy remain account-wide.

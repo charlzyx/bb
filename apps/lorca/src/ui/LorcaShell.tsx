@@ -1,3 +1,5 @@
+import { AgentPicker } from "./AgentPicker";
+import { AgentGroupTree } from "./AgentGroupTree";
 import { zhCN } from "../locale/zh-CN";
 import {
   useEffect,
@@ -22,7 +24,9 @@ import { Transcript } from "./Transcript";
 import { DotsMark } from "./DotsMark";
 import { ConnectionLabel, ConnectionStatusPopover } from "./ConnectionStatusPopover";
 import { ComposerRunnerStatus } from "./ComposerRunnerStatus";
-import { Avatar, ConversationAvatars } from "./Avatar";
+import { PendingAttachments } from "./PendingAttachments";
+import { insertAttachmentText } from "./attachment-input";
+import { ConversationAvatars } from "./Avatar";
 import { settleSubmittedDraft } from "./drafts";
 import { hasTranscriptLayoutUpdate } from "./transcript-layout";
 import { readContentWidthPreference, writeContentWidthPreference, type ContentWidth } from "./content-width";
@@ -122,6 +126,21 @@ function Sidebar({
         </div>
       </div>
       <nav className="lorca-chat-list" aria-label={zhCN.chat.chats}>
+        <AgentGroupTree
+          key={state.localGroupNamespace ?? "unavailable"}
+          namespace={state.localGroupNamespace}
+          agents={state.agents}
+          conversations={state.conversations}
+          selectedConversationId={state.activeConversationId}
+          onSelectConversation={(id) => { actions.onSelectConversation(id); onNavigate(); }}
+          search={search}
+          selectedAgentId={state.selectedAgentId}
+          onSelectAgent={(id) => {
+            if (actions.onOpenAgentChat) actions.onOpenAgentChat(id);
+            else { actions.onNewConversation(); actions.onSelectAgent(id); }
+            onNavigate();
+          }}
+        />
         {groups.map(([label, conversations]) => (
           <section className="lorca-chat-group" key={label}>
             <h2 className={CHROME_SECTION_LABEL_CLASS}>{label}</h2>
@@ -163,7 +182,7 @@ function Sidebar({
             ))}
           </section>
         ))}
-        {!filtered.length && (
+        {!search && !state.conversations.length && !state.agents.length && (
           <div className="lorca-sidebar-empty">
             <Icon name={search ? "Search" : "MessageSquare"} />
             <p>
@@ -291,6 +310,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
   const draftKey = state.activeConversationId ?? "__new__";
   const draft = drafts[draftKey] ?? "";
   const canInteract = state.demo || state.connection.status === "connected";
+  const acceptsAttachmentInput = Boolean(state.attachmentsEnabled && canInteract && !state.loading && !sending && !settingsOpen && !state.demo);
   const hasAttachments = Boolean(state.pendingAttachments?.length);
   const activeConversation = state.conversations.find(
     (conversation) => conversation.id === state.activeConversationId,
@@ -312,6 +332,21 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
+
+  useEffect(() => {
+    const bridge = window.lorca;
+    if (!acceptsAttachmentInput || !bridge?.onAttachmentText) return;
+    const conversation = state.activeConversationId;
+    return bridge.onAttachmentText((text) => {
+      const input = composerRef.current;
+      if (!input || !text || currentConversation.current !== conversation || input.closest("[data-attachment-composer]")?.getAttribute("data-attachment-disabled") === "true") return;
+      const inserted = insertAttachmentText(input.value, text, input.selectionStart, input.selectionEnd);
+      input.value = inserted.value;
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(inserted.caret, inserted.caret);
+      setDrafts((current) => ({ ...current, [draftKey]: inserted.value }));
+    });
+  }, [acceptsAttachmentInput, draftKey, state.activeConversationId]);
 
   useEffect(() => {
     onConversationVisibility?.(visibleChatId);
@@ -668,34 +703,14 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
             )}
             <form
               className={`lorca-composer${state.busy ? " lorca-composer-busy" : ""}`}
+              data-attachment-composer=""
+              data-attachment-disabled={!acceptsAttachmentInput ? "true" : undefined}
               onSubmit={(event) => void send(event)}
             >
               <label className="sr-only" htmlFor="lorca-composer">
                 {zhCN.chat.messageDots}
               </label>
-              {hasAttachments && (
-                <div className="lorca-pending-attachments">
-                  {state.pendingAttachments?.map((attachment) => (
-                    <span key={attachment.id}>
-                      <Icon name="Folder" />
-                      <span>{attachment.name}</span>
-                      {actions.onRemoveAttachment && (
-                        <button
-                          type="button"
-                          aria-label={zhCN.chat.removeAttachment(
-                            attachment.name,
-                          )}
-                          onClick={() =>
-                            actions.onRemoveAttachment?.(attachment.id)
-                          }
-                        >
-                          <Icon name="X" />
-                        </button>
-                      )}
-                    </span>
-                  ))}
-                </div>
-              )}
+              {hasAttachments && <PendingAttachments attachments={state.pendingAttachments ?? []} disabled={sending} onRemove={actions.onRemoveAttachment} />}
               <textarea
                 id="lorca-composer"
                 ref={composerRef}
@@ -748,33 +763,10 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                       </svg>
                     </Button>
                   )}
-                  {!state.activeConversationId && <div className="lorca-agent-picker">
-                    <Avatar appearance={state.agents.find((agent) => agent.id === state.selectedAgentId)?.appearance} />
-                    <select
-                      aria-label={zhCN.chat.selectBot}
-                      value={state.selectedAgentId ?? ""}
-                      onChange={(event) => {
-                        navigationRevision.current += 1;
-                        actions.onSelectAgent(event.target.value);
-                      }}
-                      disabled={
-                        sending ||
-                        state.loading ||
-                        state.busy ||
-                        !state.agents.length
-                      }
-                    >
-                      {!state.agents.length && (
-                        <option value="">{zhCN.chat.noBots}</option>
-                      )}
-                      {state.agents.map((agent) => (
-                        <option key={agent.id} value={agent.id}>
-                          {agent.label}
-                        </option>
-                      ))}
-                    </select>
-                    <Icon name="ChevronDown" />
-                  </div>}
+                  {!state.activeConversationId && <AgentPicker agents={state.agents} selectedAgentId={state.selectedAgentId} onSelectAgent={(id) => {
+                    navigationRevision.current += 1;
+                    actions.onSelectAgent(id);
+                  }} disabled={sending || state.loading || state.busy} />}
                   <ComposerRunnerStatus summary={state.runnerSummary} />
                 </div>
                 <div className="lorca-send-actions">

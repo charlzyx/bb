@@ -3,6 +3,8 @@ import type { PairingDisabledReason } from "../ui/types";
 export const pairingDisabledReasonsZh: Record<PairingDisabledReason, string> = {
   not_connected: "尚未连接本地服务，无法打开配对流程。",
   token_auth_required: "dots 配对入口要求本地令牌认证，不允许本地兼容连接（不校验令牌）。这是客户端限制，不代表本地服务不支持配对。",
+  local_transport_required: "配对须通过本机回环连接打开，可使用本地令牌认证或你明确选择的本地兼容连接。",
+  relay_transport_required: "配对支持 HTTPS 中继，或明确的本机／私网 IP HTTP 中继；不接受公网 HTTP 或未验证的 HTTP 域名。",
   identity_required: "此本地服务尚无账号身份，不能为该账号生成邀请；可选择加入已有账号。",
   already_has_identity: "此本地服务已有账号身份，不能通过加入流程覆盖现有身份。",
   identity_fields_missing: "本地服务未完整报告配对所需的账号或本机身份字段，请先核对身份状态。",

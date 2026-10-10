@@ -122,19 +122,19 @@ test('preload sets only the native layout marker after DOM readiness without add
   const source = await readFile(new URL('../native/preload.cjs', import.meta.url), 'utf8');
   for (const platform of ['darwin', 'linux', 'win32']) {
     const dataset: Record<string, string> = {};
-    let ready: (() => void) | undefined;
+    const ready: (() => void)[] = [];
     let api: Record<string, unknown> | undefined;
     runInNewContext(source, {
       process: { platform }, document: { documentElement: { dataset } },
-      window: { addEventListener: (event: string, callback: () => void, options: { once: boolean }) => { assert.equal(event, 'DOMContentLoaded'); assert.equal(options.once, true); ready = callback; } },
+      window: { addEventListener: (event: string, callback: () => void, options: { once: boolean }) => { if (event === 'DOMContentLoaded') { assert.equal(options.once, true); ready.push(callback); } } },
       require: (name: string) => {
         assert.equal(name, 'electron');
         return { contextBridge: { exposeInMainWorld: (name: string, value: typeof api) => { assert.equal(name, 'lorca'); api = value; } }, ipcRenderer: {} };
       },
     });
-    assert.deepEqual(dataset, {}); assert.ok(ready); ready();
+    assert.deepEqual(dataset, {}); assert.equal(ready.length, 2); for (const callback of ready) callback();
     assert.deepEqual(dataset, { lorcaPlatform: platform }); assert.ok(api); assert.equal(Object.isFrozen(api), true);
-    assert.deepEqual(Object.keys(api).sort(), ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'openPairing', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setWatchingChat', 'settingsAction']);
+    assert.deepEqual(Object.keys(api).sort(), ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onAttachmentImport', 'onAttachmentText', 'onEvent', 'onStatus', 'openPairing', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setAttachmentScope', 'setWatchingChat', 'settingsAction']);
   }
 });
 
