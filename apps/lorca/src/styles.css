@@ -7,7 +7,7 @@
     "Inter Variable", Inter, "PingFang SC", "Microsoft YaHei",
     "Noto Sans CJK SC", sans-serif;
   --lorca-reading-width: 760px;
-  --lorca-sidebar-width: 252px;
+  --lorca-sidebar-width: 240px;
 }
 
 html,
@@ -2291,4 +2291,200 @@ select:focus-visible {
 :where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar-stack .lorca-avatar + .lorca-avatar {
   margin-left: -10px;
   box-shadow: 0 0 0 2px var(--background);
+}
+
+@media (min-width: 768px) {
+  :where(.lorca-app) .lorca-sidebar,
+  :where(.lorca-app) .lorca-sidebar-footer,
+  :where(.lorca-app) .lorca-header,
+  :where(.lorca-app) .lorca-demo-banner {
+    border: 0;
+  }
+  :where(.lorca-app) .lorca-brand {
+    height: 48px;
+    padding: 0 20px;
+  }
+  :where(.lorca-app) .lorca-new-chat {
+    height: 36px;
+    border: 0;
+    background: var(--state-hover);
+    box-shadow: none;
+  }
+  :where(.lorca-app) .lorca-new-chat:hover {
+    background: var(--state-active);
+  }
+  :where(.lorca-app) .lorca-search {
+    height: 36px;
+    margin: 4px 0 16px;
+  }
+  :where(.lorca-app) .lorca-chat-group {
+    margin-bottom: 18px;
+  }
+  :where(.lorca-app) .lorca-chat-item {
+    padding: 7px 10px;
+  }
+  :where(.lorca-app) .lorca-workspace-icon {
+    border: 0;
+    background: var(--state-hover);
+  }
+  :where(.lorca-app) .lorca-header {
+    height: 48px;
+    min-height: 48px;
+    padding: 0 max(20px, calc((100% - var(--lorca-reading-width)) / 2));
+  }
+  :where(.lorca-app) .lorca-header-title {
+    gap: 10px;
+  }
+  :where(.lorca-app) .lorca-demo-banner {
+    padding: 5px 18px;
+    background: transparent;
+  }
+  :where(.lorca-app) .lorca-scroll {
+    padding: 0 20px;
+  }
+  :where(.lorca-app) .lorca-transcript {
+    width: 100%;
+    margin: 0 auto;
+    padding: 20px 0 24px;
+  }
+  :where(.lorca-app) .lorca-timeline {
+    gap: 18px;
+  }
+  :where(.lorca-app) .lorca-message-author {
+    margin-bottom: 10px;
+  }
+  :where(.lorca-app) .lorca-user-message {
+    padding: 4px 0 6px;
+  }
+  :where(.lorca-app) .lorca-user-message > div {
+    padding: 11px 17px;
+  }
+  :where(.lorca-app) .lorca-empty-state {
+    padding: 28px 24px 40px;
+  }
+  :where(.lorca-app) .lorca-assistant-mark-large {
+    margin-bottom: 24px;
+  }
+  :where(.lorca-app) .lorca-empty-state > p {
+    margin: 16px 0 24px;
+  }
+  :where(.lorca-app) .lorca-suggestions button {
+    border: 0;
+    background: var(--surface-raised);
+  }
+  :where(.lorca-app) .lorca-suggestions button:hover {
+    background: var(--state-hover);
+  }
+  :where(.lorca-app) .lorca-tool-card,
+  :where(.lorca-app) .lorca-code-block,
+  :where(.lorca-app) .lorca-queue {
+    border: 0;
+    background: var(--surface-raised);
+  }
+  :where(.lorca-app) .lorca-code-heading,
+  :where(.lorca-app) .lorca-tool-body {
+    border: 0;
+  }
+  :where(.lorca-app) .lorca-composer-area {
+    padding: 0 20px 12px;
+  }
+  :where(.lorca-app) .lorca-composer {
+    padding: 14px 16px 10px;
+    border: 0;
+    background: var(--surface-recessed);
+    box-shadow: none;
+  }
+  :where(.lorca-app) .lorca-composer:focus-within {
+    box-shadow: 0 0 0 2px var(--ring);
+  }
+  :where(.lorca-app) .lorca-composer textarea {
+    min-height: 52px;
+  }
+  :where(.lorca-app) .lorca-composer-footnote {
+    padding-top: 8px;
+  }
+  :where(.lorca-settings-desktop) {
+    grid-template-columns: var(--lorca-sidebar-width) minmax(0, 1fr);
+  }
+  :where(.lorca-settings-desktop) .lorca-settings-sidebar {
+    gap: 16px;
+    padding-top: 12px;
+    border: 0;
+  }
+  :where(.lorca-settings-desktop) .lorca-settings-sidebar > footer {
+    border: 0;
+  }
+  :where(.lorca-settings-desktop) .lorca-settings-page-header {
+    width: 100%;
+    max-width: 840px;
+    margin: 0 auto;
+    padding: 20px 32px 16px;
+    border: 0;
+  }
+  :where(.lorca-settings-desktop) .lorca-settings-page-header h1 {
+    margin: 4px 0 6px;
+    font-size: var(--text-xl);
+  }
+  :where(.lorca-settings-desktop) .lorca-settings-reading-width {
+    padding: 8px 32px 28px;
+  }
+  :where(.lorca-settings-desktop) .lorca-settings-section-content,
+  :where(.lorca-settings-desktop) .lorca-auto-review-panel {
+    gap: 20px;
+  }
+  :where(.lorca-settings-desktop) .lorca-settings-preview-label {
+    padding: 8px 12px;
+    margin-bottom: 16px;
+    border: 0;
+  }
+  :where(.lorca-settings-desktop) .lorca-settings-section-content section > .border {
+    border: 0;
+    background: var(--surface-raised);
+  }
+  :where(.lorca-settings-desktop) .lorca-settings-section-content .divide-y > * {
+    border: 0;
+  }
+  :where(.lorca-settings-desktop) .lorca-theme-switch,
+  :where(.lorca-settings-desktop) .lorca-runtime-device-icon,
+  :where(.lorca-settings-desktop) .lorca-connection-explanation,
+  :where(.lorca-settings-desktop) .lorca-auto-review-actions {
+    border: 0;
+  }
+}
+
+:where(html[data-lorca-platform="darwin"] .lorca-app) .lorca-header,
+:where(html[data-lorca-platform="darwin"] .lorca-app) .lorca-sidebar .lorca-brand,
+:where(html[data-lorca-platform="darwin"] .lorca-settings-desktop) .lorca-settings-page-header {
+  -webkit-app-region: drag;
+}
+:where(html[data-lorca-platform="darwin"] .lorca-app) .lorca-header-title,
+:where(html[data-lorca-platform="darwin"] .lorca-app) .lorca-header-actions,
+:where(html[data-lorca-platform="darwin"] .lorca-app, html[data-lorca-platform="darwin"] .lorca-settings-desktop)
+  :is(button, input, textarea, select, a, summary) {
+  -webkit-app-region: no-drag;
+}
+:where(html[data-lorca-platform="darwin"] .lorca-app) .lorca-sidebar .lorca-brand {
+  height: 48px;
+  padding: 0 12px 0 104px;
+}
+:where(html[data-lorca-platform="darwin"] .lorca-settings-desktop) .lorca-settings-sidebar {
+  padding-top: 44px;
+}
+:where(html[data-lorca-platform="darwin"] .lorca-settings-desktop) .lorca-settings-sidebar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--lorca-sidebar-width);
+  height: 40px;
+  -webkit-app-region: drag;
+}
+:where(html[data-lorca-platform="darwin"] .lorca-app) .lorca-skip-link {
+  top: 44px;
+}
+
+@media (max-width: 767px) {
+  :where(html[data-lorca-platform="darwin"] .lorca-app) .lorca-header {
+    padding-left: 88px;
+  }
 }

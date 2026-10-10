@@ -51,6 +51,7 @@ test('secure editor binds each input session to its exact window/frame and fixed
   assert.equal(child.destroyed, false);
   assert.deepEqual(ctx.invoke('init', child), spec);
   const preferences = child.options.webPreferences as Record<string, unknown>;
+  for (const key of ['frame', 'titleBarStyle', 'trafficLightPosition', 'transparent']) assert.equal(child.options[key], undefined, key);
   assert.equal(preferences.sandbox, true); assert.equal(preferences.contextIsolation, true); assert.equal(preferences.nodeIntegration, false);
   assert.match(String(preferences.partition), /^dots-settings-/); assert.equal(String(preferences.partition).startsWith('persist:'), false);
   const session = child.webContents.session;

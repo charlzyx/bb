@@ -168,6 +168,7 @@ export interface LorcaShellState {
 }
 
 export interface LorcaShellActions {
+  onConversationVisibility?: (id: string | null) => void;
   onSelectConversation: (id: string) => void;
   onNewConversation: () => void;
   onSend: (

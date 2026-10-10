@@ -1,8 +1,17 @@
 # Lorca local WebSocket contract for BB
 
-Acceptance target: upstream [`egoist/lorca` main at `b975eb6056b01bf7f2058b5c5e9ffc22e9930eea`](https://github.com/egoist/lorca/commit/b975eb6056b01bf7f2058b5c5e9ffc22e9930eea), observed and source-reviewed on 2026-10-10 (commit timestamp 2026-10-09T23:23:54Z). Its [workspace package version is 0.1.11](https://github.com/egoist/lorca/blob/b975eb6056b01bf7f2058b5c5e9ffc22e9930eea/Cargo.toml#L14-L15). Paths/line numbers below refer to this pinned commit unless explicitly marked historical. Acceptance is upstream-only; a version string alone does not identify another build's source or capabilities.
+Acceptance target: upstream [`egoist/lorca` main at `3cc900f521662e9cc039d85a1099767b16ef91a4`](https://github.com/egoist/lorca/commit/3cc900f521662e9cc039d85a1099767b16ef91a4), observed by `git ls-remote` and fetched on 2026-10-10 at approximately 04:16 UTC. The commit timestamp is 2026-10-10T04:10:57Z. Its [workspace package version remains 0.1.11](https://github.com/egoist/lorca/blob/3cc900f521662e9cc039d85a1099767b16ef91a4/Cargo.toml#L14-L15); the version string alone does not identify source or capabilities.
 
-The source delta from the previously inspected upstream `2e360b0611a4ddd845090b2c5802a0af421f5855` has been reviewed for the transport, chat, provider, model, MCP and auto-review interfaces used here. This is source verification, not a live-service/binary-runtime test. No live model calls, production account reads, service mutations or user-computer access were performed.
+**Source-reference convention:** the detailed contract and unqualified source line numbers below retain the previously reviewed **`b975eb6056b01bf7f2058b5c5e9ffc22e9930eea` historical baseline** (2026-10-09T23:23:54Z). They have not been mechanically relabeled as latest-source line numbers. The current-source delta, current links, implementation coverage and known gaps are in [the protocol audit](lorca-protocol-audit.md). This is source verification, not a live daemon/model/account or Mac runtime test.
+
+## Current acceptance-target delta
+
+From `b975eb6` to `3cc900f`, transport authentication, file transport, provider credentials/authentication, and the MCP JSON configuration implementation are unchanged. The chat and selected settings request shapes already used by dots remain accepted. Relevant additive changes are:
+
+- A permission card can have `tool: "secret"` and `secret: {use,site?,fields}`. Saving it uses `chats.permission` with `values`. Ordinary dots renderer RPC deliberately rejects `values`; the compatibility change disables Allow/Always for these cards and directs secret entry to Lorca, while Deny remains supported. See [latest permission dispatch](https://github.com/egoist/lorca/blob/3cc900f521662e9cc039d85a1099767b16ef91a4/crates/cli/src/api.rs#L812-L831).
+- A new `body.kind: "draft"` represents an editable email/Slack draft, with version-bound review actions. dots explicitly shows an unsupported-message notice and offers no send/approve interface for it. The bot's separate `permissions.drafts` setting defaults on; changing auto-review does not turn it off. See [draft contract](https://github.com/egoist/lorca/blob/3cc900f521662e9cc039d85a1099767b16ef91a4/docs/architecture/drafts.md).
+- Stop now also propagates to outstanding work handed off by that turn and cuts off tools that fail to finish within the grace period. Its RPC still returns null, which acknowledges the request, not universal cessation. Background commands and already-staged reviews may remain. See [current Stop semantics](https://github.com/egoist/lorca/blob/3cc900f521662e9cc039d85a1099767b16ef91a4/docs/architecture/stopping.md).
+- Additional routine triggers and Runner-owned secret management are outside dots' implemented control surface. No raw new fields, secret values or review mutation methods are automatically exposed.
 
 ## Transport and connection
 
@@ -13,9 +22,9 @@ The source delta from the previously inspected upstream `2e360b0611a4ddd845090b2
 - Events: `{event:string,data:any}` immediately after connection. RPCs execute concurrently; events and results interleave and results may arrive out of order. Maintain a pending-ID map. The transport has no global delivery sequence, message revision, resume cursor or mutation deduplication guarantee. Individual feature APIs may have their own revision checks. On disconnection reject pending calls; do not blindly replay sends/mutations. A send timeout means outcome unknown. Reconnect with fresh connection generation, read the token again, and bootstrap. Source ws.rs:120–176.
 - Server broadcast lag emits a `snapshot` event automatically. Sender output channel capacity 256. Existing native client permits 256 MiB response frames because snapshots aggregate every chat. Sources ws.rs:122,166–168; desktop/client.go:99–108.
 
-## Acceptance-target delta and scope
+## Historical `2e360b0` → `b975eb6` delta and scope
 
-The delta from `2e360b0611a4ddd845090b2c5802a0af421f5855` to the acceptance commit does not change `ws.rs`, `config.rs`, provider credential/authentication files, `plugins/mcp.rs` or `plugins/mcp_json.rs`. Existing chat, bot-setting, provider, MCP and auto-review RPC shapes used by this client remain compatible; WebSocket Bearer/Host/Origin checks remain required.
+The delta from `2e360b0611a4ddd845090b2c5802a0af421f5855` to the historical `b975eb6` baseline does not change `ws.rs`, `config.rs`, provider credential/authentication files, `plugins/mcp.rs` or `plugins/mcp_json.rs`. Existing chat, bot-setting, provider, MCP and auto-review RPC shapes used by this client remain compatible; WebSocket Bearer/Host/Origin checks remain required.
 
 Bootstrap and roster now include `shared_links` and `playbooks`. `shared_links[].url` embeds the template decryption key after `#`; never forward these unreviewed fields to the ordinary renderer. Existing native allowlisted projections omit them. Sources [`templates/links.rs:43–56`](https://github.com/egoist/lorca/blob/b975eb6056b01bf7f2058b5c5e9ffc22e9930eea/crates/cli/src/templates/links.rs#L43-L56), `app.rs:1949–1952`, `events.rs:22`.
 

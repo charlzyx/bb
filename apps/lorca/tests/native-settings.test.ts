@@ -250,3 +250,20 @@ test('failed messages retain failure status while native projection removes raw 
   assert.equal(parsed.state, 'failed');
   assert.equal(parsed.error, 'Lorca 未能完成这条消息，请检查本地运行服务');
 });
+
+test('latest upstream secret request metadata and answers cannot cross the ordinary renderer boundary', () => {
+  const message = { ...demoSnapshot.chats[0].messages[0], body: { kind: 'permission', plugin_id: 'browser', plugin_name: 'Browser', tool: 'secret', summary: 'Enter sign-in details in the native client', decision: 'pending', secret: { use: 'browser', site: secret, fields: [{ name: secret, label: secret }] }, values: { password: secret } } };
+  const result = sanitizeRendererResult('chats.send', { message });
+  assert.equal(result.message.body.tool, 'secret');
+  assert.equal(JSON.stringify(result).includes(secret), false);
+  assert.throws(() => validateRequest('chats.permission', { chat_id: 'chat-demo', message_id: 'secret-request', decision: 'allow', values: { password: secret } }), /不支持的参数/);
+  for (const method of ['secrets.list', 'secrets.set', 'secrets.delete']) assert.throws(() => validateRequest(method, {}), /不支持/);
+});
+
+test('outbound draft cards stay explicitly unsupported without exposing unreviewed draft payloads', () => {
+  const message = { ...demoSnapshot.chats[0].messages[0], body: { kind: 'draft', review_id: secret, version: 1, state: 'pending', plugin_id: 'mail', account: secret, draft: { kind: 'email', to: [secret], body: secret }, direct: true } };
+  const result = sanitizeRendererResult('chats.send', { message });
+  assert.deepEqual(result.message.body, { kind: 'draft' });
+  assert.equal(JSON.stringify(result).includes(secret), false);
+  assert.deepEqual(parseMessage(result.message).body, { kind: 'unsupported', originalKind: 'draft' });
+});

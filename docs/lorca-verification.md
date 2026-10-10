@@ -2,6 +2,16 @@
 
 Verified on 2026-10-10. This is an experimental client, not a packaged release.
 
+## Desktop density and current protocol follow-up
+
+The desktop uses a single compact 48-pixel web header and lighter, borderless content surfaces. On macOS the main window uses Electron `hiddenInset`, retains native traffic lights, and reserves their area; header whitespace is draggable while interactive controls are `no-drag`. Other platforms retain their native system window controls. The isolated secure editor keeps its native title bar and security configuration. The selected Ghost artwork is unchanged.
+
+The [current protocol audit](lorca-protocol-audit.md) pins upstream `3cc900f521662e9cc039d85a1099767b16ef91a4` and distinguishes implemented chat behavior from missing and intentionally excluded surfaces. New secret-request cards cannot offer allow/always or submit credential values; they give a native-client handoff instruction and retain denial. New outbound draft cards remain an explicit unsupported-type notice, with no send/edit approval path. Relay status now says connected rather than claiming synchronization is complete.
+
+This follow-up also fixes reused-DM draft retention, stale pagination after navigation, and active shell runs being incorrectly labeled complete. Foreground watching uses main-process focus/visibility and a validated visible chat ID; hidden/settings/background views clear watching. The daemon's watching slot is global, without a lease or per-client ownership, so concurrent clients can overwrite it. No real message, account configuration or credential was used in this cloud work.
+
+The local aggregate passes 316 deterministic tests, TypeScript, production build and lint. Independent source and focused regression review covers the watcher state machine and safe renderer boundaries. CI browser/Electron results for this follow-up are recorded by its exact commit checks. macOS native drag/traffic-light appearance still requires the separate user-computer verification; Linux browser geometry and sandbox smoke do not establish that result.
+
 ## Selected Ghost app icon
 
 The selected A / Ghost artwork replaces the native app, About and Dock icon. The sidebar, empty state, favicon and secure-settings brand use the same approved Ghost artwork; bot/user avatar semantics are unchanged. The original and seven derived sizes have recorded SHA-256 and decoded-pixel hashes; the 1024- and 32-pixel outputs match the selected preview pixel-for-pixel. The retained mask is MIT figma-squircle 1.1.0 with the preview's same parameters, described as macOS-style continuous corners rather than an Apple template. See [source, permission and reproduction](../apps/lorca/artwork/NOTICE.md).
@@ -14,7 +24,7 @@ The avatar/icon changes on [`0d6a9f7`](https://github.com/charlzyx/bb/commit/0d6
 
 The browser smoke adds desktop light/dark/group avatar views and identity/version replacement checks. The Electron smoke exercises the real native image decoder against a temporary cached PNG and verifies that synthetic embedded metadata does not reach the renderer. All of these steps actually passed in that run with `sandboxEnabled: true`. Artifact `11657692970` retains 28 synthetic PNGs for seven days. The new desktop light, dark and group avatar screenshots were downloaded and visually inspected: sidebar/header/message images agree, group stacking and person/symbol fallback are visible, and no blocking overflow was found. These fixture results do not replace the separate Mac check with its existing daemon and cached avatars.
 
-Mac measurements found the previous app icon occupied the whole canvas. The new owned four-dot mark uses a 206-pixel footprint on its 256-pixel canvas and seven ICNS resolutions from 16 through 1024. Pixel/format tests pass; actual Dock/About appearance needs a rebuilt Mac bundle. No user avatar or screenshot is committed.
+Mac measurements found the previous app icon occupied the whole canvas. The historical four-dot mark used a 206-pixel footprint on its 256-pixel canvas and seven ICNS resolutions from 16 through 1024. That mark is superseded by the selected Ghost artwork above. No user avatar or screenshot is committed.
 
 The pinned daemon returns a bot's existing single DM when the user starts chatting again. Copy now says “开始聊天” and explains history reuse; a regression confirms that the reused response does not overwrite loaded history or trigger a bot/history deletion. No additional live message was sent from this cloud task.
 

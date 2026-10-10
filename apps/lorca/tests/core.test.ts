@@ -1054,7 +1054,7 @@ test("Chinese controller labels preserve original user text, tool content, and b
     assert.equal(state.queue[0].text, "排队中的消息");
     assert.match(state.connection.detail ?? "", /中继离线/);
     bridge.event({ event: "relay.status", data: { connected: true } });
-    assert.match(controller.getSnapshot().connection.detail ?? "", /中继已同步/);
+    assert.match(controller.getSnapshot().connection.detail ?? "", /中继已连接/);
     bridge.status = { ...bridge.status, authMode: "legacy" };
     bridge.change(bridge.status.generation);
     assert.equal(controller.getSnapshot().connection.detail, "dots · 本地兼容连接（不校验令牌）");
@@ -1139,4 +1139,70 @@ test("starting a bot DM reuses the daemon's existing conversation without replac
     assert.deepEqual(bridge.calls.filter(call => call.method === "chats.send").map(call => call.params.chat_id), ["chat-demo"]);
     assert.ok(!bridge.calls.some(call => ["chats.delete", "bots.create", "bots.delete"].includes(call.method)));
   } finally { controller.dispose(); }
+});
+
+
+test("secret permission requests never expose allow actions or submit missing credential values", async () => {
+  const bridge = new FakeBridge(), controller = new LorcaController(bridge);
+  bridge.handler = async (method) => {
+    if (method === "bootstrap") {
+      const source = structuredClone(demoSnapshot);
+      return { ...source, chats: [{ ...source.chats[0], messages: [{ ...source.chats[0].messages[0], id: "secret-card", body: { kind: "permission", plugin_id: "computer", plugin_name: "Browser", tool: "secret", summary: "Sign in", decision: "pending", secret: { use: "browser", fields: [{ name: "password", label: "Password" }] } } }] }] };
+    }
+    return { answered: true };
+  };
+  try {
+    await controller.start(); await tick();
+    controller.actions.onSelectConversation("chat-demo");
+    const card = controller.getSnapshot().messages.find(row => row.id === "secret-card");
+    assert.ok(card?.kind === "approval");
+    assert.equal(card.canAllow, false);
+    assert.equal(card.canAlways, false);
+    assert.match(card.detail, /安全输入凭据/);
+    for (const decision of ["allow", "always"] as const) {
+      controller.actions.onApproval("secret-card", decision); await tick();
+      assert.equal(bridge.calls.filter(call => call.method === "chats.permission").length, 0);
+    }
+    controller.actions.onApproval("secret-card", "deny"); await tick();
+    assert.deepEqual(bridge.calls.filter(call => call.method === "chats.permission").map(call => call.params), [{ chat_id: "chat-demo", message_id: "secret-card", decision: "deny" }]);
+  } finally { controller.dispose(); }
+});
+
+
+test("shell waiting and running states remain active even when the enclosing tool flag is false", async () => {
+  const bridge = new FakeBridge(), controller = new LorcaController(bridge);
+  bridge.handler = async () => ({ ...structuredClone(demoSnapshot), chats: [{ ...demoSnapshot.chats[0], messages: ["waiting", "running", "checking", "failed", "complete"].map((state) => ({ ...demoSnapshot.chats[0].messages[0], id: state, body: { kind: "tool", name: "bash", summary: "Shell command", detail: "", is_running: false, run: { state, command: "echo fixture" } } })) }] });
+  try {
+    await controller.start(); await tick(); controller.actions.onSelectConversation("chat-demo");
+    assert.deepEqual(controller.getSnapshot().messages.map(row => row.kind === "tool" ? row.status : row.kind), ["running", "running", "running", "error", "complete"]);
+  } finally { controller.dispose(); }
+});
+
+
+test("watching reports only a ready visible selected chat and clears on navigation or disposal", async () => {
+  const watched: (string | null)[] = [];
+  const bridge = new FakeBridge();
+  const controller = new LorcaController(Object.assign(bridge, { setWatchingChat: async (id: string | null) => { watched.push(id); } }));
+  try {
+    await controller.start(); await tick();
+    controller.actions.onSelectConversation("chat-demo");
+    assert.equal(watched.at(-1), null);
+    controller.actions.onConversationVisibility?.("unknown");
+    assert.equal(watched.at(-1), null);
+    controller.actions.onConversationVisibility?.("chat-demo");
+    assert.equal(watched.at(-1), "chat-demo");
+    const count = watched.length;
+    controller.actions.onConversationVisibility?.("chat-demo");
+    assert.equal(watched.length, count);
+    controller.actions.onConversationVisibility?.(null);
+    assert.equal(watched.at(-1), null);
+    controller.actions.onConversationVisibility?.("chat-demo");
+    controller.actions.onNewConversation();
+    assert.equal(watched.at(-1), null);
+    controller.actions.onSelectConversation("chat-demo");
+    controller.actions.onConversationVisibility?.("chat-demo");
+    bridge.change(2, "connecting");
+    assert.equal(watched.at(-1), null);
+  } finally { controller.dispose(); }
+  assert.equal(watched.at(-1), null);
 });

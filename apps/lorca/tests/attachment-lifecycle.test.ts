@@ -141,7 +141,7 @@ test("failed chat creation keeps the still-visible selected file usable", async 
   assert.equal(bridge.released.flat().includes(selected.id), false);
 });
 
-test("main IPC preserves files on a same-endpoint save, clears actual reconnects, and rejects forged release sources", async context => {
+for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native window controls and fenced attachment IPC on ${platform}`, async context => {
   const { file } = await fixture(context);
   const handlers = new Map<string, (...args: any[]) => any>();
   const actualBridge = require("../native/bridge.cjs");
@@ -150,8 +150,10 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
   let nativeRegistry: any;
   let nativeAvatars: any;
   let nativeBridge: any;
+  const nativeCalls: { method: string; params: Record<string, unknown> }[] = [];
   class NativeBridge extends EventEmitter {
     status: BridgeStatus = { status: "connected", endpoint: "ws://127.0.0.1:4862/ws", generation: 1, authMode: "token" };
+    closes = 0;
     constructor() { super(); nativeBridge = this; }
     getStatus() { return { ...this.status }; }
     async connect(value: string) {
@@ -161,8 +163,8 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
       this.emit("status", this.getStatus()); this.status.status = "connected"; this.emit("status", this.getStatus()); return this.getStatus();
     }
     async request() { return avatarSnapshot; }
-    async sendValidated(_method: string, params: Record<string, unknown>) { return { message: { id: params.message_id, chat_id: params.chat_id } }; }
-    close() {}
+    async sendValidated(method: string, params: Record<string, unknown>) { nativeCalls.push({ method, params }); return method === 'ui.watching' || method === 'chats.mark_read' ? null : { message: { id: params.message_id, chat_id: params.chat_id } }; }
+    close() { this.closes++; }
   }
   class Contents extends EventEmitter {
     mainFrame = { url: "" };
@@ -173,8 +175,14 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
   let window!: FakeWindow;
   class FakeWindow extends EventEmitter {
     webContents = new Contents();
-    constructor() { super(); window = this; }
+    focused = true;
+    visible = true;
+    minimized = false;
+    constructor(readonly options: Record<string, any>) { super(); window = this; }
     isDestroyed() { return false; }
+    isFocused() { return this.focused; }
+    isVisible() { return this.visible; }
+    isMinimized() { return this.minimized; }
     setMenuBarVisibility() {}
     async loadFile(file: string) { this.webContents.mainFrame.url = pathToFileURL(file).href; }
   }
@@ -186,7 +194,7 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
   };
   const source = await readFile(new URL("../native/main.cjs", import.meta.url), "utf8");
   runInNewContext(source, {
-    queueMicrotask, __dirname: fileURLToPath(new URL("../native", import.meta.url)), process: { env: {}, platform: "linux" },
+    queueMicrotask, __dirname: fileURLToPath(new URL("../native", import.meta.url)), process: { env: {}, platform },
     require: (name: string) => {
       if (name === "electron") return electron;
       if (name === "./bot-avatars.cjs") {
@@ -194,6 +202,7 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
         return { ...module, BotAvatars: class extends module.BotAvatars { constructor(...args: any[]) { super(...args); nativeAvatars = this; } } };
       }
       if (name === "./bridge.cjs") return { ...actualBridge, LorcaBridge: NativeBridge };
+      if (name === "./watching.cjs") return require("../native/watching.cjs");
       if (name === "./attachments.cjs") return { AttachmentSelections: class extends AttachmentSelections { constructor() { super(); nativeRegistry = this; } } };
       if (name === "./branding.cjs") return { APP_NAME: "dots", configureApplicationName() {}, configureApplicationBranding() {} };
       if (name === "./menu.cjs") return { applicationMenuTemplate: () => [] };
@@ -204,7 +213,16 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
     },
   });
   await tick();
+  assert.equal(window.options.titleBarStyle, platform === "darwin" ? "hiddenInset" : undefined);
+  if (platform === "darwin") assert.deepEqual({ ...window.options.trafficLightPosition }, { x: 16, y: 16 });
+  else assert.equal(window.options.trafficLightPosition, undefined);
+  for (const key of ["frame", "transparent", "titleBarOverlay", "resizable", "minimizable", "maximizable", "closable", "fullscreenable"]) assert.equal(window.options[key], undefined, key);
+  const preferences = window.options.webPreferences;
+  assert.equal(preferences.contextIsolation, true); assert.equal(preferences.nodeIntegration, false); assert.equal(preferences.sandbox, true);
+  assert.equal(preferences.webSecurity, true); assert.equal(preferences.allowRunningInsecureContent, false); assert.equal(preferences.webviewTag, false);
   const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame };
+  assert.throws(() => handlers.get("lorca:set-watching-chat")!(event, "chat-demo"), /尚未同步/);
+  assert.equal(nativeCalls.length, 0);
   const [selected] = await handlers.get("lorca:pick-attachments")!(event);
   await handlers.get("lorca:connect")!(event, "ws://localhost:4862/ws");
   assert.equal(nativeRegistry.files.size, 1);
@@ -228,6 +246,18 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
   assert.equal(roster.data.bots[0].avatar_version, current.bots[0].avatar_version);
   assert.equal(nativeAvatars.bots.get("bot-demo").version, roster.data.bots[0].avatar_version);
   assert.match(current.bots[0].avatar_version, /^[a-f0-9]{24}$/);
+  assert.throws(() => handlers.get("lorca:set-watching-chat")!({ ...event, senderFrame: { ...event.senderFrame } }, "chat-demo"), /来源不可信/);
+  assert.throws(() => handlers.get("lorca:set-watching-chat")!(event, "unknown-chat"), /尚未同步/);
+  handlers.get("lorca:set-watching-chat")!(event, "chat-demo"); await tick();
+  assert.deepEqual(nativeCalls.slice(-2).map(item => [item.method, item.params.chat_id]), [["ui.watching", "chat-demo"], ["chats.mark_read", "chat-demo"]]);
+  for (const [property, inactive, active, leave, enter] of [["focused", false, true, "blur", "focus"], ["visible", false, true, "hide", "show"], ["minimized", true, false, "minimize", "restore"]] as const) {
+    window[property] = inactive; window.emit(leave); await tick();
+    assert.deepEqual(nativeCalls.slice(-1).map(item => [item.method, item.params.chat_id]), [["ui.watching", null]]);
+    window[property] = active; window.emit(enter); await tick();
+    assert.deepEqual(nativeCalls.slice(-2).map(item => [item.method, item.params.chat_id]), [["ui.watching", "chat-demo"], ["chats.mark_read", "chat-demo"]]);
+  }
+  handlers.get("lorca:set-watching-chat")!(event, null); await tick();
+  assert.deepEqual(nativeCalls.slice(-1).map(item => [item.method, item.params.chat_id]), [["ui.watching", null]]);
   await handlers.get("lorca:connect")!(event, "ws://localhost:4864/ws");
   avatarSnapshot = { ...avatarSnapshot, identity_id: "replacement-account" };
   nativeBridge.emit("event", { event: "roster.changed", data: avatarSnapshot });
@@ -253,4 +283,9 @@ test("main IPC preserves files on a same-endpoint save, clears actual reconnects
   const newestRoster = sentEvents.filter(item => item.value.event === "roster.changed").at(-1)!.value;
   assert.equal(nativeAvatars.bots.get("bot-demo").id, "att-different-snapshot");
   assert.equal(nativeAvatars.bots.get("bot-demo").version, newestRoster.data.bots[0].avatar_version);
+  handlers.get("lorca:set-watching-chat")!(event, "chat-demo"); await tick();
+  window.emit("closed"); await tick();
+  assert.equal(nativeBridge.closes, 1);
+  assert.deepEqual(nativeCalls.slice(-1).map(item => [item.method, item.params.chat_id]), [["ui.watching", null]]);
+  assert.throws(() => handlers.get("lorca:set-watching-chat")!(event, "chat-demo"), /来源不可信/);
 });

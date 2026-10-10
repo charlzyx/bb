@@ -21,6 +21,7 @@ import { ConversationTimeline } from "../../../app/src/components/ui/conversatio
 import { TranscriptItem } from "./Transcript";
 import { DotsMark } from "./DotsMark";
 import { Avatar, ConversationAvatars } from "./Avatar";
+import { settleSubmittedDraft } from "./drafts";
 import { Settings } from "./Settings";
 import type { SettingsPage } from "./settings/SettingsFrame";
 import {
@@ -307,6 +308,10 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
   const activeConversation = state.conversations.find(
     (conversation) => conversation.id === state.activeConversationId,
   );
+  const visibleChatId = !settingsOpen && !(compact && sidebarOpen) && !state.loading && state.messages.length > 0
+    ? state.activeConversationId
+    : null;
+  const onConversationVisibility = actions.onConversationVisibility;
   const setDraft = (text: string) =>
     setDrafts((current) => ({ ...current, [draftKey]: text }));
 
@@ -320,6 +325,11 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
+
+  useEffect(() => {
+    onConversationVisibility?.(visibleChatId);
+    return () => onConversationVisibility?.(null);
+  }, [onConversationVisibility, visibleChatId]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -402,13 +412,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
         createdChatId !== null &&
         submittedNavigation === navigationRevision.current &&
         currentConversation.current === null;
-      setDrafts((current) => {
-        const nextDraft =
-          current[draftKey] === draft ? "" : (current[draftKey] ?? "");
-        if (selectCreatedChat)
-          return { ...current, __new__: "", [createdChatId]: nextDraft };
-        return { ...current, [draftKey]: nextDraft };
-      });
+      setDrafts((current) => settleSubmittedDraft(current, draftKey, draft, selectCreatedChat ? createdChatId : null));
       if (selectCreatedChat) actions.onSelectConversation(createdChatId);
       followLatest.current = true;
     } catch (error) {

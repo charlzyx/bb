@@ -153,3 +153,6 @@ The small local Tailwind adapter uses Tailwind's public compiler and scanner API
 BB is MIT licensed, copyright © 2026 Michael Yong. The repository root LICENSE is retained; shared BB components are imported directly rather than copied without attribution. Lorca source was inspected to implement the wire contract; its Rust runtime and identity/crypto implementation are not copied or rewritten here.
 
 The current development and acceptance target is upstream egoist/lorca main at `b975eb6056b01bf7f2058b5c5e9ffc22e9930eea`, verified on 2026-10-10. Local token authentication remains the default. The retained explicit unauthenticated compatibility option is historical support, not an acceptance target or an automatic fallback.
+
+
+Current feature-by-feature source audit: [protocol coverage and remaining scope](../../docs/lorca-protocol-audit.md).

@@ -16,6 +16,13 @@ async function deadline(promise, milliseconds, label) {
   try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} timed out`)), milliseconds); })]); }
   finally { clearTimeout(timer); }
 }
+async function until(check, label) {
+  const end = Date.now() + 5000;
+  while (!await check()) {
+    if (Date.now() >= end) throw new Error(`${label} timed out`);
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+}
 async function loadPlaywright() {
   try { return await import('playwright'); }
   catch (error) {
@@ -94,6 +101,8 @@ async function main() {
           const reply = result => socket.send(JSON.stringify({ id: request.id, result }));
           const event = (name, data) => socket.send(JSON.stringify({ event: name, data }));
           if (request.method === 'bootstrap') reply(snapshot);
+          else if (request.method === 'ui.watching' && (request.params.chat_id === null || request.params.chat_id === 'chat-smoke')) reply(null);
+          else if (request.method === 'chats.mark_read' && request.params.chat_id === 'chat-smoke') reply(null);
           else if (request.method === 'mcp.list') {
             reply({ path: secretMarker, error: null, servers: [{ name: 'Synthetic MCP', transport: 'http', enabled: true, tool_count: 3, problem: secretMarker, status: { id: 'mcp-smoke', name: 'Synthetic MCP', state: 'error', detail: secretMarker }, config: privateSettings }] });
             event('roster.changed', snapshot);
@@ -138,14 +147,22 @@ async function main() {
     await page.getByText('已连接', { exact: true }).first().waitFor();
     await page.locator('.lorca-chat-item').filter({ hasText: 'Fixture Bot' }).click();
     await page.getByText('Synthetic Electron smoke fixture. No account or model is connected.', { exact: true }).waitFor();
+    await application.evaluate(({ app, BrowserWindow }) => { app.focus({ steal: true }); const window = BrowserWindow.getAllWindows()[0]; window.show(); window.focus(); });
+    await until(() => application.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows()[0]; return window.isFocused() && window.isVisible() && !window.isMinimized(); }), 'Native window foreground');
+    await until(() => requests.some(request => request.method === 'chats.mark_read' && request.params.chat_id === 'chat-smoke'), 'Foreground selected chat read');
+    const watchIndex = requests.findIndex(request => request.method === 'ui.watching' && request.params.chat_id === 'chat-smoke');
+    const readIndex = requests.findIndex(request => request.method === 'chats.mark_read' && request.params.chat_id === 'chat-smoke');
+    assert.ok(watchIndex >= 0 && readIndex > watchIndex, 'A foreground chat must be watched before marking it read');
     const renderer = await page.evaluate(async () => ({
       processType: typeof window.process, requireType: typeof window.require,
+      platform: document.documentElement.dataset.lorcaPlatform,
       keys: Object.keys(window.lorca).sort(), status: await window.lorca.getStatus(),
     }));
     assert.equal(renderer.processType, 'undefined'); assert.equal(renderer.requireType, 'undefined');
+    assert.equal(renderer.platform, process.platform);
     assert.equal(renderer.status.status, 'connected'); assert.equal(renderer.status.authMode, 'token');
     assert.equal(JSON.stringify(renderer).includes(token), false); assert.equal(JSON.stringify(renderer).includes(home), false);
-    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'settingsAction']);
+    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setWatchingChat', 'settingsAction']);
     const avatar = await page.evaluate(async () => {
       const current = await window.lorca.request('bootstrap', {});
       return window.lorca.getBotAvatar('bot-smoke', current.bots[0].avatar_version);
@@ -184,10 +201,20 @@ async function main() {
       return { contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration, sandbox: prefs.sandbox };
     });
     assert.deepEqual(preferences, { contextIsolation: true, nodeIntegration: false, sandbox: true });
+    if (process.platform === 'darwin') {
+      const controls = await application.evaluate(({ BrowserWindow }) => {
+        const window = BrowserWindow.getAllWindows()[0];
+        return { position: window.getWindowButtonPosition(), closable: window.isClosable(), minimizable: window.isMinimizable(), maximizable: window.isMaximizable(), fullscreenable: window.isFullScreenable() };
+      });
+      assert.deepEqual(controls, { position: { x: 16, y: 16 }, closable: true, minimizable: true, maximizable: true, fullscreenable: true });
+      assert.equal(await page.locator('.lorca-header').evaluate(node => getComputedStyle(node).getPropertyValue('-webkit-app-region')), 'drag');
+      assert.equal(await page.locator('.lorca-header-status').evaluate(node => getComputedStyle(node).getPropertyValue('-webkit-app-region')), 'no-drag');
+    }
     const menus = await application.evaluate(({ Menu }) => Menu.getApplicationMenu().items.map(item => ({ label: item.label, roles: item.submenu?.items.map(child => child.role) ?? [] })));
     assert.deepEqual(menus.map(item => item.label), ['应用', '编辑', '窗口']);
     assert.ok(menus[1].roles.includes('copy'));
     assert.ok(menus[1].roles.includes('paste'));
+    for (const role of ['close', 'minimize', 'zoom']) assert.ok(menus[2].roles.includes(role), role);
     const brand = await application.evaluate(({ app, BrowserWindow, nativeImage }, iconPath) => {
       const icon = nativeImage.createFromPath(iconPath);
       return { name: app.getName(), title: BrowserWindow.getAllWindows()[0].getTitle(), iconEmpty: icon.isEmpty(), iconSize: icon.getSize() };
@@ -199,6 +226,7 @@ async function main() {
     });
     assert.equal(blocked, true);
     assert.equal(await page.evaluate(async () => { try { await window.lorca.request('mcp.list', {}); return false; } catch { return true; } }), true);
+    for (const method of ['ui.watching', 'chats.mark_read']) assert.equal(await page.evaluate(async method => { try { await window.lorca.request(method, { chat_id: 'chat-smoke' }); return false; } catch { return true; } }, method), true);
     await page.getByRole('textbox', { name: '给 dots 发消息', exact: true }).fill('Synthetic smoke message');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
     await page.getByText('Synthetic native bridge reply received.', { exact: true }).waitFor();
@@ -210,7 +238,12 @@ async function main() {
       const destination = path.resolve(process.env.LORCA_SMOKE_SCREENSHOT);
       await mkdir(path.dirname(destination), { recursive: true });
       await page.screenshot({ path: destination, fullPage: true });
-      await page.locator('.lorca-workspace').click();
+    }
+    const beforeSettings = requests.length;
+    await page.locator('.lorca-workspace').click();
+    await until(() => requests.slice(beforeSettings).some(request => request.method === 'ui.watching' && request.params.chat_id === null), 'Settings page clears watching');
+    if (process.env.LORCA_SMOKE_SCREENSHOT) {
+      const destination = path.resolve(process.env.LORCA_SMOKE_SCREENSHOT);
       await page.getByRole('button', { name: 'MCP', exact: true }).click();
       await page.getByText('Synthetic MCP', { exact: true }).waitFor();
       assert.equal((await page.content()).includes(secretMarker), false);
@@ -260,6 +293,7 @@ async function main() {
       keys: Object.keys(window.dotsSecureSettings).sort(), spec: await window.dotsSecureSettings.initialize(),
     }));
     assert.equal(secureState.processType, 'undefined'); assert.equal(secureState.requireType, 'undefined'); assert.equal(secureState.mainBridge, 'undefined');
+    assert.equal(await securePage.evaluate(() => document.documentElement.dataset.lorcaPlatform), undefined);
     assert.deepEqual(secureState.keys, ['cancel', 'initialize', 'submit']);
     assert.equal(JSON.stringify(secureState).includes(secretMarker), false);
     const securePreferences = await application.evaluate(async ({ BrowserWindow }) => {
@@ -292,7 +326,7 @@ async function main() {
     assert.equal(JSON.stringify(confirmations).includes('SYNTHETIC_REPLACEMENT_KEY'), false);
     assert.equal((await page.content()).includes('SYNTHETIC_REPLACEMENT_KEY'), false);
     assert.deepEqual(failures, []);
-    process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, secureSettingsIsolated: true, secureLogoLoaded: true, nativeSettingsConfirmed: true, menusLocalized: true, dotsBranding: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
+    process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, secureSettingsIsolated: true, secureLogoLoaded: true, nativeSettingsConfirmed: true, nativeWatching: true, menusLocalized: true, dotsBranding: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
   } catch (error) {
     process.stderr.write(`Electron smoke assertion: ${error.stack ?? error.message}\n`);
     throw error;

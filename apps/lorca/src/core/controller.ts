@@ -72,7 +72,7 @@ function messageView(message: WireMessage, authorName?: string, authorAvatar?: L
         name: body.summary || body.name,
         status: body.is_error || body.run?.state === "failed"
           ? "error"
-          : body.is_running
+          : body.is_running || body.run?.state === "waiting" || body.run?.state === "running" || body.run?.state === "checking"
             ? "running"
             : "complete",
         output: body.run?.output || body.detail,
@@ -87,7 +87,9 @@ function messageView(message: WireMessage, authorName?: string, authorAvatar?: L
           body.reason,
           body.command,
           body.rule ? `始终允许规则：${body.rule}` : null,
-          body.tool === "access" || body.tool === "connect"
+          body.tool === "secret"
+            ? "此请求需要安全输入凭据，请在 Lorca 客户端中处理；dots 不接收或提交这些秘密值。"
+            : body.tool === "access" || body.tool === "connect"
             ? "请在 Lorca 客户端中管理访问权限或登录。"
             : null,
         ]
@@ -103,10 +105,11 @@ function messageView(message: WireMessage, authorName?: string, authorAvatar?: L
                 : ["allowed", "always", "connected"].includes(body.decision)
                   ? "approved"
                   : "expired",
-        canAllow: body.tool !== "access" && body.tool !== "connect",
+        canAllow: !["access", "connect", "secret"].includes(body.tool),
         canAlways:
           body.tool !== "access" &&
           body.tool !== "connect" &&
+          body.tool !== "secret" &&
           (body.plugin_id !== "computer" || Boolean(body.rule)),
       };
     case "handoff":
@@ -189,6 +192,8 @@ export class LorcaController {
   private snapshotRequest = 0;
   private buffering: WireEvent[] | null = null;
   private activeId: string | null = null;
+  private visibleChatId: string | null = null;
+  private watchingKey = "";
   private selectedBot: string | null = null;
   private error: string | null = null;
   private loading = false;
@@ -220,7 +225,16 @@ export class LorcaController {
   private emit(): void {
     if (this.disposed) return;
     this.state = this.makeState();
+    this.syncWatching();
     for (const listener of this.listeners) listener();
+  }
+  private syncWatching(): void {
+    if (!this.bridge.setWatchingChat) return;
+    const id = !this.disposed && this.status.status === "connected" && this.synchronized && !this.loading && this.model.hasIdentity && this.visibleChatId === this.activeId && this.visibleChatId && this.model.chats.has(this.visibleChatId) ? this.visibleChatId : null;
+    const key = JSON.stringify([this.generation, this.accountEpoch, id]);
+    if (key === this.watchingKey) return;
+    this.watchingKey = key;
+    void this.bridge.setWatchingChat(id).catch(() => {});
   }
   private avatarScope(): string {
     return JSON.stringify([this.status.endpoint, this.generation, this.accountEpoch, this.avatarEpoch, this.model.identityId]);
@@ -339,7 +353,7 @@ export class LorcaController {
       this.status.authMode === "legacy"
         ? "dots · 本地兼容连接（不校验令牌）"
         : this.status.status === "connected"
-          ? `dots · 运行环境 ${this.model.version || "连接中"} · ${this.model.relayConnected ? "中继已同步" : "中继离线"}`
+          ? `dots · 运行环境 ${this.model.version || "连接中"} · ${this.model.relayConnected ? "中继已连接" : "中继离线"}`
           : this.status.detail;
     return {
       draftScope: this.accountEpoch,
@@ -424,6 +438,8 @@ export class LorcaController {
   }
   dispose(): void {
     this.disposed = true;
+    this.visibleChatId = null;
+    this.syncWatching();
     this.clearAvatars();
     this.resetOlder();
     this.clearAttachments();
@@ -778,11 +794,17 @@ export class LorcaController {
     }
   }
   actions: LorcaShellActions = {
+    onConversationVisibility: (id) => {
+      this.visibleChatId = id !== null && id === this.activeId && this.model.chats.has(id) ? id : null;
+      this.syncWatching();
+    },
     onSettingsAction: (action) => this.settingsAction(action),
     onRefreshSettings: (runnerId) => { void this.refreshSettings(runnerId); },
     onSelectConversation: (id) => {
       if (this.model.chats.has(id)) {
         this.navigation++;
+        this.resetOlder();
+        this.error = null;
         this.activeId = id;
         this.selectedBot =
           this.model.chats.get(id)?.bot_ids[0] ?? this.selectedBot;
@@ -793,6 +815,7 @@ export class LorcaController {
     },
     onNewConversation: () => {
       this.navigation++;
+      this.resetOlder();
       this.activeId = null;
       this.clearAttachments();
       this.error = null;
@@ -846,10 +869,10 @@ export class LorcaController {
             throw new Error("此权限请求已不再等待处理。");
           if (
             body?.kind === "permission" &&
-            ["access", "connect"].includes(body.tool) &&
+            ["access", "connect", "secret"].includes(body.tool) &&
             decision !== "deny"
           )
-            throw new Error("请在 Lorca 客户端中管理访问权限或登录。");
+            throw new Error(body.tool === "secret" ? "请在 Lorca 客户端中安全输入凭据。dots 未提交此请求。" : "请在 Lorca 客户端中管理访问权限或登录。");
           if (
             decision === "always" &&
             ((body?.kind === "tool" && !body.run?.rule) ||
@@ -960,9 +983,10 @@ export class LorcaController {
       chat = id ? this.model.chats.get(id) : undefined;
     if (!chat || !id || !chat.has_more || this.loadingOlder) return;
     const request = ++this.olderRequest,
+      navigation = this.navigation,
       generation = this.generation,
       accountEpoch = this.accountEpoch;
-    const current = () => !this.disposed && request === this.olderRequest && generation === this.generation && accountEpoch === this.accountEpoch;
+    const current = () => !this.disposed && request === this.olderRequest && generation === this.generation && accountEpoch === this.accountEpoch && id === this.activeId && navigation === this.navigation;
     this.loadingOlder = true;
     this.error = null;
     this.emit();

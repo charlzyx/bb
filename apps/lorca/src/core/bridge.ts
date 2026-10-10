@@ -16,6 +16,7 @@ export interface LorcaBridge {
   onEvent(callback: (event: unknown) => void): () => void;
   onStatus(callback: (status: BridgeStatus) => void): () => void;
   getStatus(): Promise<BridgeStatus>;
+  setWatchingChat?(chatId: string | null): Promise<void>;
   getBotAvatar?(botId: string, expectedAvatarVersion: string): Promise<string | null>;
   settingsAction?(action: SettingsAction): Promise<unknown>;
   getSettings?(options: { runnerId?: string }): Promise<unknown>;

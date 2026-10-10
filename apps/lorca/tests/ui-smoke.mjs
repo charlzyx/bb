@@ -76,6 +76,33 @@ async function chooseChat(page, text) {
     .click();
 }
 
+async function assertDesktopDensity(page) {
+  const layout = await page.evaluate(() => {
+    const header = document.querySelector(".lorca-header");
+    const transcript = document.querySelector(".lorca-transcript");
+    const composer = document.querySelector(".lorca-composer");
+    const title = document.querySelector(".lorca-header-title");
+    return {
+      headerHeight: header.getBoundingClientRect().height,
+      headerBorder: getComputedStyle(header).borderBottomWidth,
+      composerBorder: getComputedStyle(composer).borderTopWidth,
+      contentGap: parseFloat(getComputedStyle(transcript).paddingTop),
+      titleLeft: title.getBoundingClientRect().left,
+      transcriptLeft: transcript.getBoundingClientRect().left,
+      composerLeft: composer.getBoundingClientRect().left,
+      composerBottom: composer.getBoundingClientRect().bottom,
+      height: innerHeight,
+    };
+  });
+  assert.equal(layout.headerHeight, 48, "Desktop header stays a compact single row");
+  assert.equal(layout.headerBorder, "0px");
+  assert.equal(layout.composerBorder, "0px");
+  assert.equal(layout.contentGap, 20, "Transcript starts close to the header");
+  assert.ok(Math.abs(layout.titleLeft - layout.transcriptLeft) <= 8, "Header aligns with the reading column within its thin-scrollbar allowance");
+  assert.ok(Math.abs(layout.composerLeft - layout.transcriptLeft) <= 8, "Composer aligns with the reading column within its thin-scrollbar allowance");
+  assert.ok(layout.composerBottom < layout.height, "Composer remains inside the window");
+}
+
 try {
   const sandboxSession = await browser.newBrowserCDPSession();
   try {
@@ -86,7 +113,7 @@ try {
     await sandboxSession.detach();
   }
   const desktop = await browser.newPage({
-    viewport: { width: 1440, height: 1000 },
+    viewport: { width: 1240, height: 820 },
     deviceScaleFactor: 1,
   });
   failurePage = desktop;
@@ -131,6 +158,9 @@ try {
     element.scrollTop = 0;
   });
   await screenshot(desktop, "desktop-conversation-light");
+  await assertDesktopDensity(desktop);
+  await desktop.getByRole("textbox", { name: "给 dots 发消息" }).focus();
+  assert.notEqual(await desktop.locator(".lorca-composer").evaluate((element) => getComputedStyle(element).boxShadow), "none", "Borderless composer keeps a visible focus indicator");
   await desktop.locator(".lorca-header-status").click();
   const savedEndpoint = await desktop
     .getByRole("textbox", { name: "WebSocket 连接地址" })
@@ -240,6 +270,16 @@ try {
   await settingsDesktop.goto(`${base}/?demo=1`, { waitUntil: "networkidle" });
   await settingsDesktop.locator(".lorca-header-status").click();
   await waitForSettings(settingsDesktop);
+  const settingsAlignment = await settingsDesktop.evaluate(() => ({
+    heading: document.querySelector(".lorca-settings-page-header h1").getBoundingClientRect().left,
+    content: document.querySelector(".lorca-settings-runtime-toolbar").getBoundingClientRect().left,
+    gap: parseFloat(getComputedStyle(document.querySelector(".lorca-settings-reading-width")).paddingTop),
+    borders: Array.from(document.querySelectorAll(".lorca-settings-section-content section > .border")).map((element) => getComputedStyle(element).borderTopWidth),
+  }));
+  assert.ok(Math.abs(settingsAlignment.heading - settingsAlignment.content) <= 8, "Settings heading and form share one reading column within its thin-scrollbar allowance");
+  assert.equal(settingsAlignment.gap, 8);
+  assert.ok(settingsAlignment.borders.length > 0);
+  assert.ok(settingsAlignment.borders.every((border) => border === "0px"), "Desktop settings use tonal groups without card outlines");
   await screenshot(settingsDesktop, "desktop-settings-connection");
   await chooseSettingsPage(settingsDesktop, "偏好设置");
   await screenshot(settingsDesktop, "desktop-settings-preferences");
@@ -403,9 +443,13 @@ try {
     const sends = [];
     const eventListeners = new Set();
     const statusListeners = new Set();
+    const watching = [];
+    let reuseChatId = null;
     window.__lorcaUiTest = {
       ledger,
       sends,
+      watching,
+      reuseChat: (id) => { reuseChatId = id; },
       reconnect: () => {
         for (const status of ["connecting", "connected"]) {
           for (const listener of statusListeners)
@@ -443,6 +487,7 @@ try {
       },
     };
     window.lorca = {
+      setWatchingChat: async (id) => { watching.push(id); },
       getStatus: async () => ({
         status: "connected",
         endpoint: "ws://127.0.0.1:4862/ws",
@@ -457,6 +502,7 @@ try {
         ledger.push({ method, params });
         if (method === "bootstrap") return structuredClone(snapshot);
         if (method === "chats.create") {
+          if (reuseChatId) return { chat: structuredClone(snapshot.chats.find((chat) => chat.id === reuseChatId)) };
           const chat = {
             ...createChat(params.id, "Created fixture chat"),
             messages: [],
@@ -483,9 +529,12 @@ try {
   });
   await controlled.goto(base, { waitUntil: "networkidle" });
   await chooseChat(controlled, "Fixture One");
+  await controlled.waitForFunction(() => window.__lorcaUiTest.watching.at(-1) === "fixture-one");
+  const watchingBeforeTyping = await controlled.evaluate(() => window.__lorcaUiTest.watching.length);
   await controlled
     .getByRole("textbox", { name: "给 dots 发消息" })
     .fill("第一条合成测试消息");
+  assert.equal(await controlled.evaluate(() => window.__lorcaUiTest.watching.length), watchingBeforeTyping, "Typing does not repeatedly change the watched conversation");
   await controlled
     .getByRole("textbox", { name: "给 dots 发消息" })
     .dispatchEvent("keydown", {
@@ -628,7 +677,23 @@ try {
   await controlled.getByText("Accepted despite a concurrent stop failure", { exact: true }).waitFor();
   assert.equal(await controlled.locator(".lorca-composer-error").innerText(), "Synthetic stop failure", "The unrelated stop error remains distinct from the acknowledged send");
   await controlled.evaluate(() => window.__lorcaUiTest.job("job.finished"));
+  await chooseChat(controlled, "Fixture One");
+  await controlled.getByRole("textbox", { name: "给 dots 发消息" }).fill("Existing unique DM draft");
+  await controlled.evaluate(() => window.__lorcaUiTest.reuseChat("fixture-one"));
+  await controlled.keyboard.press("Control+n");
+  await controlled.waitForFunction(() => window.__lorcaUiTest.watching.at(-1) === null);
+  await controlled.getByRole("textbox", { name: "给 dots 发消息" }).fill("Send through the existing unique DM");
+  await controlled.getByRole("button", { name: "发送消息", exact: true }).click();
+  await controlled.waitForFunction(() => window.__lorcaUiTest.sends.length === 1);
+  await controlled.getByRole("textbox", { name: "给 dots 发消息" }).fill("Separate new-chat follow-up draft");
+  await controlled.evaluate(() => window.__lorcaUiTest.complete());
+  await controlled.waitForFunction(() => document.querySelector(".lorca-header-chat-title")?.textContent === "Fixture One");
+  assert.equal(await controlled.getByRole("textbox", { name: "给 dots 发消息" }).inputValue(), "Existing unique DM draft", "Returning a unique DM never clears its older unsent text");
+  await controlled.keyboard.press("Control+n");
+  assert.equal(await controlled.getByRole("textbox", { name: "给 dots 发消息" }).inputValue(), "Separate new-chat follow-up draft", "Concurrent new-chat edits remain separate when the destination already has a draft");
+  await chooseChat(controlled, "Fixture Two");
   await controlled.locator(".lorca-header-status").click();
+  await controlled.waitForFunction(() => window.__lorcaUiTest.watching.at(-1) === null);
   await controlled
     .getByRole("button", { name: "连接本次会话", exact: true })
     .click();
@@ -641,6 +706,7 @@ try {
     "Rejected endpoint connection never reports success",
   );
   await controlled.getByRole("button", { name: "关闭设置" }).click();
+  await controlled.waitForFunction(() => window.__lorcaUiTest.watching.at(-1) === "fixture-two");
   await controlled.keyboard.press("Control+n");
   await controlled
     .getByRole("textbox", { name: "给 dots 发消息" })
@@ -887,6 +953,55 @@ try {
   assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-missing"] img').count(), 0);
   assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-missing"][data-accent="orange"]').count(), 1);
   assert.equal(await avatars.locator(".lorca-composer-error").count(), 0, "Missing local avatar cache does not fail the chat");
+  const nativeLayout = await browser.newPage({ viewport: { width: 1240, height: 820 } });
+  failurePage = nativeLayout;
+  captureErrors(nativeLayout);
+  await nativeLayout.addInitScript(installAvatarFixture);
+  await nativeLayout.goto(base, { waitUntil: "networkidle" });
+  await nativeLayout.evaluate(() => { document.documentElement.dataset.lorcaPlatform = "darwin"; });
+  await chooseChat(nativeLayout, "合成头像 · 单聊");
+  await assertDesktopDensity(nativeLayout);
+  const nativeChrome = await nativeLayout.evaluate(() => {
+    const brand = document.querySelector(".lorca-brand-logo").getBoundingClientRect();
+    return {
+      brandLeft: brand.left,
+      brandCenter: brand.top + brand.height / 2,
+      headerDrag: getComputedStyle(document.querySelector(".lorca-header")).getPropertyValue("-webkit-app-region"),
+      statusDrag: getComputedStyle(document.querySelector(".lorca-header-status")).getPropertyValue("-webkit-app-region"),
+      titleDrag: getComputedStyle(document.querySelector(".lorca-header-title")).getPropertyValue("-webkit-app-region"),
+    };
+  });
+  assert.ok(nativeChrome.brandLeft >= 104, "Ghost branding clears the native traffic-light rectangle");
+  assert.equal(nativeChrome.brandCenter, 24, "Brand and conversation header use the same vertical center");
+  assert.equal(nativeChrome.headerDrag, "drag");
+  assert.equal(nativeChrome.statusDrag, "no-drag");
+  assert.equal(nativeChrome.titleDrag, "no-drag");
+  await screenshot(nativeLayout, "desktop-macos-layout-light");
+  await nativeLayout.locator(".lorca-header-status").click();
+  await waitForSettings(nativeLayout);
+  assert.ok(await nativeLayout.locator(".lorca-settings-back").evaluate((element) => element.getBoundingClientRect().top) >= 44, "Settings navigation stays below native traffic lights");
+  assert.equal(await nativeLayout.getByRole("button", { name: "关闭设置", exact: true }).evaluate((element) => getComputedStyle(element).getPropertyValue("-webkit-app-region")), "no-drag");
+  await screenshot(nativeLayout, "desktop-macos-settings-layout");
+  await nativeLayout.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await nativeLayout.setViewportSize({ width: 760, height: 520 });
+  await nativeLayout.waitForFunction(() => !document.querySelector(".lorca-sidebar"));
+  const minimumLayout = await nativeLayout.evaluate(() => ({
+    titleLeft: document.querySelector(".lorca-header-title").getBoundingClientRect().left,
+    headerRight: document.querySelector(".lorca-header-actions").getBoundingClientRect().right,
+    composerBottom: document.querySelector(".lorca-composer").getBoundingClientRect().bottom,
+    editorHeight: document.querySelector("#lorca-composer").getBoundingClientRect().height,
+  }));
+  assert.ok(minimumLayout.titleLeft >= 88, "Compact native header avoids traffic lights");
+  assert.ok(minimumLayout.headerRight <= 760);
+  assert.ok(minimumLayout.composerBottom < 520);
+  assert.ok(minimumLayout.editorHeight >= 50, "Minimum window keeps the editor usable");
+  await screenshot(nativeLayout, "desktop-minimum-window");
+  await nativeLayout.getByRole("textbox", { name: "给 dots 发消息" }).fill("Synthetic minimum-window draft");
+  await nativeLayout.locator(".lorca-header-status").click();
+  await waitForSettings(nativeLayout);
+  await nativeLayout.getByRole("button", { name: "关闭设置", exact: true }).click();
+  assert.equal(await nativeLayout.getByRole("textbox", { name: "给 dots 发消息" }).inputValue(), "Synthetic minimum-window draft", "Compact native settings can be opened and closed without losing the draft");
+  failurePage = avatars;
   await avatars.evaluate(() => window.__avatarUiTest.loseIdentity());
   await avatars.waitForFunction(() => document.querySelectorAll("[data-avatar-image]").length === 0);
   assert.deepEqual(externalAvatarRequests, [], "Bot avatars never fetch remote image URLs in the renderer");
@@ -908,6 +1023,8 @@ try {
           "Simplified Chinese UI and input composition",
           "Desktop and mobile light/dark",
           "No horizontal overflow",
+          "Borderless desktop layout, aligned reading columns and visible composer focus",
+          "Synthetic macOS traffic-light safe area and minimum-window geometry",
           "Search keyboard shortcut",
           "New-chat keyboard shortcut",
           "Failed-send draft preservation",
@@ -917,6 +1034,8 @@ try {
           "Late acknowledgement preserves edited and switched-chat drafts",
           "First-send failure preserves the visible new draft",
           "First-send success migrates edited draft without stealing navigation",
+          "Unique DM reuse preserves both existing and new-chat drafts without merging them",
+          "Conversation visibility stops in settings and empty state without repeated typing updates",
           "Rejected endpoint save never reports success",
           "Settings screenshot waits for realized content",
           "Approval capability-ticket renewal preserves edited scope review",

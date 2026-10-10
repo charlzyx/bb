@@ -1,4 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
+window.addEventListener('DOMContentLoaded', () => {
+  document.documentElement.dataset.lorcaPlatform = process.platform;
+}, { once: true });
 const invoke = async (channel, ...args) => {
   try { return await ipcRenderer.invoke(channel, ...args); }
   catch (error) {
@@ -21,6 +24,7 @@ contextBridge.exposeInMainWorld('lorca', Object.freeze({
   copyText: text => invoke('lorca:copy-text', text),
   getBotAvatar: (botId, expectedAvatarVersion) => invoke('lorca:bot-avatar', botId, expectedAvatarVersion),
   getStatus: () => invoke('lorca:status'),
+  setWatchingChat: chatId => invoke('lorca:set-watching-chat', chatId),
   getSettings: (params = {}) => invoke('lorca:get-settings', params),
   settingsAction: action => invoke('lorca:settings-action', action),
   onEvent: listener => subscribe('lorca:event', listener),
