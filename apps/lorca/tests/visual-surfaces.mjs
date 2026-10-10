@@ -106,7 +106,7 @@ async function footerLastRow(page) {
   assert.equal(await last.getAttribute("aria-current"), "page", "Keyboard activation opens the last conversation");
 }
 
-async function checkScrollingFooter({ browser, base, screenshot, chooseSettingsPage, waitForSettings, captureErrors, setFailurePage }) {
+async function checkScrollingFooter({ browser, base, screenshot, openConnectionSettings, chooseSettingsPage, waitForSettings, captureErrors, setFailurePage }) {
   const page = await browser.newPage({ viewport: { width: 1240, height: 820 }, deviceScaleFactor: 1 });
   setFailurePage(page);
   captureErrors(page);
@@ -116,7 +116,7 @@ async function checkScrollingFooter({ browser, base, screenshot, chooseSettingsP
   const media = await page.context().newCDPSession(page);
   try {
     for (const theme of ["light", "dark"]) {
-      await page.locator(".lorca-header-status").click();
+      await openConnectionSettings(page);
       await waitForSettings(page);
       await chooseSettingsPage(page, "通用");
       await page.getByRole("button", { name: theme === "dark" ? "深色" : "浅色", exact: true }).click();
@@ -249,15 +249,15 @@ async function footerState(page, mode) {
   }
 }
 
-export async function checkVisualSurfaces({ browser, base, screenshot, chooseSettingsPage, waitForSettings, chooseChat, captureErrors, setFailurePage }) {
-  await checkScrollingFooter({ browser, base, screenshot, chooseSettingsPage, waitForSettings, captureErrors, setFailurePage });
+export async function checkVisualSurfaces({ browser, base, screenshot, openConnectionSettings, chooseSettingsPage, waitForSettings, chooseChat, captureErrors, setFailurePage }) {
+  await checkScrollingFooter({ browser, base, screenshot, openConnectionSettings, chooseSettingsPage, waitForSettings, captureErrors, setFailurePage });
   const page = await browser.newPage({ viewport: { width: 1240, height: 820 }, deviceScaleFactor: 1 });
   setFailurePage(page);
   captureErrors(page);
   await page.goto(`${base}/?demo=1`, { waitUntil: "networkidle" });
   const footer = page.locator(".lorca-sidebar .lorca-workspace");
   for (const theme of ["light", "dark"]) {
-    await page.locator(".lorca-header-status").click();
+    await openConnectionSettings(page);
     await waitForSettings(page);
     await chooseSettingsPage(page, "通用");
     await page.getByRole("button", { name: theme === "dark" ? "深色" : "浅色", exact: true }).click();
@@ -298,7 +298,7 @@ export async function checkVisualSurfaces({ browser, base, screenshot, chooseSet
     } finally {
       await media.detach();
     }
-    await page.locator(".lorca-header-status").click();
+    await openConnectionSettings(page);
     await waitForSettings(page);
     for (const [label, slug] of [["通用", "general"], ["服务商", "providers"], ["插件", "plugins"], ["智能体", "agents"], ["设备", "devices"], ["高级", "advanced"], ["自动审查", "auto-review"]]) {
       await chooseSettingsPage(page, label);

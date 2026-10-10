@@ -1,3 +1,18 @@
+import type { PairingDisabledReason } from "../ui/types";
+
+export const pairingDisabledReasonsZh: Record<PairingDisabledReason, string> = {
+  not_connected: "尚未连接本地服务，无法打开配对流程。",
+  token_auth_required: "dots 配对入口要求本地令牌认证，不允许本地兼容连接（不校验令牌）。这是客户端限制，不代表本地服务不支持配对。",
+  identity_required: "此本地服务尚无账号身份，不能为该账号生成邀请；可选择加入已有账号。",
+  already_has_identity: "此本地服务已有账号身份，不能通过加入流程覆盖现有身份。",
+  identity_fields_missing: "本地服务未完整报告配对所需的账号或本机身份字段，请先核对身份状态。",
+  relay_missing: "本地服务尚未配置邀请所需的中继地址。",
+  https_relay_required: "当前中继地址不满足 dots 配对入口的 HTTPS 安全要求。",
+  unknown_outcome: "此本地服务的上次配对结果未知。请先在官方客户端核对设备；此进程暂不允许再次执行该配对操作，重连不代表撤销。",
+  bridge_unavailable: "当前桌面桥接组件缺少配对入口，请更新 dots。尚未验证本地服务是否支持配对。",
+  not_reported: "桌面桥接组件尚未报告配对入口的可用条件，请刷新设置。尚未验证本地服务是否支持配对。",
+};
+
 export const settingsZh = {
   settings: "设置",
   connection: "连接",
@@ -80,11 +95,10 @@ export const settingsZh = {
   inviteDeviceDescription: "让另一台设备加入当前账号。配对码只能在独立安全窗口中生成、查看和复制。",
   joinAccountDescription: "此本地服务尚无设备身份。可在独立安全窗口中输入另一台设备提供的配对码。",
   pairingScope: "配对会授予另一台设备账号访问权，包括聊天及服务商凭据。只与自己信任的设备配对；生成或使用配对码前，需要在安全窗口中明确确认。",
-  pairingUnavailable: "当前桌面桥接组件或本地服务未提供此配对流程。设备清单仍可查看。",
   pairingPreview: "模拟预览不生成配对码，也不会绑定设备。",
   pairingOpening: "正在处理配对流程…",
   pairingClosed: "配对窗口已关闭。设备状态以刷新后的清单为准。",
-  pairingOpenError: "无法打开配对窗口，请检查本地连接后重试。",
+  pairingOpenError: "配对窗口未能打开，请查看设备页的禁用原因。若上次结果未知，请先在官方客户端核对设备。",
   pairingBoundary: "设备配对用于共享同一账号身份，并通过中继同步。它与 dots 到本地服务的连接认证不同，也不会更改智能体分配的 Runner。",
   appearance: "外观",
   appearanceDescription: "dots 的本地偏好设置，不会更改后端运行环境。",

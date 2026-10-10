@@ -368,7 +368,14 @@ select:focus-visible {
   gap: 15px;
   flex-shrink: 0;
 }
+:where(.lorca-app) .lorca-content-width {
+  display: none;
+}
 :where(.lorca-app) .lorca-header-status {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -379,6 +386,122 @@ select:focus-visible {
 }
 :where(.lorca-app) .lorca-header-status:hover {
   background: var(--state-hover);
+}
+:where(.lorca-app) .lorca-header-status[data-state="open"] {
+  background: var(--state-active);
+  color: var(--foreground);
+}
+.lorca-connection-menu {
+  width: min(300px, calc(100vw - 24px));
+  max-height: var(--radix-dropdown-menu-content-available-height, 80dvh);
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--border-seam);
+  border-radius: 12px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 8px 28px color-mix(in oklab, var(--ink) 12%, transparent);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  -webkit-app-region: no-drag;
+}
+.lorca-connection-menu[data-state="open"] {
+  animation: lorca-connection-enter 160ms ease-out;
+}
+.lorca-connection-menu[data-state="closed"] {
+  animation: lorca-connection-exit 160ms ease-in;
+  pointer-events: none;
+}
+:where(.lorca-connection-menu) .lorca-connection-summary {
+  padding: 8px 8px 12px;
+}
+:where(.lorca-connection-summary) h2 {
+  margin: 0 0 14px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+:where(.lorca-connection-summary) dl {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  font-size: var(--text-xs);
+}
+:where(.lorca-connection-summary) .lorca-connection-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 20px;
+}
+:where(.lorca-connection-summary) dt {
+  flex-shrink: 0;
+  color: var(--subtle-foreground);
+}
+:where(.lorca-connection-summary) dd {
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+:where(.lorca-connection-summary) p {
+  margin: 12px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--subtle-foreground);
+}
+:where(.lorca-connection-summary) .lorca-connection-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+:where(.lorca-connection-menu) .lorca-connection-settings {
+  min-height: 34px;
+  gap: 8px;
+  border-radius: 7px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+:where(.lorca-connection-menu) .lorca-connection-settings [data-icon-root]:last-child {
+  margin-left: auto;
+}
+:where(.lorca-connection-menu) .lorca-connection-settings:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+:where(.lorca-connection-menu) :is(.lorca-status-dot, .lorca-demo-dot) {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+:where(.lorca-connection-menu) .lorca-status-connected {
+  background: var(--success-foreground);
+}
+:where(.lorca-connection-menu) :is(.lorca-status-connecting, .lorca-demo-dot) {
+  background: var(--warning-text);
+}
+:where(.lorca-connection-menu) .lorca-status-error {
+  background: var(--destructive-text);
+}
+@keyframes lorca-connection-enter {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes lorca-connection-exit {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lorca-connection-menu:is([data-state="open"], [data-state="closed"]) {
+    animation: none;
+  }
+}
+@media (max-width: 767px) {
+  .lorca-connection-menu {
+    width: 100%;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+  }
 }
 :where(.lorca-app) .lorca-header-status [data-icon-root] {
   width: 12px;
@@ -945,11 +1068,13 @@ select:focus-visible {
 }
 :where(.lorca-app) .lorca-agent-picker {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 7px;
   position: relative;
   color: var(--muted-foreground);
   min-width: 0;
+  max-width: min(240px, 48%);
   padding: 6px 4px;
   border-radius: 5px;
 }
@@ -966,7 +1091,10 @@ select:focus-visible {
   appearance: none;
   border: 0;
   background: transparent;
+  min-width: 0;
   max-width: 220px;
+  width: 100%;
+  text-overflow: ellipsis;
   padding-right: 19px;
   margin-right: -21px;
   font-size: var(--text-xs);
@@ -980,6 +1108,7 @@ select:focus-visible {
   color: var(--foreground);
 }
 :where(.lorca-app) .lorca-send-actions {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1009,19 +1138,11 @@ select:focus-visible {
   background: currentColor;
   border-radius: 2px;
 }
-:where(.lorca-app) .lorca-composer-footnote {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 3px 0;
-  color: var(--subtle-foreground);
-  font-size: var(--text-xs);
-}
+
 :where(.lorca-app) .lorca-jump-latest {
-  position: absolute;
-  bottom: calc(100% + 14px);
-  left: 50%;
-  transform: translateX(-50%);
+  display: flex;
+  width: max-content;
+  margin: 0 auto 10px;
   border-color: var(--border-seam);
   border-radius: 20px;
   background: var(--background);
@@ -1359,14 +1480,6 @@ select:focus-visible {
     min-height: 50px;
     font-size: max(16px, var(--text-base));
   }
-  :where(.lorca-app) .lorca-composer-footnote {
-    justify-content: center;
-    font-size: var(--text-2xs);
-    padding-top: 8px;
-  }
-  :where(.lorca-app) .lorca-composer-footnote > span:last-child {
-    display: none;
-  }
   :where(.lorca-app) .lorca-transcript {
     margin: 0 22px;
     padding-top: 24px;
@@ -1433,12 +1546,42 @@ select:focus-visible {
   cursor: help;
 }
 :where(.lorca-app) .lorca-composer-options {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
+:where(.lorca-app) .lorca-runner-summary {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 360px;
+  padding: 4px;
+  color: var(--subtle-foreground);
+  font-size: var(--text-xs);
+}
+:where(.lorca-app) .lorca-runner-summary > [data-icon-root] {
+  width: 14px;
+  height: 14px;
+}
+:where(.lorca-app) .lorca-runner-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:where(.lorca-app) .lorca-runner-status {
+  flex-shrink: 0;
+  color: var(--subtle-foreground);
+}
+:where(.lorca-app) .lorca-runner-status[data-online="true"] {
+  color: var(--success-foreground);
+}
 :where(.lorca-app) .lorca-attach-button {
+  flex-shrink: 0;
   width: 29px;
   height: 29px;
   color: var(--subtle-foreground);
@@ -2413,6 +2556,30 @@ select:focus-visible {
 }
 
 @media (min-width: 768px) {
+  :where(.lorca-app) .lorca-main {
+    --lorca-content-gutter: clamp(20px, 2vw, 48px);
+  }
+  :where(.lorca-app[data-content-width="wide"]) .lorca-main {
+    --lorca-reading-width: 100%;
+  }
+  :where(.lorca-app) .lorca-content-width {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 7px;
+    background: var(--state-hover);
+  }
+  :where(.lorca-app) .lorca-content-width button {
+    height: 26px;
+    padding: 0 8px;
+    font-size: var(--text-xs);
+    color: var(--muted-foreground);
+  }
+  :where(.lorca-app) .lorca-content-width button[aria-pressed="true"] {
+    background: var(--state-active);
+    color: var(--foreground);
+  }
   :where(.lorca-app) .lorca-sidebar,
   :where(.lorca-app) .lorca-sidebar-footer,
   :where(.lorca-app) .lorca-header,
@@ -2493,7 +2660,7 @@ select:focus-visible {
     isolation: isolate;
     height: 48px;
     min-height: 48px;
-    padding: 0 max(20px, calc((100% - var(--lorca-reading-width)) / 2));
+    padding: 0 max(var(--lorca-content-gutter), calc((100% - var(--lorca-reading-width)) / 2));
   }
   :where(.lorca-app) .lorca-header-title {
     gap: 10px;
@@ -2506,8 +2673,9 @@ select:focus-visible {
     background: transparent;
   }
   :where(.lorca-app) .lorca-scroll {
-    padding: 48px 20px 0;
+    padding: 48px var(--lorca-content-gutter) 0;
     scroll-padding-top: 64px;
+    scroll-padding-bottom: 24px;
   }
   :where(.lorca-app) .lorca-transcript {
     width: 100%;
@@ -2553,7 +2721,7 @@ select:focus-visible {
     border: 0;
   }
   :where(.lorca-app) .lorca-composer-area {
-    padding: 0 20px 12px;
+    padding: 0 var(--lorca-content-gutter) 12px;
   }
   :where(.lorca-app) .lorca-composer {
     padding: 14px 16px 10px;
@@ -2566,9 +2734,6 @@ select:focus-visible {
   }
   :where(.lorca-app) .lorca-composer textarea {
     min-height: 52px;
-  }
-  :where(.lorca-app) .lorca-composer-footnote {
-    padding-top: 8px;
   }
   :where(.lorca-settings-desktop) {
     grid-template-columns: var(--lorca-sidebar-width) minmax(0, 1fr);

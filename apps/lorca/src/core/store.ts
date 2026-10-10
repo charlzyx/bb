@@ -1,6 +1,7 @@
 import type {
   WireBot,
   WireChat,
+  WireDevice,
   WireEvent,
   WireMessage,
   WireSnapshot,
@@ -14,8 +15,11 @@ export interface Model {
   relayConnected: boolean;
   updateRequired: boolean;
   bots: Map<string, WireBot>;
+  devices: Map<string, WireDevice>;
   chats: Map<string, WireChat>;
   turns: Map<string, WireTurn>;
+  messageActivityBoundaries: Map<string, string>;
+  activityBoundaries: Map<string, number>;
   legacyRunning: Set<string>;
 }
 export function emptyModel(): Model {
@@ -26,8 +30,11 @@ export function emptyModel(): Model {
     relayConnected: false,
     updateRequired: false,
     bots: new Map(),
+    devices: new Map(),
     chats: new Map(),
     turns: new Map(),
+    messageActivityBoundaries: new Map(),
+    activityBoundaries: new Map(),
     legacyRunning: new Set(),
   };
 }
@@ -60,6 +67,7 @@ export function applySnapshot(model: Model, snapshot: WireSnapshot): Model {
       has_more: older.length ? previous!.has_more : incoming.has_more,
     });
   }
+  const retainedMessages = new Set([...chats.values()].flatMap(chat => chat.messages.map(message => `${chat.id}:${message.id}`)));
   return {
     version: snapshot.version,
     hasIdentity: snapshot.has_identity,
@@ -67,25 +75,41 @@ export function applySnapshot(model: Model, snapshot: WireSnapshot): Model {
     relayConnected: snapshot.relay_connected,
     updateRequired: snapshot.relay_update_required,
     bots: new Map(snapshot.bots.map((b) => [b.id, b])),
+    devices: new Map(snapshot.devices.map(device => [device.id, device])),
     chats,
     turns: new Map(snapshot.running_turns.map((t) => [t.job_id, t])),
+    messageActivityBoundaries: model.identityId === (snapshot.identity_id ?? null)
+      ? new Map([...model.messageActivityBoundaries].filter(([key]) => retainedMessages.has(key)))
+      : new Map(),
+    activityBoundaries: new Map([...chats.keys()].map(id => [id, (model.identityId === (snapshot.identity_id ?? null) ? model.activityBoundaries.get(id) ?? 0 : 0) + 1])),
     legacyRunning: new Set(
       snapshot.running_turns.length ? [] : snapshot.running_chat_ids,
     ),
   };
 }
+function observeToolBoundary(model: Model, event: WireEvent): Model {
+  if (event.event !== "message.added" || event.data.message.body.kind !== "tool" || !model.chats.has(event.data.chat_id)) return model;
+  const key = `${event.data.chat_id}:${event.data.message.id}`;
+  const boundary = model.activityBoundaries.get(event.data.chat_id);
+  if (boundary === undefined || model.messageActivityBoundaries.has(key)) return model;
+  return { ...model, messageActivityBoundaries: new Map(model.messageActivityBoundaries).set(key, `observed:${boundary}`) };
+}
 export function applyEvent(model: Model, event: WireEvent): Model {
+  model = observeToolBoundary(model, event);
   if (event.event === "snapshot") return applySnapshot(model, event.data);
   if (event.event === "ignored") return model;
   const next = {
     ...model,
     chats: new Map(model.chats),
     turns: new Map(model.turns),
+    messageActivityBoundaries: new Map(model.messageActivityBoundaries),
+    activityBoundaries: new Map(model.activityBoundaries),
     legacyRunning: new Set(model.legacyRunning),
   };
   switch (event.event) {
     case "roster.changed": {
       next.bots = new Map(event.data.bots.map((b) => [b.id, b]));
+      if (event.data.devices !== undefined) next.devices = new Map(event.data.devices.map(device => [device.id, device]));
       next.chats = new Map(
         event.data.chats.map((chat) => {
           const existing = model.chats.get(chat.id);
@@ -112,6 +136,7 @@ export function applyEvent(model: Model, event: WireEvent): Model {
       break;
     }
     case "message.removed": {
+      next.messageActivityBoundaries.delete(`${event.data.chat_id}:${event.data.message_id}`);
       const chat = next.chats.get(event.data.chat_id);
       if (chat)
         next.chats.set(chat.id, {
@@ -121,6 +146,8 @@ export function applyEvent(model: Model, event: WireEvent): Model {
       break;
     }
     case "chat.removed": {
+      next.activityBoundaries.delete(event.data.chat_id);
+      for (const message of next.chats.get(event.data.chat_id)?.messages ?? []) next.messageActivityBoundaries.delete(`${event.data.chat_id}:${message.id}`);
       next.chats.delete(event.data.chat_id);
       for (const [id, turn] of next.turns)
         if (turn.chat_id === event.data.chat_id) next.turns.delete(id);
@@ -128,10 +155,12 @@ export function applyEvent(model: Model, event: WireEvent): Model {
       break;
     }
     case "job.started":
+      next.activityBoundaries.set(event.data.chat_id, (next.activityBoundaries.get(event.data.chat_id) ?? 0) + 1);
       next.turns.set(event.data.job_id, event.data);
       next.legacyRunning.delete(event.data.chat_id);
       break;
     case "job.finished":
+      next.activityBoundaries.set(event.data.chat_id, (next.activityBoundaries.get(event.data.chat_id) ?? 0) + 1);
       next.turns.delete(event.data.job_id);
       next.legacyRunning.delete(event.data.chat_id);
       break;
@@ -140,6 +169,7 @@ export function applyEvent(model: Model, event: WireEvent): Model {
       next.updateRequired = event.data.update_required;
       break;
     case "identity.changed":
+      next.devices = new Map();
       next.hasIdentity = event.data.has_identity;
       break;
   }
@@ -170,6 +200,7 @@ export function isRunning(model: Model, chatId: string): boolean {
 }
 
 export function applyBufferedEvent(model: Model, event: WireEvent): Model {
+  model = observeToolBoundary(model, event);
   if (event.event === "snapshot" && model.identityId !== (event.data.identity_id ?? null)) return model;
   if(event.event==="message.added"||event.event==="message.updated"){
     const incoming=event.data.message;

@@ -8,6 +8,7 @@ import { Markdown } from "./markdown";
 import { Avatar } from "./Avatar";
 import { copyText } from "./clipboard";
 import type { LorcaMessage, LorcaShellActions } from "./types";
+import { groupToolRecords, rememberToolExpansion, stableToolGroupIds, toolGroupExpanded } from "./tool-groups";
 
 type ApprovalMessage = Extract<LorcaMessage, { kind: "approval" }>;
 type ToolMessage = Extract<LorcaMessage, { kind: "tool" }>;
@@ -72,10 +73,10 @@ function CopyMessage({ text }: { text: string }) {
   );
 }
 
-function ToolCard({ message }: { message: ToolMessage }) {
+function ToolCard({ message, expanded, onExpand }: { message: ToolMessage; expanded?: boolean; onExpand?: (expanded: boolean) => void }) {
   return (
-    <details className={`lorca-tool-card ${CONTEXT_CARD_CLASS}`}>
-      <summary>
+    <details className={`lorca-tool-card ${CONTEXT_CARD_CLASS}`} open={expanded} data-tool-id={message.id} data-tool-status={message.status}>
+      <summary onClick={onExpand ? event => { event.preventDefault(); onExpand(!expanded); } : undefined}>
         <span className={`lorca-tool-icon lorca-tool-${message.status}`}>
           <Icon
             name={
@@ -118,6 +119,46 @@ function ToolCard({ message }: { message: ToolMessage }) {
       </div>
     </details>
   );
+}
+
+export function Transcript({ messages, actions, disabled }: { messages: readonly LorcaMessage[]; actions: LorcaShellActions; disabled: boolean }) {
+  const [groups, setGroups] = useState<ReadonlyMap<string, boolean>>(() => new Map());
+  const [details, setDetails] = useState<ReadonlyMap<string, boolean>>(() => new Map());
+  const [projection, setProjection] = useState(() => {
+    const anchors = new Map<string, string>();
+    return { messages, entries: stableToolGroupIds(groupToolRecords(messages), anchors), anchors };
+  });
+  let currentProjection = projection;
+  if (projection.messages !== messages) {
+    const anchors = new Map(projection.anchors);
+    currentProjection = { messages, entries: stableToolGroupIds(groupToolRecords(messages), anchors), anchors };
+    setProjection(currentProjection);
+  }
+  return currentProjection.entries.map(entry => {
+    if (entry.kind === "item") return <TranscriptItem key={`message:${entry.message.id}`} message={entry.message} actions={actions} disabled={disabled} />;
+    const expanded = toolGroupExpanded(entry.messages, groups);
+    const running = entry.messages.filter(message => message.status === "running");
+    const errors = entry.messages.filter(message => message.status === "error");
+    const current = running.at(-1);
+    const controls = `tool-records-${entry.id}`;
+    return (
+      <section className="lorca-tool-group" key={`tools:${entry.id}`} data-tool-group={entry.id} data-tool-count={entry.messages.length}>
+        <button type="button" className="lorca-tool-group-toggle" aria-expanded={expanded} aria-controls={controls}
+          onClick={() => setGroups(previous => rememberToolExpansion(previous, entry.messages.map(message => message.id), !expanded))}>
+          <Icon name={errors.length ? "AlertCircle" : current ? "Loading" : "CircleCheck"} className={errors.length ? "lorca-tool-error" : current ? "lorca-tool-running" : "lorca-tool-group-done"} />
+          <span>工具记录 · {entry.messages.length} 项</span>
+          <span className="lorca-tool-group-state" aria-live="polite">{errors.length ? `${errors.length} 项失败` : current ? "正在执行工具" : "已完成"}</span>
+          <Icon name="ChevronRight" className="lorca-disclosure-chevron" />
+        </button>
+        {current && <div className="lorca-tool-live" role="status"><span className="lorca-tool-live-dot" /><span>{current.name || "正在执行工具"}</span></div>}
+        {errors.length > 0 && <p className="lorca-tool-group-errors" role="alert">失败：{errors.map(message => message.name).join("、")}</p>}
+        <div id={controls} className="lorca-tool-group-items" hidden={!expanded}>
+          {entry.messages.map(message => <ToolCard key={message.id} message={message} expanded={details.get(message.id) ?? message.status === "error"}
+            onExpand={value => setDetails(previous => rememberToolExpansion(previous, [message.id], value))} />)}
+        </div>
+      </section>
+    );
+  });
 }
 
 function ApprovalCard({

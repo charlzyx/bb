@@ -7,6 +7,11 @@ export interface WireBot {
   has_avatar: boolean;
   avatar_version: string | null;
 }
+export interface WireDevice {
+  id: string;
+  name: string;
+  online: boolean;
+}
 export interface WireChat {
   id: string;
   kind: string;
@@ -74,13 +79,14 @@ export interface WireSnapshot {
   relay_connected: boolean;
   relay_update_required: boolean;
   bots: WireBot[];
+  devices: WireDevice[];
   chats: WireChat[];
   running_turns: WireTurn[];
   running_chat_ids: string[];
 }
 export type WireEvent =
   | { event: "snapshot"; data: WireSnapshot }
-  | { event: "roster.changed"; data: { bots: WireBot[]; chats: WireChat[] } }
+  | { event: "roster.changed"; data: { bots: WireBot[]; chats: WireChat[]; devices?: WireDevice[] } }
   | {
       event: "message.added" | "message.updated";
       data: { chat_id: string; message: WireMessage };
@@ -272,6 +278,23 @@ function parseTurn(value: unknown): WireTurn {
     job_id: string(v.job_id, "turn.job_id"),
   };
 }
+function parseDevices(value: unknown): WireDevice[] {
+  const values = array(value, "devices");
+  if (values.length > 128) throw new ProtocolError("devices");
+  const devices = Array.from(values, value => {
+    const input = object(value, "device");
+    const id = string(input.id, "device.id"), name = string(input.name, "device.name");
+    if (!id.trim() || id.length > 256 || /[\0\r\n]/.test(id) || name.length > 256 || name.includes("\0")) throw new ProtocolError("device");
+    let online;
+    if (input.online !== undefined) online = boolean(input.online, "device.online");
+    else if (input.status === "online" || input.status === "offline") online = input.status === "online";
+    else throw new ProtocolError("device.online");
+    return { id, name, online };
+  });
+  if (new Set(devices.map(device => device.id)).size !== devices.length) throw new ProtocolError("devices.id");
+  return devices;
+}
+
 export function parseSnapshot(value: unknown): WireSnapshot {
   const v = object(value, "snapshot");
   return {
@@ -285,6 +308,7 @@ export function parseSnapshot(value: unknown): WireSnapshot {
       false,
     ),
     bots: array(v.bots, "bots").map(parseBot),
+    devices: v.devices === undefined ? [] : parseDevices(v.devices),
     chats: array(v.chats, "chats").map((c) => parseChat(c)),
     running_turns:
       v.running_turns === undefined
@@ -331,6 +355,7 @@ export function parseEvent(value: unknown): WireEvent {
         event: name,
         data: {
           bots: array(d.bots, "bots").map(parseBot),
+          ...(d.devices === undefined ? {} : { devices: parseDevices(d.devices) }),
           chats: array(d.chats, "chats").map((c) => parseChat(c, false)),
         },
       };

@@ -73,7 +73,7 @@ function projectSettingsBootstrap(value, authMode) {
     providers: array(input.providers, 128).map(projectProvider),
     bots: array(input.bots, 1000).map(value => {
       const item = object(value);
-      return { id: id(item.id), name: text(item.name), runnerId: id(item.runner_id), provider: item.provider == null ? null : id(item.provider), model: nullableText(item.model) };
+      return { id: id(item.id), name: text(item.name), runnerId: item.runner_id === '' ? '' : id(item.runner_id), provider: item.provider == null ? null : id(item.provider), model: nullableText(item.model) };
     }),
   };
 }
@@ -167,7 +167,7 @@ class SettingsInventory {
 }
 function wireBot(value, scope = '') {
   const item = object(value);
-  return { id: id(item.id), name: text(item.name), runner_id: id(item.runner_id), ...botPresentation(item, scope) };
+  return { id: id(item.id), name: text(item.name), runner_id: item.runner_id === '' ? '' : id(item.runner_id), ...botPresentation(item, scope) };
 }
 function wireMessage(value) {
   const item = object(value), author = object(item.author), source = object(item.body), status = object(item.state);
@@ -201,10 +201,20 @@ function wireChat(value, messages) {
   return result;
 }
 function wireTurn(value) { const item = object(value); return { chat_id: id(item.chat_id), bot_id: text(item.bot_id), job_id: id(item.job_id) }; }
+function wireDevices(value) {
+  const devices = Array.from(array(value, 128), value => {
+    const item = object(value);
+    if (!['online', 'offline'].includes(item.status)) invalid();
+    return { id: id(item.id), name: text(item.name), online: item.status === 'online' };
+  });
+  if (new Set(devices.map(item => item.id)).size !== devices.length) invalid();
+  return devices;
+}
 function wireSnapshot(value) {
   const item = object(value);
   return { version: text(item.version, 128), has_identity: boolean(item.has_identity), identity_id: nullableText(item.identity_id), is_identity_device: boolean(item.is_identity_device, false), this_device_id: nullableText(item.this_device_id),
     relay_connected: boolean(item.relay_connected), relay_update_required: boolean(item.relay_update_required, false),
+    devices: item.devices === undefined ? [] : wireDevices(item.devices),
     bots: array(item.bots, 1024).map(bot => wireBot(bot, `${item.has_identity}:${item.identity_id ?? ''}`)), chats: array(item.chats, 2048).map(chat => wireChat(chat, true)),
     running_turns: array(item.running_turns, 1024, []).map(wireTurn), running_chat_ids: array(item.running_chat_ids, 1024, []).map(id) };
 }
@@ -214,7 +224,7 @@ function sanitizeRendererEvent(value, scope = '') {
   const input = object(envelope.data);
   let data;
   if (event === 'snapshot') data = wireSnapshot(input);
-  else if (event === 'roster.changed') data = { bots: array(input.bots, 1000).map(bot => wireBot(bot, scope)), chats: array(input.chats, 2048).map(chat => wireChat(chat, false)) };
+  else if (event === 'roster.changed') data = { ...(input.devices === undefined ? {} : { devices: wireDevices(input.devices) }), bots: array(input.bots, 1000).map(bot => wireBot(bot, scope)), chats: array(input.chats, 2048).map(chat => wireChat(chat, false)) };
   else if (event === 'identity.changed') data = { has_identity: boolean(input.has_identity) };
   else if (event === 'relay.status') data = { connected: boolean(input.connected), update_required: boolean(input.update_required, false) };
   else if (['job.started', 'job.finished'].includes(event)) data = wireTurn(input);

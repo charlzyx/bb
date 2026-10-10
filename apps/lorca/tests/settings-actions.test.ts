@@ -414,3 +414,16 @@ test("late pairing completion after reconnect does not refresh the replacement c
   assert.equal(bridge.settingsCalls.length, before);
   assert.equal(controller.getSnapshot().settingsApplying, false);
 });
+
+
+test("a missing native pairing API reports a bridge-specific reason without inferring daemon support", async t => {
+  const { bridge, controller } = await ready(t);
+  bridge.openPairing = undefined;
+  bridge.inspect = async () => ({ ...inventory(), pairingCapabilities: { invite: false, join: false, inviteReasons: ["token_auth_required", "https_relay_required"], joinReasons: ["token_auth_required", "already_has_identity"] } });
+  controller.actions.onRefreshSettings(); await tick();
+  assert.deepEqual(controller.getSnapshot().runtimeSettings?.pairingCapabilities?.inviteReasons, ["token_auth_required", "https_relay_required", "bridge_unavailable"]);
+  await assert.rejects(controller.actions.onOpenPairing!("invite"));
+  bridge.inspect = async () => inventory();
+  controller.actions.onRefreshSettings(); await tick();
+  assert.deepEqual(controller.getSnapshot().runtimeSettings?.pairingCapabilities, { invite: false, join: false, inviteReasons: ["bridge_unavailable"], joinReasons: ["bridge_unavailable"] });
+});

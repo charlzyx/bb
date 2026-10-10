@@ -703,7 +703,7 @@ test("runtime inventory loads through the read-only bridge without issuing mutat
     const after = controller.getSnapshot();
     assert.equal(after.settingsLoading, false);
     assert.equal(after.settingsError, undefined);
-    assert.deepEqual(after.runtimeSettings, parseRuntimeSettings(demoRuntimeSettings));
+    assert.deepEqual(after.runtimeSettings, parseRuntimeSettings({ ...demoRuntimeSettings, pairingCapabilities: { invite: false, join: false, inviteReasons: ["bridge_unavailable"], joinReasons: ["bridge_unavailable"] } }));
     assert.deepEqual(after.messages, before.messages);
     assert.equal(after.activeConversationId, before.activeConversationId);
     assert.deepEqual(bridge.calls.map((call) => call.method), ["bootstrap"]);
@@ -743,7 +743,7 @@ for (const staleOutcome of ["success", "rejection", "malformed response"] as con
       else pending[0].resolve(staleOutcome === "malformed response" ? { mcp: null } : structuredClone(demoRuntimeSettings));
       await tick();
 
-      assert.deepEqual(controller.getSnapshot().runtimeSettings, parseRuntimeSettings(latest));
+      assert.deepEqual(controller.getSnapshot().runtimeSettings, parseRuntimeSettings({ ...latest, pairingCapabilities: { invite: false, join: false, inviteReasons: ["bridge_unavailable"], joinReasons: ["bridge_unavailable"] } }));
       assert.equal(controller.getSnapshot().settingsLoading, false);
       assert.equal(controller.getSnapshot().settingsError, undefined);
       assert.ok(bridge.calls.every((call) => call.method === "bootstrap"));
@@ -827,7 +827,7 @@ for (const boundary of ["identity event", "bootstrap identity", "endpoint", "rec
       bridge.getSettings = async () => structuredClone(demoRuntimeSettings);
       refresh("runner-demo");
       await tick();
-      assert.deepEqual(controller.getSnapshot().runtimeSettings, parseRuntimeSettings(demoRuntimeSettings));
+      assert.deepEqual(controller.getSnapshot().runtimeSettings, parseRuntimeSettings({ ...demoRuntimeSettings, pairingCapabilities: { invite: false, join: false, inviteReasons: ["bridge_unavailable"], joinReasons: ["bridge_unavailable"] } }));
       assert.ok(bridge.calls.every((call) => call.method === "bootstrap"));
     } finally {
       controller.dispose();
@@ -861,7 +861,7 @@ test("malformed runtime inventory clears stale results, reports a settings error
     refresh();
     assert.equal(controller.getSnapshot().settingsError, undefined);
     await tick();
-    assert.deepEqual(controller.getSnapshot().runtimeSettings, parseRuntimeSettings(demoRuntimeSettings));
+    assert.deepEqual(controller.getSnapshot().runtimeSettings, parseRuntimeSettings({ ...demoRuntimeSettings, pairingCapabilities: { invite: false, join: false, inviteReasons: ["bridge_unavailable"], joinReasons: ["bridge_unavailable"] } }));
     assert.equal(controller.getSnapshot().settingsLoading, false);
     assert.equal(controller.getSnapshot().settingsError, undefined);
     assert.ok(bridge.calls.every((call) => call.method === "bootstrap"));

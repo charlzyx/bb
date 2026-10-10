@@ -54,11 +54,25 @@ function createPairingFlow({ BrowserWindow, ipcMain, dialog, bridge, inventory, 
   const unknownScopes = new Set();
   const scopeKey = (status, mode) => `${text(status.endpoint, 160)}:${mode}`;
   function capabilities(value) {
+    const inviteReasons = [], joinReasons = [];
+    const addBoth = reason => { inviteReasons.push(reason); joinReasons.push(reason); };
+    const result = () => ({ invite: inviteReasons.length === 0, join: joinReasons.length === 0, inviteReasons, joinReasons });
+    const status = bridge.getStatus();
+    if (status.status !== 'connected') addBoth('not_connected');
+    if (status.authMode !== 'token') addBoth('token_auth_required');
     try {
-      const status = bridge.getStatus(), source = snapshot(value);
-      if (status.status !== 'connected' || status.authMode !== 'token') return { invite: false, join: false };
-      return { invite: !unknownScopes.has(scopeKey(status, 'invite')) && source.hasIdentity && Boolean(source.identityId && source.deviceId && source.relay && relay(source.relay)), join: !unknownScopes.has(scopeKey(status, 'join')) && !source.hasIdentity };
-    } catch { return { invite: false, join: false }; }
+      if (unknownScopes.has(scopeKey(status, 'invite'))) inviteReasons.push('unknown_outcome');
+      if (unknownScopes.has(scopeKey(status, 'join'))) joinReasons.push('unknown_outcome');
+    } catch { if (!inviteReasons.includes('not_connected')) addBoth('not_connected'); }
+    let source;
+    try { source = snapshot(value); } catch { addBoth('identity_fields_missing'); return result(); }
+    if (source.hasIdentity) {
+      joinReasons.push('already_has_identity');
+      if (!source.identityId || !source.deviceId) inviteReasons.push('identity_fields_missing');
+    } else inviteReasons.push('identity_required');
+    if (!source.relay) inviteReasons.push('relay_missing');
+    else { try { relay(source.relay); } catch { inviteReasons.push('https_relay_required'); } }
+    return result();
   }
   function guard(current, joining = false) {
     current.trusted();

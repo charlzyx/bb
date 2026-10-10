@@ -6,6 +6,7 @@ import {
   parsePage,
   parseSnapshot,
   type WireEvent,
+  type WireChat,
   type WireMessage,
   type WireSnapshot,
 } from "./protocol";
@@ -27,13 +28,14 @@ import type {
   LorcaMessage,
   LorcaShellActions,
   RuntimeSettings,
+  RunnerSummary,
   SettingsAction,
   SettingsActionResult,
 } from "../ui/types";
 
 import { parseRuntimeSettings } from "./settings";
 
-function messageView(message: WireMessage, authorName: string | undefined, authorAvatar: LorcaBotAppearance | undefined, botIds: readonly string[], appearance: (id: string) => LorcaBotAppearance | undefined): LorcaMessage {
+function messageView(message: WireMessage, authorName: string | undefined, authorAvatar: LorcaBotAppearance | undefined, botIds: readonly string[], appearance: (id: string) => LorcaBotAppearance | undefined, observedBoundary: string | null): LorcaMessage {
   const body = message.body;
   switch (body.kind) {
     case "text":
@@ -55,7 +57,7 @@ function messageView(message: WireMessage, authorName: string | undefined, autho
         })),
       };
     case "tool":
-      if (body.name === "message_bot" && message.state === "complete" && !body.is_running && !body.is_error && body.summary.startsWith("Messaged "))
+      if (body.name === "message_bot" && message.state === "complete" && !message.error && !body.is_running && !body.is_error && body.summary.startsWith("Messaged "))
         return {
           kind: "cross-agent",
           id: message.id,
@@ -64,7 +66,7 @@ function messageView(message: WireMessage, authorName: string | undefined, autho
           to: body.target_bot_id ? appearance(body.target_bot_id) ?? null : null,
           text: body.detail,
         };
-      if (body.run?.state === "asking")
+      if (body.run?.state === "asking" && message.state !== "failed" && !message.error && !body.is_error)
         return {
           kind: "approval",
           id: message.id,
@@ -78,13 +80,15 @@ function messageView(message: WireMessage, authorName: string | undefined, autho
       return {
         kind: "tool",
         id: message.id,
+        authorId: message.author.bot_id,
+        observedBoundary,
         name: body.summary || body.name,
-        status: body.is_error || body.run?.state === "failed"
+        status: message.state === "failed" || Boolean(message.error) || body.is_error || body.run?.state === "failed"
           ? "error"
           : body.is_running || body.run?.state === "waiting" || body.run?.state === "running" || body.run?.state === "checking"
             ? "running"
             : "complete",
-        output: body.run?.output || body.detail,
+        output: [message.error, body.run?.output || body.detail].filter(Boolean).join("\n\n"),
       };
     case "permission":
       return {
@@ -361,6 +365,24 @@ export class LorcaController {
     }
     this.pumpAvatars();
   }
+  private runnerSummary(chat: WireChat | undefined): RunnerSummary {
+    if (this.status.status !== "connected" || !this.synchronized || !this.model.hasIdentity) return { kind: "unknown" };
+    const botIds = chat ? chat.bot_ids : this.selectedBot ? [this.selectedBot] : [];
+    if (!botIds.length) return { kind: "unknown" };
+    const devices = new Map<string, { id: string; name: string; online: boolean }>();
+    let unassigned = 0;
+    for (const id of botIds) {
+      const bot = this.model.bots.get(id);
+      if (!bot) return { kind: "unknown" };
+      if (bot.runner_id === "") { unassigned++; continue; }
+      const device = this.model.devices.get(bot.runner_id);
+      if (!device || !device.name.trim()) return { kind: "unknown" };
+      devices.set(device.id, device);
+    }
+    if (unassigned) return { kind: unassigned === botIds.length ? "unassigned" : "unknown" };
+    const device = devices.values().next().value;
+    return devices.size === 1 && device ? { kind: "single", device: { ...device } } : { kind: "multiple" };
+  }
   private makeState(): LorcaShellState {
     const chat = this.activeId
       ? this.model.chats.get(this.activeId)
@@ -374,6 +396,7 @@ export class LorcaController {
           : this.status.detail;
     return {
       draftScope: this.accountEpoch,
+      runnerSummary: this.runnerSummary(chat),
       runtimeSettings: this.runtimeSettings ?? undefined,
       settingsLoading: this.settingsLoading,
       settingsApplying: this.settingsApplying,
@@ -411,7 +434,7 @@ export class LorcaController {
         }))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
       activeConversationId: chat?.id ?? null,
-      messages: messages.filter((m) => !m.queued).map((m) => messageView(m, m.author.bot_id ? this.model.bots.get(m.author.bot_id)?.name : undefined, m.author.kind !== "you" && m.author.bot_id ? this.appearance(m.author.bot_id) : undefined, chat?.bot_ids ?? [], id => this.appearance(id))),
+      messages: messages.filter((m) => !m.queued).map((m) => messageView(m, m.author.bot_id ? this.model.bots.get(m.author.bot_id)?.name : undefined, m.author.kind !== "you" && m.author.bot_id ? this.appearance(m.author.bot_id) : undefined, chat?.bot_ids ?? [], id => this.appearance(id), this.model.messageActivityBoundaries.get(`${m.chat_id}:${m.id}`) ?? null)),
       agents: [...this.model.bots.values()].map((b) => ({
         id: b.id,
         label: b.name,
@@ -768,7 +791,11 @@ export class LorcaController {
       if (!this.bridge.getSettings) throw new Error("查看运行环境需要更新桌面桥接组件。");
       const settings = parseRuntimeSettings(await this.bridge.getSettings({ ...(runnerId ? { runnerId } : {}), ...(options?.includeMcp === undefined ? {} : { includeMcp: options.includeMcp }) }));
       if (request !== this.settingsRequest || generation !== this.generation || accountEpoch !== this.accountEpoch) return;
-      this.runtimeSettings = (this.bridge.openPairing || !settings.pairingCapabilities) ? settings : { ...settings, pairingCapabilities: { invite: false, join: false } };
+      this.runtimeSettings = this.bridge.openPairing ? settings : { ...settings, pairingCapabilities: {
+        invite: false, join: false,
+        inviteReasons: [...new Set([...(settings.pairingCapabilities?.inviteReasons ?? []), "bridge_unavailable" as const])],
+        joinReasons: [...new Set([...(settings.pairingCapabilities?.joinReasons ?? []), "bridge_unavailable" as const])],
+      } };
     } catch (error) {
       if (request === this.settingsRequest) this.settingsError = error instanceof Error ? error.message : "无法加载运行环境设置。";
     } finally {

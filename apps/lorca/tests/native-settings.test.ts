@@ -69,6 +69,22 @@ test('settings targets only a selected known Runner and keeps unknown counts dis
   settings.dispose();
 });
 
+test('settings inventory preserves an explicitly unassigned bot without accepting malformed Runner IDs', async () => {
+  const snapshot = bootstrap();
+  snapshot.bots[0].runner_id = '';
+  const bridge = new FakeBridge(); const settings = new SettingsInventory(bridge);
+  bridge.handler = async method => method === 'bootstrap' ? snapshot : mcp();
+  try {
+    const value = await settings.get({ includeMcp: false });
+    assert.equal(value.bots[0].runnerId, '');
+    assert.equal(JSON.stringify(value).includes(secret), false);
+    assert.deepEqual(bridge.calls, [{ method: 'bootstrap', params: {} }]);
+    for (const runnerId of [undefined, null, ' ', '\n', 'a'.repeat(257)]) {
+      assert.throws(() => projectSettingsBootstrap({ ...snapshot, bots: [{ ...snapshot.bots[0], runner_id: runnerId }] }, 'token'));
+    }
+  } finally { settings.dispose(); }
+});
+
 test('invalid inventory fields fail closed and unavailable MCP never masquerades as a ready empty catalog', async () => {
   for (const params of [null, [], { runnerId: '' }, { runnerId: 'a'.repeat(257) }, { runner_id: 'runner-one' }, { runnerId: 'runner-one', config: secret }]) assert.throws(() => validateSettingsParams(params));
   const bridge = new FakeBridge(); const settings = new SettingsInventory(bridge);

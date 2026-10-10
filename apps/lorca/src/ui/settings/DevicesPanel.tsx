@@ -6,8 +6,8 @@ import {
   SettingsRowList,
   SettingsSection,
 } from "../../../../app/src/components/ui/settings-section";
-import { settingsZh } from "../../locale/settings.zh-CN";
-import type { LorcaShellActions, RuntimeSettings } from "../types";
+import { pairingDisabledReasonsZh, settingsZh } from "../../locale/settings.zh-CN";
+import type { LorcaShellActions, PairingDisabledReason, RuntimeSettings } from "../types";
 import { DevicesInventory, InventoryEmpty } from "./RuntimePanels";
 
 type PairingMode = "invite" | "join";
@@ -55,16 +55,21 @@ export function PairingAction({ mode, onOpenPairing, disabled, compact = false }
   );
 }
 
-export function DevicesPanel({ runtime, disabled = false, demo = false, onOpenPairing, selectedDeviceId, onSelectDevice }: {
+export function DevicesPanel({ runtime, disabled = false, demo = false, connected = true, onOpenPairing, selectedDeviceId, onSelectDevice }: {
   runtime?: RuntimeSettings;
   selectedDeviceId?: string;
   onSelectDevice?: (id: string) => void;
   disabled?: boolean;
   demo?: boolean;
+  connected?: boolean;
   onOpenPairing?: LorcaShellActions["onOpenPairing"];
 }) {
   const mode: PairingMode = runtime?.hasIdentity ? "invite" : "join";
-  const available = Boolean(runtime?.pairingCapabilities?.[mode] && onOpenPairing);
+  const capabilities = runtime?.pairingCapabilities;
+  const reasons = new Set<PairingDisabledReason>(capabilities?.[mode === "invite" ? "inviteReasons" : "joinReasons"] ?? (capabilities?.[mode] ? [] : ["not_reported"]));
+  if (!onOpenPairing) reasons.add("bridge_unavailable");
+  if (!connected) reasons.add("not_connected");
+  const available = Boolean(capabilities?.[mode] && onOpenPairing && connected && reasons.size === 0);
   return (
     <>
       <SettingsSection title={settingsZh.pairing} description={runtime ? runtime.hasIdentity ? settingsZh.inviteDeviceDescription : settingsZh.joinAccountDescription : settingsZh.waitingConfiguration}>
@@ -77,7 +82,7 @@ export function DevicesPanel({ runtime, disabled = false, demo = false, onOpenPa
           </SettingsDetailRow>
         </SettingsRowList>
         <p className="lorca-connection-explanation">{settingsZh.pairingScope}</p>
-        {(demo || !available) && <p className="lorca-connection-explanation">{demo ? settingsZh.pairingPreview : settingsZh.pairingUnavailable}</p>}
+        {demo ? <p className="lorca-connection-explanation">{settingsZh.pairingPreview}</p> : [...reasons].map(reason => <p key={reason} className="lorca-connection-explanation" data-pairing-disabled-reason={reason}>{pairingDisabledReasonsZh[reason]}</p>)}
         <PairingAction key={mode} mode={mode} onOpenPairing={onOpenPairing} disabled={disabled || demo || !available} />
       </SettingsSection>
       {runtime ? <DevicesInventory runtime={runtime} selectedDeviceId={selectedDeviceId} onSelectDevice={onSelectDevice} /> : <SettingsSection title={settingsZh.pairedDevices}><InventoryEmpty icon="ComputerTerminal01" title={settingsZh.noDevices} detail={settingsZh.waitingConfiguration} /></SettingsSection>}

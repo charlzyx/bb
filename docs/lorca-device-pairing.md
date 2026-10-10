@@ -98,6 +98,8 @@ Sources: [single-request mailbox](https://github.com/egoist/lorca/blob/64bf5e186
 
 ## Native implementation requirements
 
+Availability is a dots client policy decision, not an RPC capability probe. This client requires local token-authenticated mode and an HTTPS relay for invitation creation. The settings page lists every applicable safe reason, including both unauthenticated compatibility mode and an HTTP relay, without disclosing the relay address. A disabled entry does not mean the daemon lacks `pair.*`: the older reference fork `72478382674be5d3a06e0a365c7eb089d3e62db5` already implements the same pairing request/response contract. No pairing request is sent to discover support, and these requirements are not relaxed by explanatory UI changes.
+
 - A dedicated main-owned flow, with one active dots operation and exact trusted-frame IPC. Keep pairing methods out of the generic renderer allowlist.
 - An ephemeral, sandboxed, context-isolated window with no Node integration, navigation, remote assets, arbitrary network requests, downloads or newly granted permissions. Input and output of codes stay in this window; copying is an explicit user action handled by main.
 - The ordinary renderer receives only capability availability, bounded status and sanitized device metadata. No pairing string, nonce, QR, relay credential, account key or raw error crosses that boundary. Existing safe inventory supplies all device types rather than only Runners.

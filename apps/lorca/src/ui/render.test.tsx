@@ -7,12 +7,15 @@ import { TranscriptItem } from "./Transcript";
 import { DotsMark } from "./DotsMark";
 import { Avatar, ConversationAvatars, safeAvatarImage } from "./Avatar";
 import { LorcaShell } from "./LorcaShell";
+import { ConnectionStatusMenu, ConnectionStatusSummary } from "./ConnectionStatusMenu";
+import { ComposerRunnerStatus } from "./ComposerRunnerStatus";
 import { Settings, validateEndpoint } from "./Settings";
 import { DevicesInventory, McpPanel } from "./settings/RuntimePanels";
 import { BotSettingsPanel, ProvidersPanel } from "./settings/BotSettingsPanel";
 import { DevicesPanel } from "./settings/DevicesPanel";
 import { AutoReviewPanel as AutoReviewView } from "./settings/AutoReviewPanel";
 import { useAutoReviewDraft } from "./settings/auto-review-draft";
+import { CONTENT_WIDTH_STORAGE_KEY, readContentWidthPreference, writeContentWidthPreference } from "./content-width";
 import {
   APPEARANCE_STORAGE_KEY,
   readAppearancePreference,
@@ -354,7 +357,7 @@ test("Pairing entry needs an explicit matching capability and a native callback"
         const button = html.match(new RegExp(`<button[^>]*>${label}</button>`))?.[0];
         assert.ok(button);
         assert.equal(button.includes('disabled=""'), !available);
-        assert.equal(html.includes("当前桌面桥接组件或本地服务未提供此配对流程"), !available);
+        assert.equal(html.includes("data-pairing-disabled-reason="), !available);
         assert.equal(calls, 0, "Reading or rendering settings never starts pairing");
         assert.doesNotMatch(html, /<input|<textarea|<img|已配对成功|配对已完成/);
       }
@@ -461,6 +464,35 @@ test("Appearance storage restores known values and handles blocked or malformed 
     }),
     false,
   );
+});
+
+test("Content width defaults to adaptive wide and safely restores a local reading preference", () => {
+  for (const value of [null, "wide", "unknown", "760px", "<script>"]) {
+    assert.equal(readContentWidthPreference({ getItem: () => value }), "wide");
+  }
+  assert.equal(readContentWidthPreference({ getItem: () => "reading" }), "reading");
+  assert.equal(readContentWidthPreference({ getItem: () => { throw new Error("blocked"); } }), "wide");
+  const writes: string[][] = [];
+  assert.equal(writeContentWidthPreference("reading", { setItem: (key, value) => { writes.push([key, value]); } }), true);
+  assert.deepEqual(writes, [[CONTENT_WIDTH_STORAGE_KEY, "reading"]]);
+  assert.equal(writeContentWidthPreference("wide", { setItem: () => { throw new Error("blocked"); } }), false);
+});
+
+test("Chat exposes an accessible local width switch without changing backend or settings capabilities", () => {
+  const state: LorcaShellState = {
+    connection: { status: "disconnected", endpoint: "ws://127.0.0.1:4862/ws" },
+    conversations: [], activeConversationId: null, messages: [], agents: [], selectedAgentId: null,
+    busy: false, loading: false, hasMore: false, loadingOlder: false, error: null, queue: [], demo: false,
+  };
+  const html = renderToStaticMarkup(<LorcaShell state={state} actions={actions} />);
+  assert.match(html, /class="lorca-app" data-content-width="wide"/);
+  const controls = html.match(/class="lorca-content-width"[\s\S]*?<\/div>/)?.[0];
+  assert.ok(controls);
+  assert.match(controls, /role="group" aria-label="内容宽度"/);
+  assert.match(controls, /aria-pressed="true"[^>]*>宽屏<\/button>/);
+  assert.match(controls, /aria-pressed="false"[^>]*>阅读<\/button>/);
+  assert.doesNotMatch(controls, / disabled=|保存|连接/);
+  assert.match(html, /data-app-mark="ghost"/);
 });
 
 test("Preferences expose appearance only and disclose its session scope", () => {
@@ -808,8 +840,12 @@ test("Composer bot selector shows the selected avatar and retains native labels 
   assert.match(enabled, /<option value="selected-bot" selected="">Selected Bot<\/option>/);
   assert.doesNotMatch(enabled, /data-icon="Bot"|<select[^>]+disabled/);
   assert.doesNotMatch(enabled.slice(enabled.indexOf("<select")), /<img|<svg/);
-  for (const patch of [{ busy: true }, { loading: true }, { activeConversationId: "existing-chat" }, { agents: [], selectedAgentId: null }]) {
+  for (const patch of [{ busy: true }, { loading: true }, { agents: [], selectedAgentId: null }]) {
     assert.match(picker({ ...state, ...patch }), /<select[^>]+disabled=""/);
+  }
+  for (const activeConversationId of ["existing-dm", "existing-group"]) {
+    const existing = renderToStaticMarkup(<LorcaShell state={{ ...state, activeConversationId }} actions={actions} />);
+    assert.doesNotMatch(existing, /lorca-agent-picker|aria-label="选择智能体"/);
   }
   const noImage = picker({ ...state, agents: state.agents.map((agent) => ({ ...agent, appearance: agent.appearance && { ...agent.appearance, image: undefined } })) });
   assert.match(noImage, /data-icon="ComputerTerminal01"/);
@@ -826,4 +862,75 @@ test("Application marks use the unchanged Ghost PNG assets without SVG or color 
     assert.match(html, /data-app-mark="ghost"/);
     assert.doesNotMatch(html, /<svg|<circle|filter=|style=/);
   }
+});
+
+
+test("Connection status trigger opens a read-only menu instead of entering settings", () => {
+  let settingsOpened = 0;
+  const html = renderToStaticMarkup(<ConnectionStatusMenu state={{ connection: { status: "connected", endpoint: "ws://127.0.0.1:4862/ws" }, demo: false }} onSettings={() => { settingsOpened += 1; }} />);
+  assert.match(html, /aria-label="查看连接状态"/);
+  assert.match(html, /aria-haspopup="menu"/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /已连接/);
+  assert.doesNotMatch(html, /打开连接设置|lorca-connection-summary|ws:\/\//);
+  assert.equal(settingsOpened, 0);
+});
+
+test("Connection summary exposes only safe current status and cached device summaries", () => {
+  const runtime = runtimeFixture();
+  runtime.devices[0].name = "<script>Synthetic device</script>";
+  const state = { connection: { status: "connected" as const, endpoint: "ws://private-endpoint.invalid/ws", detail: "private diagnostic detail" }, demo: false, runtimeSettings: runtime };
+  const html = renderToStaticMarkup(<ConnectionStatusSummary state={state} />);
+  assert.match(html, /&lt;script&gt;Synthetic device&lt;\/script&gt;/);
+  assert.match(html, /2 \/ 2 台在线/);
+  assert.match(html, /设备与中继信息来自最近一次读取/);
+  assert.doesNotMatch(html, /private-endpoint|private diagnostic|Fixture provider|fixture-version|id="phone"|<script>|<button/);
+  for (const connectionStatus of ["disconnected", "connecting", "error"] as const) {
+    const stale = renderToStaticMarkup(<ConnectionStatusSummary state={{ ...state, connection: { ...state.connection, status: connectionStatus } }} />);
+    assert.doesNotMatch(stale, /Synthetic device|台在线|最近一次读取/);
+  }
+  for (const patch of [{ runtimeSettings: undefined }, { settingsLoading: true }]) {
+    const unavailable = renderToStaticMarkup(<ConnectionStatusSummary state={{ ...state, ...patch }} />);
+    assert.match(unavailable, /尚未读取设备状态/);
+    assert.doesNotMatch(unavailable, /Synthetic device|台在线/);
+  }
+  const demo = renderToStaticMarkup(<ConnectionStatusSummary state={{ ...state, demo: true }} />);
+  assert.match(demo, /未连接真实智能体或后端/);
+  assert.doesNotMatch(demo, /Synthetic device|台在线/);
+});
+
+
+test("Runner status renders only the supplied conversation summary without guessing the device", () => {
+  for (const online of [true, false]) {
+    const html = renderToStaticMarkup(<ComposerRunnerStatus summary={{ kind: "single", device: { id: "private-device-id", name: "<b>Named runner</b>", online } }} />);
+    assert.match(html, /data-runner-kind="single"/);
+    assert.match(html, /&lt;b&gt;Named runner&lt;\/b&gt;/);
+    assert.match(html, online ? /data-online="true">在线/ : /data-online="false">离线/);
+    assert.match(html, /后端最近报告状态/);
+    assert.doesNotMatch(html, /private-device-id|<b>|本机|<button/);
+  }
+  for (const [kind, label] of [["multiple", "多个运行设备"], ["unknown", "运行设备未确认"], ["unassigned", "未分配"]] as const) {
+    const html = renderToStaticMarkup(<ComposerRunnerStatus summary={{ kind }} />);
+    assert.ok(html.includes(label));
+    assert.doesNotMatch(html, /data-online=|在线|本机/);
+  }
+  assert.match(renderToStaticMarkup(<ComposerRunnerStatus summary={undefined} />), /运行设备未确认/);
+});
+
+test("Existing chat composer has one control row and keeps keyboard guidance accessible", () => {
+  const state: LorcaShellState = {
+    connection: { status: "connected", endpoint: "ws://127.0.0.1:4862/ws" },
+    conversations: [], activeConversationId: "group", messages: [],
+    agents: [{ id: "first-bot", label: "Must not be shown as the group recipient" }], selectedAgentId: "first-bot",
+    busy: true, loading: false, hasMore: false, loadingOlder: false, error: null, queue: [], demo: false,
+    runnerSummary: { kind: "multiple" }, attachmentsEnabled: true,
+  };
+  const html = renderToStaticMarkup(<LorcaShell state={state} actions={{ ...actions, onPickAttachments() {} }} />);
+  assert.doesNotMatch(html, /lorca-agent-picker|Must not be shown as the group recipient|lorca-composer-footnote|由本地运行环境提供支持/);
+  assert.match(html, /aria-label="添加附件"/);
+  assert.match(html, /data-runner-kind="multiple"/);
+  assert.match(html, /aria-label="停止回复"/);
+  assert.match(html, /aria-label="加入发送队列"/);
+  assert.match(html, /aria-describedby="lorca-composer-help"/);
+  assert.match(html, /<p class="sr-only" id="lorca-composer-help">Enter 发送 · Shift \+ Enter 换行 处理期间/);
 });

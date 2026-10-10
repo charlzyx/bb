@@ -1,4 +1,4 @@
-import type { RuntimeSettings, SettingsEditor } from "../ui/types";
+import type { PairingCapabilities, PairingDisabledReason, RuntimeSettings, SettingsEditor } from "../ui/types";
 import { object } from "./protocol";
 
 const text = (value: unknown, field: string, maximum = 500): string => {
@@ -48,6 +48,24 @@ export function parseSettingsEditor(value: unknown): SettingsEditor {
     },
   };
 }
+const pairingReasons = ["not_connected", "token_auth_required", "identity_required", "already_has_identity", "identity_fields_missing", "relay_missing", "https_relay_required", "unknown_outcome", "bridge_unavailable", "not_reported"] as const;
+export function parsePairingCapabilities(value: unknown): PairingCapabilities {
+  const input = object(value, "pairingCapabilities");
+  const invite = flag(input.invite, "pairingCapabilities.invite"), join = flag(input.join, "pairingCapabilities.join");
+  const reasons = (value: unknown, allowed: boolean): PairingDisabledReason[] => {
+    if (value === undefined) return allowed ? [] : ["not_reported"];
+    if (!Array.isArray(value) || value.length > pairingReasons.length) throw new Error("设置数据格式不兼容：配对禁用原因");
+    const result = Array.from(value, value => {
+      const reason = pairingReasons.find(reason => reason === value);
+      if (!reason) throw new Error("设置数据格式不兼容：配对禁用原因");
+      return reason;
+    });
+    if (new Set(result).size !== result.length || allowed !== (result.length === 0)) throw new Error("设置数据格式不兼容：配对禁用原因");
+    return result;
+  };
+  return { invite, join, inviteReasons: reasons(input.inviteReasons, invite), joinReasons: reasons(input.joinReasons, join) };
+}
+
 export function parseRuntimeSettings(value: unknown): RuntimeSettings {
   const v = object(value, "settings");
   const mcp = object(v.mcp, "mcp");
@@ -55,7 +73,7 @@ export function parseRuntimeSettings(value: unknown): RuntimeSettings {
   if (mcp.status !== "ready" && mcp.status !== "unavailable") throw new Error("设置数据格式不兼容：mcp.status");
   return {
     ...(v.editor === undefined ? {} : { editor: parseSettingsEditor(v.editor) }),
-    ...(v.pairingCapabilities === undefined ? {} : { pairingCapabilities: { invite: flag(object(v.pairingCapabilities, "pairingCapabilities").invite, "pairingCapabilities.invite"), join: flag(object(v.pairingCapabilities, "pairingCapabilities").join, "pairingCapabilities.join") } }),
+    ...(v.pairingCapabilities === undefined ? {} : { pairingCapabilities: parsePairingCapabilities(v.pairingCapabilities) }),
     version: text(v.version, "version"),
     hasIdentity: flag(v.hasIdentity, "hasIdentity"),
     relayConnected: flag(v.relayConnected, "relayConnected"),

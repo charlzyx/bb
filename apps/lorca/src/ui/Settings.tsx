@@ -353,6 +353,7 @@ export function Settings({
       {page === "devices" && (
         <DevicesPanel
           runtime={runtime}
+          connected={connected}
           disabled={disabled}
           demo={demo}
           onOpenPairing={actions.onOpenPairing}

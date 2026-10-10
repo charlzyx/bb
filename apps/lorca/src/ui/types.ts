@@ -48,6 +48,8 @@ export type LorcaMessage =
   | {
       kind: "tool";
       id: string;
+      authorId?: string | null;
+      observedBoundary?: string | null;
       name: string;
       status: "running" | "complete" | "error";
       input?: string;
@@ -107,9 +109,28 @@ export interface SettingsActionResult {
   status: "applied" | "cancelled" | "unknownOutcome";
 }
 
+export type PairingDisabledReason =
+  | "not_connected"
+  | "token_auth_required"
+  | "identity_required"
+  | "already_has_identity"
+  | "identity_fields_missing"
+  | "relay_missing"
+  | "https_relay_required"
+  | "unknown_outcome"
+  | "bridge_unavailable"
+  | "not_reported";
+
+export interface PairingCapabilities {
+  invite: boolean;
+  join: boolean;
+  inviteReasons?: PairingDisabledReason[];
+  joinReasons?: PairingDisabledReason[];
+}
+
 export interface RuntimeSettings {
   editor?: SettingsEditor;
-  pairingCapabilities?: { invite: boolean; join: boolean };
+  pairingCapabilities?: PairingCapabilities;
   version: string;
   hasIdentity: boolean;
   relayConnected: boolean;
@@ -154,7 +175,14 @@ export interface RuntimeSettings {
   };
 }
 
+export type RunnerSummary =
+  | { kind: "single"; device: { id: string; name: string; online: boolean } }
+  | { kind: "multiple" }
+  | { kind: "unknown" }
+  | { kind: "unassigned" };
+
 export interface LorcaShellState {
+  runnerSummary?: RunnerSummary;
   connection: LorcaConnection;
   conversations: LorcaConversation[];
   activeConversationId: string | null;

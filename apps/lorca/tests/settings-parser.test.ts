@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { demoRuntimeSettings } from '../src/core/demo';
-import { parseRuntimeSettings, parseSettingsEditor } from '../src/core/settings';
+import { parsePairingCapabilities, parseRuntimeSettings, parseSettingsEditor } from '../src/core/settings';
 
 test('editor parser retains typed capabilities and rule scope without unknown secret fields', () => {
   const editor = structuredClone(demoRuntimeSettings.editor!);
@@ -32,8 +32,24 @@ test('editor parser fails closed for unsupported rule behavior, malformed flags 
 test('pairing capabilities fail closed and never project invitation secrets', () => {
   const input = { ...demoRuntimeSettings, pairingCapabilities: { invite: true, join: false, pairing_string: 'secret-pairing-code' } };
   const result = parseRuntimeSettings(input);
-  assert.deepEqual(result.pairingCapabilities, { invite: true, join: false });
+  assert.deepEqual(result.pairingCapabilities, { invite: true, join: false, inviteReasons: [], joinReasons: ['not_reported'] });
   assert.ok(!JSON.stringify(result).includes('secret-pairing-code'));
   assert.throws(() => parseRuntimeSettings({ ...input, pairingCapabilities: { invite: 1, join: false } }));
   assert.throws(() => parseRuntimeSettings({ ...input, pairingCapabilities: null }));
+});
+
+
+test('pairing reasons preserve multiple safe client restrictions and strip all private metadata', () => {
+  const value = { invite: false, join: false, inviteReasons: ['token_auth_required', 'https_relay_required'], joinReasons: ['token_auth_required', 'already_has_identity'], relay_url: 'PRIVATE_RELAY', error: 'PRIVATE_ERROR' };
+  assert.deepEqual(parsePairingCapabilities(value), { invite: false, join: false, inviteReasons: value.inviteReasons, joinReasons: value.joinReasons });
+  assert.doesNotMatch(JSON.stringify(parsePairingCapabilities(value)), /PRIVATE_/);
+  for (const invalid of [
+    { ...value, inviteReasons: 'PRIVATE_ERROR' },
+    { ...value, inviteReasons: new Array(1) },
+    { ...value, inviteReasons: ['PRIVATE_ERROR'] },
+    { ...value, inviteReasons: ['token_auth_required', 'token_auth_required'] },
+    { ...value, inviteReasons: [] },
+    { ...value, invite: true },
+    { ...value, joinReasons: null },
+  ]) assert.throws(() => parsePairingCapabilities(invalid), error => error instanceof Error && !error.message.includes('PRIVATE_'));
 });

@@ -78,11 +78,11 @@ test('pairing parser binds canonical keys, exact fields and HTTPS destination wi
 
 test('capabilities are local token-mode gates and never claim remote method support or relay connectivity', () => {
   const ctx = setup();
-  assert.deepEqual(ctx.flow.capabilities(source()), { invite: true, join: false });
-  assert.deepEqual(ctx.flow.capabilities(source(false)), { invite: false, join: true });
-  ctx.bridge.status.authMode = 'legacy'; assert.deepEqual(ctx.flow.capabilities(source()), { invite: false, join: false });
-  ctx.bridge.status.authMode = 'token'; ctx.bridge.status.status = 'disconnected'; assert.deepEqual(ctx.flow.capabilities(source(false)), { invite: false, join: false });
-  assert.deepEqual(ctx.flow.capabilities({ has_identity: 'yes' }), { invite: false, join: false }); ctx.dispose();
+  assert.deepEqual(ctx.flow.capabilities(source()), { invite: true, join: false, inviteReasons: [], joinReasons: ['already_has_identity'] });
+  assert.deepEqual(ctx.flow.capabilities(source(false)), { invite: false, join: true, inviteReasons: ['identity_required', 'relay_missing'], joinReasons: [] });
+  ctx.bridge.status.authMode = 'legacy'; assert.deepEqual(ctx.flow.capabilities(source()), { invite: false, join: false, inviteReasons: ['token_auth_required'], joinReasons: ['token_auth_required', 'already_has_identity'] });
+  ctx.bridge.status.authMode = 'token'; ctx.bridge.status.status = 'disconnected'; assert.deepEqual(ctx.flow.capabilities(source(false)), { invite: false, join: false, inviteReasons: ['not_connected', 'identity_required', 'relay_missing'], joinReasons: ['not_connected'] });
+  assert.deepEqual(ctx.flow.capabilities({ has_identity: 'yes' }), { invite: false, join: false, inviteReasons: ['not_connected', 'identity_fields_missing'], joinReasons: ['not_connected', 'identity_fields_missing'] }); ctx.dispose();
 });
 
 test('invite requires explicit native confirmation before any mutation and cancellation is not success', async () => {
@@ -263,4 +263,25 @@ test('unknown outcomes lock only that daemon pairing mode without blocking ordin
   ctx.bridge.status.generation++; assert.equal(ctx.flow.capabilities(source()).invite, false); await assert.rejects(ctx.flow.open('invite'));
   assert.equal(writes(ctx.bridge).length, 1);
   ctx.bridge.status.endpoint = 'ws://127.0.0.1:4863/ws'; assert.equal(ctx.flow.capabilities(source()).invite, true); ctx.dispose();
+});
+
+
+test('capabilities report simultaneous client authentication and relay restrictions without exposing the address', async () => {
+  const ctx = setup(); ctx.bridge.status.authMode = 'legacy';
+  ctx.bridge.bootstrap.relay_url = `http://synthetic.invalid/${marker}`;
+  const capabilities = ctx.flow.capabilities(ctx.bridge.bootstrap);
+  assert.deepEqual(capabilities.inviteReasons, ['token_auth_required', 'https_relay_required']);
+  assert.equal(capabilities.invite, false); assert.equal(capabilities.join, false);
+  assert.equal(JSON.stringify(capabilities).includes(marker), false);
+  const result = await ctx.flow.open('invite'); assert.deepEqual(result, { status: 'failed' });
+  assert.equal(ctx.bridge.calls.length, 0); assert.equal(FakeWindow.instances.length, 1); ctx.dispose();
+});
+
+test('capabilities explain missing identity fields, relay and unknown-result lock without changing gates', async () => {
+  const ctx = setup();
+  assert.ok(ctx.flow.capabilities({ ...source(), identity_id: null }).inviteReasons.includes('identity_fields_missing'));
+  assert.ok(ctx.flow.capabilities({ ...source(), this_device_id: null, relay_url: null }).inviteReasons.includes('relay_missing'));
+  const original = ctx.bridge.handler; ctx.bridge.handler = async (method, params) => { if (method === 'pair.start') throw new Error(marker); return original(method, params); };
+  const { pending, child } = await ctx.begin(); await ctx.invoke('submit', child, {}); ctx.invoke('close', child); await pending;
+  assert.deepEqual(ctx.flow.capabilities(source()).inviteReasons, ['unknown_outcome']); ctx.dispose();
 });

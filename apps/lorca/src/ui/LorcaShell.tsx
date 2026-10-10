@@ -18,10 +18,13 @@ import {
 import { CHROME_SECTION_LABEL_CLASS } from "@bb/shared-ui/chrome-style-tokens";
 import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
 import { ConversationTimeline } from "../../../app/src/components/ui/conversation";
-import { TranscriptItem } from "./Transcript";
+import { Transcript } from "./Transcript";
 import { DotsMark } from "./DotsMark";
+import { ConnectionLabel, ConnectionStatusMenu } from "./ConnectionStatusMenu";
+import { ComposerRunnerStatus } from "./ComposerRunnerStatus";
 import { Avatar, ConversationAvatars } from "./Avatar";
 import { settleSubmittedDraft } from "./drafts";
+import { readContentWidthPreference, writeContentWidthPreference, type ContentWidth } from "./content-width";
 import { Settings } from "./Settings";
 import type { SettingsPage } from "./settings/SettingsFrame";
 import {
@@ -45,28 +48,6 @@ function conversationGroup(updatedAt: string): string {
   if (difference < 86400000) return zhCN.chat.yesterday;
   if (difference < 604800000) return zhCN.chat.previousWeek;
   return zhCN.chat.earlier;
-}
-
-function ConnectionLabel({ state }: { state: LorcaShellState }) {
-  if (state.demo)
-    return (
-      <>
-        <span className="lorca-demo-dot" />
-        {zhCN.chat.demo}
-      </>
-    );
-  return (
-    <>
-      <span
-        className={`lorca-status-dot lorca-status-${state.connection.status}`}
-      />
-      {state.connection.status === "connected"
-        ? zhCN.chat.connected
-        : state.connection.status === "connecting"
-          ? zhCN.chat.connecting
-          : zhCN.chat.offline}
-    </>
-  );
 }
 
 function Sidebar({
@@ -270,6 +251,7 @@ export function LorcaShell(props: LorcaShellProps) {
 function LorcaShellSession({ state, actions }: LorcaShellProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [contentWidth, setContentWidth] = useState(readContentWidthPreference);
   const [{ theme, persistent: themePersistent }, setAppearance] = useState(
     readAppearancePreference,
   );
@@ -292,6 +274,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
   const searchRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const widthAnchor = useRef<{ element: Element; top: number; conversation: string | null } | null>(null);
   const followLatest = useRef(true);
   const navigationRevision = useRef(0);
   const mounted = useRef(true);
@@ -362,17 +345,40 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
     if (!input) return;
     input.style.height = "0px";
     input.style.height = `${Math.min(input.scrollHeight, 196)}px`;
-  }, [draft]);
+  }, [draft, contentWidth]);
+
+  useLayoutEffect(() => {
+    const input = composerRef.current;
+    if (!input || typeof ResizeObserver === "undefined") return;
+    let previousWidth = input.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (input.clientWidth === previousWidth) return;
+      previousWidth = input.clientWidth;
+      input.style.height = "0px";
+      input.style.height = `${Math.min(input.scrollHeight, 196)}px`;
+      const scroll = scrollRef.current;
+      if (scroll) {
+        if (followLatest.current) scroll.scrollTop = scroll.scrollHeight;
+        previousLayout.current.height = scroll.scrollHeight;
+      }
+    });
+    observer.observe(input);
+    return () => observer.disconnect();
+  }, []);
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
     if (!scroll) return;
     const previous = previousLayout.current;
+    const anchor = widthAnchor.current;
+    widthAnchor.current = null;
     if (previous.conversation !== state.activeConversationId) {
       scroll.scrollTop = scroll.scrollHeight;
       followLatest.current = true;
       setShowLatest(false);
       setSendError(null);
+    } else if (anchor && anchor.conversation === state.activeConversationId && anchor.element.isConnected && !followLatest.current) {
+      scroll.scrollTop += anchor.element.getBoundingClientRect().top - anchor.top;
     } else if (
       previous.firstId &&
       state.messages[0]?.id !== previous.firstId &&
@@ -387,7 +393,20 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
       firstId: state.messages[0]?.id,
       height: scroll.scrollHeight,
     };
-  }, [state.messages, state.activeConversationId, state.busy]);
+  }, [state.messages, state.activeConversationId, state.busy, contentWidth]);
+
+  const changeContentWidth = (value: ContentWidth) => {
+    if (value === contentWidth) return;
+    const scroll = scrollRef.current;
+    const timeline = scroll?.querySelector(".lorca-timeline");
+    if (scroll && timeline && !followLatest.current) {
+      const visibleTop = scroll.getBoundingClientRect().top + 48;
+      const element = Array.from(timeline.children).find((item) => item.getBoundingClientRect().bottom > visibleTop);
+      if (element) widthAnchor.current = { element, top: element.getBoundingClientRect().top, conversation: state.activeConversationId };
+    }
+    writeContentWidthPreference(value);
+    setContentWidth(value);
+  };
 
   async function send(event?: FormEvent) {
     event?.preventDefault();
@@ -434,7 +453,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
   };
 
   return (
-    <div className="lorca-app">
+    <div className="lorca-app" data-content-width={contentWidth}>
       <a href="#lorca-composer" className="lorca-skip-link">
         {zhCN.chat.skipToComposer}
       </a>
@@ -499,19 +518,16 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
             )}
           </div>
           <div className="lorca-header-actions">
+            <div className="lorca-content-width" role="group" aria-label={zhCN.chat.contentWidth} title={zhCN.chat.contentWidthHelp}>
+              <Button variant="ghost" size="sm" aria-pressed={contentWidth === "wide"} onClick={() => changeContentWidth("wide")}>{zhCN.chat.wideContent}</Button>
+              <Button variant="ghost" size="sm" aria-pressed={contentWidth === "reading"} onClick={() => changeContentWidth("reading")}>{zhCN.chat.readingContent}</Button>
+            </div>
             {state.demo && (
               <Pill variant="outline" className="lorca-demo-badge">
                 {zhCN.chat.syntheticDemo}
               </Pill>
             )}
-            <button
-              className="lorca-header-status"
-              onClick={() => openSettings("connection")}
-              aria-label={zhCN.chat.openConnectionSettings}
-            >
-              <ConnectionLabel state={state} />
-              <Icon name="ChevronDown" />
-            </button>
+            <ConnectionStatusMenu state={state} onSettings={() => openSettings("connection")} />
           </div>
         </header>
         <div
@@ -556,14 +572,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                 </div>
               )}
               <ConversationTimeline className="lorca-timeline">
-                {state.messages.map((message) => (
-                  <TranscriptItem
-                    key={message.id}
-                    message={message}
-                    actions={actions}
-                    disabled={!canInteract}
-                  />
-                ))}
+                <Transcript key={state.activeConversationId ?? "empty"} messages={state.messages} actions={actions} disabled={!canInteract} />
               </ConversationTimeline>
               {state.busy &&
                 !state.messages.some(
@@ -697,6 +706,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                   }
                 }}
                 aria-describedby="lorca-composer-help"
+                title={zhCN.chat.keyboardHelp}
               />
               <div className="lorca-composer-toolbar">
                 <div className="lorca-composer-options">
@@ -726,7 +736,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                       </svg>
                     </Button>
                   )}
-                  <div className="lorca-agent-picker">
+                  {!state.activeConversationId && <div className="lorca-agent-picker">
                     <Avatar appearance={state.agents.find((agent) => agent.id === state.selectedAgentId)?.appearance} />
                     <select
                       aria-label={zhCN.chat.selectBot}
@@ -739,7 +749,6 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                         sending ||
                         state.loading ||
                         state.busy ||
-                        Boolean(state.activeConversationId) ||
                         !state.agents.length
                       }
                     >
@@ -753,7 +762,8 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                       ))}
                     </select>
                     <Icon name="ChevronDown" />
-                  </div>
+                  </div>}
+                  <ComposerRunnerStatus summary={state.runnerSummary} />
                 </div>
                 <div className="lorca-send-actions">
                   {state.busy && (
@@ -773,6 +783,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                     className="lorca-send-button"
                     size="icon"
                     type="submit"
+                    aria-describedby="lorca-composer-help"
                     aria-label={
                       state.busy
                         ? zhCN.chat.queueMessage
@@ -803,16 +814,10 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                 </div>
               </div>
             </form>
-            <div className="lorca-composer-footnote" id="lorca-composer-help">
-              <span>
-                {state.busy ? zhCN.chat.queueHelp : zhCN.chat.keyboardHelp}
-              </span>
-              <span>
-                {state.demo
-                  ? zhCN.chat.demoDataOnly
-                  : zhCN.chat.poweredByRuntime}
-              </span>
-            </div>
+            <p className="sr-only" id="lorca-composer-help">
+              {zhCN.chat.keyboardHelp}
+              {state.busy && ` ${zhCN.chat.queueHelp}`}
+            </p>
           </div>
         </div>
       </main>

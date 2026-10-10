@@ -1,0 +1,40 @@
+:where(.lorca-app) .lorca-tool-group {
+  min-width: 0;
+  border-radius: 9px;
+  background: var(--surface-raised);
+}
+:where(.lorca-app) .lorca-tool-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--text-xs);
+}
+:where(.lorca-app) .lorca-tool-group-toggle:hover { background: var(--state-hover); }
+:where(.lorca-app) .lorca-tool-group-toggle:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
+:where(.lorca-app) .lorca-tool-group-toggle > [data-icon-root] { width: 14px; height: 14px; flex-shrink: 0; }
+:where(.lorca-app) .lorca-tool-group-state { margin-left: auto; color: var(--subtle-foreground); }
+:where(.lorca-app) .lorca-tool-group-done { color: var(--subtle-foreground); }
+:where(.lorca-app) .lorca-tool-group-toggle[aria-expanded="true"] .lorca-disclosure-chevron { transform: rotate(90deg); }
+:where(.lorca-app) .lorca-tool-group-items { padding: 0 8px 8px; }
+:where(.lorca-app) .lorca-tool-group-items[hidden] { display: none; }
+:where(.lorca-app) .lorca-tool-group .lorca-tool-card { border: 0; background: transparent; }
+:where(.lorca-app) .lorca-tool-group .lorca-tool-card summary { min-height: 32px; padding: 7px 6px; font-size: var(--text-xs); }
+:where(.lorca-app) .lorca-tool-group-errors { margin: 0; padding: 0 12px 9px; font-size: var(--text-xs); color: var(--destructive-text); overflow-wrap: anywhere; }
+:where(.lorca-app) .lorca-tool-live { display: flex; align-items: center; gap: 8px; padding: 0 12px 9px; color: var(--subtle-foreground); font-size: var(--text-xs); }
+:where(.lorca-app) .lorca-tool-live > span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+:where(.lorca-app) .lorca-tool-live-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: currentColor; animation: lorca-tool-breathe 1.5s ease-in-out infinite; }
+@keyframes lorca-tool-breathe { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  :where(.lorca-app) .lorca-tool-live-dot,
+  :where(.lorca-app) .lorca-tool-running { animation: none; }
+  :where(.lorca-app) .lorca-disclosure-chevron { transition: none; }
+}
