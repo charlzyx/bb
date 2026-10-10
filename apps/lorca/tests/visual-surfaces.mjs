@@ -88,13 +88,20 @@ async function footerLastRow(page) {
     const bounds = element.getBoundingClientRect();
     const list = element.closest(".lorca-chat-list").getBoundingClientRect();
     const footer = document.querySelector(".lorca-sidebar-footer").getBoundingClientRect();
-    const points = [[bounds.left + 2, bounds.top + 2], [bounds.right - 2, bounds.bottom - 2], [(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2]];
-    return { focused: element === document.activeElement, visibleFocus: element.matches(":focus-visible"), clear: bounds.top >= list.top && bounds.bottom <= footer.top - 14, unobscured: points.every(([x, y]) => element.contains(document.elementFromPoint(x, y))) };
+    const centerX = (bounds.left + bounds.right) / 2;
+    const centerY = (bounds.top + bounds.bottom) / 2;
+    const points = [[centerX, bounds.top + 2], [centerX, bounds.bottom - 2], [bounds.left + 2, centerY], [bounds.right - 2, centerY], [centerX, centerY]];
+    const hits = points.map(([x, y]) => {
+      const target = document.elementFromPoint(x, y);
+      return { x, y, inside: element.contains(target), target: target?.tagName, className: target?.getAttribute("class") };
+    });
+    return { focused: element === document.activeElement, visibleFocus: element.matches(":focus-visible"), clear: bounds.top >= list.top && bounds.bottom <= footer.top - 14, unobscured: hits.every((hit) => hit.inside), hits };
   });
   assert.equal(geometry.focused, true, "Tab reaches the final real conversation");
   assert.equal(geometry.visibleFocus, true);
   assert.equal(geometry.clear, true, "The final conversation scrolls fully above the footer fade");
-  assert.equal(geometry.unobscured, true, "The final conversation remains clickable above the footer");
+  assert.equal(geometry.unobscured, true, `The final conversation's interactive edge midpoints and center remain unobscured: ${JSON.stringify(geometry.hits)}`);
+  await last.click({ trial: true });
   await last.press("Enter");
   assert.equal(await last.getAttribute("aria-current"), "page", "Keyboard activation opens the last conversation");
 }

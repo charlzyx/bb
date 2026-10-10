@@ -112,7 +112,7 @@ async function main() {
           else if (request.method === 'mcp.list') {
             reply({ path: secretMarker, error: null, servers: [{ name: 'Synthetic MCP', transport: 'http', enabled: true, tool_count: 3, problem: secretMarker, status: { id: 'mcp-smoke', name: 'Synthetic MCP', state: 'error', detail: secretMarker }, config: privateSettings }] });
             event('roster.changed', snapshot);
-            event('relay.status', { connected: false, update_required: false, url: secretMarker, error: secretMarker });
+            event('relay.status', { connected: false, update_required: false, url: snapshot.relay_url, error: secretMarker });
             event('provider.auth', { kind: 'fixture-provider', url: secretMarker });
           }
           else if (request.method === 'providers.api_key' && request.params.kind === 'deepseek') reply({ api_key: secretMarker, base_url: 'https://synthetic.example.invalid/v1' });
@@ -327,7 +327,7 @@ async function main() {
     assert.equal(configured.length, 1); assert.equal(configured[0].params.api_key, 'SYNTHETIC_REPLACEMENT_KEY');
     assert.equal(configured[0].params.base_url, 'https://synthetic.example.invalid/v1');
     const pairingWindow = application.waitForEvent('window');
-    const pairingOutcome = page.evaluate(() => window.lorca.openPairing('invite'));
+    const pairingOutcome = page.evaluate(() => window.lorca.openPairing('invite')).then(value => ({ value }), error => ({ error }));
     const pairingPage = await pairingWindow;
     await pairingPage.getByRole('button', { name: '生成配对码', exact: true }).waitFor();
     const pairingFlags = await pairingPage.evaluate(() => ({ process: typeof window.process, require: typeof window.require, chatBridge: typeof window.lorca, api: Object.keys(window.dotsPairing).sort() }));
@@ -355,7 +355,9 @@ async function main() {
     assert.equal(JSON.stringify(await page.evaluate(() => window.lorca.getSettings({}))).includes(pairingNonce), false);
     if (process.env.LORCA_SMOKE_SCREENSHOT) await pairingPage.screenshot({ path: path.resolve(process.env.LORCA_SMOKE_SCREENSHOT).replace(/\.png$/i, '') + '-pairing.png', fullPage: true });
     await pairingPage.locator('#close').click();
-    assert.equal((await pairingOutcome).status, 'unknownOutcome');
+    const pairingResult = await pairingOutcome;
+    if (pairingResult.error) throw pairingResult.error;
+    assert.equal(pairingResult.value.status, 'unknownOutcome');
     await until(() => requests.some(request => request.method === 'pair.cancel'), 'Cancel only this synthetic invitation');
     assert.equal(requests.filter(request => request.method === 'pair.start').length, 1);
     assert.equal(requests.some(request => request.method === 'pair.accept' || request.method === 'pair.abort'), false);
