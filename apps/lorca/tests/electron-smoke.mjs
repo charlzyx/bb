@@ -208,7 +208,7 @@ async function main() {
     const configure = page.evaluate(async () => {
       const settings = await window.lorca.getSettings({});
       return window.lorca.settingsAction({ kind: 'provider.configure', revision: settings.editor.revision, providerId: 'deepseek' });
-    });
+    }).then(value => ({ value }), error => ({ error }));
     const securePage = await secureWindow;
     securePage.setDefaultTimeout(15_000);
     await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).waitFor();
@@ -230,7 +230,9 @@ async function main() {
     await securePage.getByLabel('HTTPS 连接地址（留空保留原值）', { exact: true }).fill('https://synthetic.example.invalid/v1');
     await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).fill('SYNTHETIC_REPLACEMENT_KEY');
     await securePage.getByRole('button', { name: '继续', exact: true }).click();
-    assert.deepEqual(await configure, { status: 'applied' });
+    const configureOutcome = await configure;
+    if (configureOutcome.error) throw configureOutcome.error;
+    assert.deepEqual(configureOutcome.value, { status: 'applied' });
     const configured = requests.filter(request => request.method === 'providers.connect_deepseek');
     assert.equal(configured.length, 1); assert.equal(configured[0].params.api_key, 'SYNTHETIC_REPLACEMENT_KEY');
     assert.equal(configured[0].params.base_url, 'https://synthetic.example.invalid/v1');
@@ -241,6 +243,9 @@ async function main() {
     assert.equal((await page.content()).includes('SYNTHETIC_REPLACEMENT_KEY'), false);
     assert.deepEqual(failures, []);
     process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, secureSettingsIsolated: true, nativeSettingsConfirmed: true, menusLocalized: true, dotsBranding: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
+  } catch (error) {
+    process.stderr.write(`Electron smoke assertion: ${error.stack ?? error.message}\n`);
+    throw error;
   } finally {
     let shutdownFailure;
     if (application) {
