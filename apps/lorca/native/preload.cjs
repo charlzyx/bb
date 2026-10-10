@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('lorca', Object.freeze({
   getStatus: () => invoke('lorca:status'),
   setWatchingChat: chatId => invoke('lorca:set-watching-chat', chatId),
   getSettings: (params = {}) => invoke('lorca:get-settings', params),
+  openPairing: mode => invoke('lorca:open-pairing', mode),
   settingsAction: action => invoke('lorca:settings-action', action),
   onEvent: listener => subscribe('lorca:event', listener),
   onStatus: listener => subscribe('lorca:status-update', listener),

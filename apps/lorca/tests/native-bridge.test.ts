@@ -209,3 +209,20 @@ test('native copy is text-only and bounded without clipboard reads', () => {
   assert.equal(validateCopyText('code to copy'), 'code to copy');
   for (const value of [null, 1, {}, 'x'.repeat(200001), 'unsafe\0text']) assert.throws(() => validateCopyText(value));
 });
+
+test('only native pair.accept can use a bounded long wait without changing renderer RPC permissions', async t => {
+  const f = await fixture(t, { timeoutMs: 15 }); await f.bridge.connect(f.endpoint);
+  const pending: RequestFrame[] = [];
+  f.handle((_socket, request) => { pending.push(request); });
+  for (const [method, options] of [['bootstrap', { timeoutMs: 610000 }], ['pair.accept', { timeoutMs: 999999999 }], ['pair.accept', { timeoutMs: 610000, extra: true }]])
+    await assert.rejects(f.bridge.sendValidated(method, {}, options), /请求时限无效/);
+  assert.equal(f.requests.length, 0);
+  assert.throws(() => validateRequest('pair.accept', {}));
+  assert.throws(() => validateRequest('pair.start', {}));
+  const result = f.bridge.sendValidated('pair.accept', { pairing_string: 'synthetic-only' }, { timeoutMs: 610000 });
+  await until(() => pending.length === 1); await delay(30);
+  assert.equal(f.bridge.pending.size, 1);
+  f.sockets[0]!.send(JSON.stringify({ id: pending[0]!.id, result: { identity_id: 'synthetic' } }));
+  assert.deepEqual(await result, { identity_id: 'synthetic' });
+  assert.equal(f.requests.length, 1);
+});

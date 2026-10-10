@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import { access, mkdir, mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -44,13 +44,16 @@ function pngWithText(bytes, text) {
   return Buffer.concat([bytes.subarray(0, bytes.length - 12), chunk, bytes.subarray(bytes.length - 12)]);
 }
 const epoch = 1791561600;
+const pairingPublic = Buffer.alloc(32, 7).toString('base64url');
+const pairingNonce = Buffer.alloc(16, 8).toString('base64url');
+const pairingCode = `lorca://pair?relay=${encodeURIComponent('https://relay.example.invalid/')}&id=${pairingPublic}&ek=${Buffer.alloc(32, 9).toString('base64url')}&n=${pairingNonce}`;
 const secretMarker = 'SYNTHETIC_SETTINGS_SECRET_MUST_NOT_REACH_RENDERER';
 const privateSettings = { env: { KEY: secretMarker }, headers: { Authorization: secretMarker }, oauth: { clientSecret: secretMarker }, args: [secretMarker], cwd: secretMarker, url: secretMarker };
 const message = (id, author, text, offset) => ({ id, chat_id: 'chat-smoke', author, body: { kind: 'text', text }, state: { kind: 'complete' }, created_at: epoch + offset });
 const snapshot = {
   version: 'synthetic-electron-smoke', has_identity: true, is_identity_device: true,
-  identity_id: 'account-smoke', this_device_id: 'runner-smoke', relay_connected: false,
-  relay_url: null, relay_update_required: false, relay_error: null,
+  identity_id: createHash('sha256').update(pairingPublic).digest('hex').slice(0, 16), this_device_id: 'runner-smoke', relay_connected: false,
+  relay_url: 'https://relay.example.invalid/', relay_update_required: false, relay_error: null,
   bots: [{ id: 'bot-smoke', name: 'Fixture Bot', runner_id: 'runner-smoke', provider: 'fixture-provider', model: 'fixture-model', workdir: secretMarker }],
   chats: [{ id: 'chat-smoke', kind: 'dm', title: null, bot_ids: ['bot-smoke'], created_at: epoch, has_more: false,
     messages: [message('msg-fixture', { kind: 'bot', bot_id: 'bot-smoke' }, 'Synthetic Electron smoke fixture. No account or model is connected.', 0)] }],
@@ -101,6 +104,9 @@ async function main() {
           const reply = result => socket.send(JSON.stringify({ id: request.id, result }));
           const event = (name, data) => socket.send(JSON.stringify({ event: name, data }));
           if (request.method === 'bootstrap') reply(snapshot);
+          else if (request.method === 'pair.start') reply({ nonce: pairingNonce, pairing_string: pairingCode });
+          else if (request.method === 'pair.status' && request.params.nonce === pairingNonce) reply({ state: 'waiting' });
+          else if (request.method === 'pair.cancel' && request.params.nonce === pairingNonce) reply(null);
           else if (request.method === 'ui.watching' && (request.params.chat_id === null || request.params.chat_id === 'chat-smoke')) reply(null);
           else if (request.method === 'chats.mark_read' && request.params.chat_id === 'chat-smoke') reply(null);
           else if (request.method === 'mcp.list') {
@@ -162,7 +168,7 @@ async function main() {
     assert.equal(renderer.platform, process.platform);
     assert.equal(renderer.status.status, 'connected'); assert.equal(renderer.status.authMode, 'token');
     assert.equal(JSON.stringify(renderer).includes(token), false); assert.equal(JSON.stringify(renderer).includes(home), false);
-    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setWatchingChat', 'settingsAction']);
+    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'openPairing', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setWatchingChat', 'settingsAction']);
     const avatar = await page.evaluate(async () => {
       const current = await window.lorca.request('bootstrap', {});
       return window.lorca.getBotAvatar('bot-smoke', current.bots[0].avatar_version);
@@ -244,7 +250,7 @@ async function main() {
     await until(() => requests.slice(beforeSettings).some(request => request.method === 'ui.watching' && request.params.chat_id === null), 'Settings page clears watching');
     if (process.env.LORCA_SMOKE_SCREENSHOT) {
       const destination = path.resolve(process.env.LORCA_SMOKE_SCREENSHOT);
-      await page.getByRole('button', { name: 'MCP', exact: true }).click();
+      await page.getByRole('button', { name: '插件', exact: true }).click();
       await page.getByText('Synthetic MCP', { exact: true }).waitFor();
       assert.equal((await page.content()).includes(secretMarker), false);
       await page.screenshot({ path: destination.replace(/\.png$/i, '') + '-settings.png', fullPage: true });
@@ -320,13 +326,46 @@ async function main() {
     const configured = requests.filter(request => request.method === 'providers.connect_deepseek');
     assert.equal(configured.length, 1); assert.equal(configured[0].params.api_key, 'SYNTHETIC_REPLACEMENT_KEY');
     assert.equal(configured[0].params.base_url, 'https://synthetic.example.invalid/v1');
+    const pairingWindow = application.waitForEvent('window');
+    const pairingOutcome = page.evaluate(() => window.lorca.openPairing('invite'));
+    const pairingPage = await pairingWindow;
+    await pairingPage.getByRole('button', { name: '生成配对码', exact: true }).waitFor();
+    const pairingFlags = await pairingPage.evaluate(() => ({ process: typeof window.process, require: typeof window.require, chatBridge: typeof window.lorca, api: Object.keys(window.dotsPairing).sort() }));
+    assert.deepEqual(pairingFlags, { process: 'undefined', require: 'undefined', chatBridge: 'undefined', api: ['close', 'initialize', 'onState', 'submit'] });
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/secure-pairing.html')).webContents.openDevTools({ mode: 'detach' }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const pairingPid = await application.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/secure-pairing.html'));
+      const prefs = window.webContents.getLastWebPreferences();
+      if (!prefs.sandbox || !prefs.contextIsolation || prefs.nodeIntegration || window.webContents.isDevToolsOpened()) throw new Error('Pairing renderer security preferences changed');
+      return window.webContents.getOSProcessId();
+    });
+    if (process.platform === 'linux') {
+      const status = await readFile(`/proc/${pairingPid}/status`, 'utf8');
+      assert.match(status, /^Seccomp:\s+2$/m); assert.match(status, /^NoNewPrivs:\s+1$/m);
+    }
+    await application.evaluate(({ dialog }) => { dialog.showMessageBox = async (_parent, options) => { globalThis.dotsConfirmations.push(options); return { response: 0 }; }; });
+    await pairingPage.getByRole('button', { name: '生成配对码', exact: true }).click();
+    await pairingPage.getByText('尚未生成配对码。', { exact: true }).waitFor();
+    assert.equal(requests.filter(request => request.method === 'pair.start').length, 0);
+    await application.evaluate(({ dialog }) => { dialog.showMessageBox = async (_parent, options) => { globalThis.dotsConfirmations.push(options); return { response: 1 }; }; });
+    await pairingPage.getByRole('button', { name: '生成配对码', exact: true }).click();
+    await until(async () => await pairingPage.locator('#generated-code').inputValue() === pairingCode, 'Synthetic invitation is isolated');
+    assert.equal((await page.content()).includes(pairingCode), false);
+    assert.equal(JSON.stringify(await page.evaluate(() => window.lorca.getSettings({}))).includes(pairingNonce), false);
+    if (process.env.LORCA_SMOKE_SCREENSHOT) await pairingPage.screenshot({ path: path.resolve(process.env.LORCA_SMOKE_SCREENSHOT).replace(/\.png$/i, '') + '-pairing.png', fullPage: true });
+    await pairingPage.locator('#close').click();
+    assert.equal((await pairingOutcome).status, 'unknownOutcome');
+    await until(() => requests.some(request => request.method === 'pair.cancel'), 'Cancel only this synthetic invitation');
+    assert.equal(requests.filter(request => request.method === 'pair.start').length, 1);
+    assert.equal(requests.some(request => request.method === 'pair.accept' || request.method === 'pair.abort'), false);
     const confirmations = await application.evaluate(() => globalThis.dotsConfirmations);
     assert.ok(confirmations.some(value => value.detail.includes('synthetic.example.invalid')));
     assert.equal(JSON.stringify(confirmations).includes(secretMarker), false);
     assert.equal(JSON.stringify(confirmations).includes('SYNTHETIC_REPLACEMENT_KEY'), false);
     assert.equal((await page.content()).includes('SYNTHETIC_REPLACEMENT_KEY'), false);
     assert.deepEqual(failures, []);
-    process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, secureSettingsIsolated: true, secureLogoLoaded: true, nativeSettingsConfirmed: true, nativeWatching: true, menusLocalized: true, dotsBranding: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
+    process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, secureSettingsIsolated: true, secureLogoLoaded: true, nativeSettingsConfirmed: true, nativeWatching: true, pairingIsolated: true, menusLocalized: true, dotsBranding: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
   } catch (error) {
     process.stderr.write(`Electron smoke assertion: ${error.stack ?? error.message}\n`);
     throw error;

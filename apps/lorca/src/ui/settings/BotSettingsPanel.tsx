@@ -7,24 +7,30 @@ import { settingsZh } from "../../locale/settings.zh-CN";
 import type { RuntimeSettings, SettingsAction, SettingsActionResult, SettingsEditor } from "../types";
 import { SettingsActionControl, SettingsMutationStatus, useSettingsMutation } from "./SettingsActionControl";
 
-export function BotSettingsPanel({ runtime, disabled, onAction, selectedBotId, onSelectBot }: { runtime: RuntimeSettings; disabled: boolean; onAction: (action: SettingsAction) => Promise<SettingsActionResult>; selectedBotId?: string; onSelectBot?: (id: string) => void }) {
+export function BotSettingsPanel({ runtime, disabled, onAction, selectedBotId, onSelectBot, deviceId }: { runtime: RuntimeSettings; disabled: boolean; onAction: (action: SettingsAction) => Promise<SettingsActionResult>; selectedBotId?: string; onSelectBot?: (id: string) => void; deviceId?: string }) {
   const [localBotId, setLocalBotId] = useState(runtime.bots[0]?.id ?? "");
   const selectedBot = selectedBotId ?? localBotId;
   const setSelectedBot = (id: string) => { setLocalBotId(id); onSelectBot?.(id); };
-  const bot = runtime.bots.find((item) => item.id === selectedBot) ?? runtime.bots[0];
+  const bots = deviceId === undefined ? runtime.bots : runtime.bots.filter((item) => item.runnerId === deviceId);
+  const bot = bots.find((item) => item.id === selectedBot) ?? bots[0];
   const editor = runtime.editor;
-  return <>
-    <SettingsSection title={editorZh.botSettings} description={editorZh.botScope}>
+  return <SettingsSection title={editorZh.botSettings} description={editorZh.botScope}>
       {bot ? <>
         <label htmlFor="lorca-edit-bot">{editorZh.selectBot}</label>
         <div className="lorca-settings-select">
           <select id="lorca-edit-bot" value={bot.id} disabled={disabled} onChange={(event) => setSelectedBot(event.target.value)}>
-            {runtime.bots.map((item) => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
+            {bots.map((item) => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
           </select><Icon name="ChevronDown" />
         </div>
         {editor?.canUpdateBots ? <BotEditor key={`${bot.id}:${editor.revision}`} runtime={runtime} editor={editor} bot={bot} disabled={disabled} onAction={onAction} /> : <p className="lorca-admin-unavailable">{editorZh.unsupported}</p>}
-      </> : <p className="lorca-runtime-muted">{editorZh.noBots}</p>}
+      </> : <p className="lorca-runtime-muted">{(deviceId === undefined ? editorZh.noBots : editorZh.noDeviceBots)}</p>}
     </SettingsSection>
+  ;
+}
+
+export function ProvidersPanel({ runtime, disabled, onAction }: { runtime: RuntimeSettings; disabled: boolean; onAction: (action: SettingsAction) => Promise<SettingsActionResult> }) {
+  const editor = runtime.editor;
+  return (
     <SettingsSection title={editorZh.manageProviders} description={editorZh.providersDescription} action={editor?.canAddProvider ? <SettingsActionControl action={{ kind: "provider.configure", revision: editor.revision }} label={editorZh.addProvider} onAction={onAction} disabled={disabled} /> : <SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}>
       <SettingsRowList>
         {runtime.providers.map((provider) => {
@@ -42,7 +48,7 @@ export function BotSettingsPanel({ runtime, disabled, onAction, selectedBotId, o
       {(!editor || (!editor.canAddProvider && !editor.providers.some((provider) => provider.canConfigure || provider.canDisconnect))) && <p className="lorca-admin-unavailable">{editorZh.unsupported}</p>}
       <p className="lorca-input-help">{editorZh.nativeOnly}</p>
     </SettingsSection>
-  </>;
+  );
 }
 
 function BotEditor({ runtime, editor, bot, disabled, onAction }: { runtime: RuntimeSettings; editor: SettingsEditor; bot: RuntimeSettings["bots"][number]; disabled: boolean; onAction: (action: SettingsAction) => Promise<SettingsActionResult> }) {
@@ -55,7 +61,7 @@ function BotEditor({ runtime, editor, bot, disabled, onAction }: { runtime: Runt
   const mutation = useSettingsMutation(onAction);
   const models = editor.models.filter((item) => item.provider === provider);
   const levels = models.find((item) => item.id === model)?.levels ?? [];
-  const runners = runtime.devices.filter((device) => ["macos", "linux", "windows"].includes(device.os));
+  const runners = runtime.devices.filter((device) => device.role === "runner");
   const dirty = provider !== (bot.provider ?? "") || model !== (bot.model ?? "") || thinking !== initialThinking || runnerId !== bot.runnerId;
   const blocked = disabled || mutation.pending || mutation.result === "unknownOutcome" || mutation.result === "applied";
   const edited = () => { setConfirming(false); mutation.reset(); };

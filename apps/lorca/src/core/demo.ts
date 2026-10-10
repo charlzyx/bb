@@ -153,9 +153,9 @@ export const demoRuntimeSettings: RuntimeSettings = {
   version: "synthetic-preview", hasIdentity: true, relayConnected: false,
   updateRequired: false, authMode: "token",
   devices: [
-    { id: "runner-demo", name: "Demo desktop", os: "macos", version: "synthetic-preview", online: true, isThisDevice: true,
+    { id: "runner-demo", name: "Demo desktop", role: "runner", os: "macos", version: "synthetic-preview", online: true, isThisDevice: true,
       plugins: [{ id: "notes", name: "Demo notes", state: "ready", toolCount: null }] },
-    { id: "runner-second", name: "Demo workstation", os: "linux", version: "synthetic-preview", online: false, isThisDevice: false, plugins: [] },
+    { id: "runner-second", name: "Demo workstation", role: "runner", os: "linux", version: "synthetic-preview", online: false, isThisDevice: false, plugins: [] },
   ],
   providers: [{ id: "demo-provider", name: "Demo provider", connected: true }, { id: "demo-unconfigured", name: "Unconfigured provider", connected: false }],
   bots: [{ id: "bot-demo", name: "示例助手", runnerId: "runner-demo", provider: "demo-provider", model: "synthetic-model" }],
@@ -193,7 +193,7 @@ export function createDemoBridge(): LorcaBridge {
       if (action.kind === "provider.configure" || action.kind === "mcp.configure") throw new Error("此处为合成演示；安全配置窗口仅在 dots 桌面应用中可用。");
       if (action.kind === "bot.update") {
         const bot = inventory.bots.find(bot => bot.id === action.botId);
-        if (!bot) throw new Error("示例机器人不存在。");
+        if (!bot) throw new Error("示例智能体不存在。");
         if (action.provider !== undefined) bot.provider = action.provider;
         if (action.model !== undefined) bot.model = action.model || null;
         if (action.runnerId !== undefined) bot.runnerId = action.runnerId;

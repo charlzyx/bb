@@ -39,8 +39,10 @@ function bounded(value, maximum = 1_000_000) { if (JSON.stringify(value).length 
 function hasError(value) { return nullableText(value, 16_000) !== null && value !== ''; }
 function validateSettingsParams(value = {}) {
   const input = object(value);
-  if (Object.keys(input).some(key => key !== 'runnerId')) invalid();
-  return input.runnerId === undefined ? {} : { runnerId: id(input.runnerId) };
+  if (Object.keys(input).some(key => !['runnerId', 'includeMcp'].includes(key))) invalid();
+  if (input.includeMcp !== undefined && typeof input.includeMcp !== 'boolean') invalid();
+  if (input.includeMcp === false && input.runnerId !== undefined) invalid();
+  return { ...(input.runnerId === undefined ? {} : { runnerId: id(input.runnerId) }), ...(input.includeMcp === undefined ? {} : { includeMcp: input.includeMcp }) };
 }
 function projectPlugin(value) {
   const item = object(value);
@@ -51,6 +53,7 @@ function projectDevice(value) {
   if (!['online', 'offline'].includes(item.status)) invalid();
   return {
     id: id(item.id), name: text(item.name), os: text(item.os, 64), version: text(item.version, 128, ''),
+    role: item.unknown === true ? 'unknown' : ['macos', 'linux', 'windows'].includes(item.os) ? 'runner' : ['ios', 'ipados', 'android'].includes(item.os) ? 'device' : 'unknown',
     online: item.status === 'online', isThisDevice: boolean(item.is_this_device, false),
     plugins: array(item.plugins, 128, []).map(projectPlugin),
   };
@@ -140,11 +143,11 @@ class SettingsInventory {
       this.check(fence);
       const settings = projectSettingsBootstrap(bootstrap, status.authMode);
       const selected = params.runnerId;
-      if (selected !== undefined && !settings.devices.some(device => device.id === selected && ['macos', 'linux', 'windows'].includes(device.os))) invalid();
-      const runnerId = selected ?? settings.devices.find(device => device.isThisDevice && ['macos', 'linux', 'windows'].includes(device.os))?.id ?? null;
+      if (selected !== undefined && !settings.devices.some(device => device.id === selected && device.role === 'runner')) invalid();
+      const runnerId = params.includeMcp === false ? null : selected ?? settings.devices.find(device => device.isThisDevice && device.role === 'runner')?.id ?? null;
       let rawMcp = null;
       let mcp = { status: 'unavailable', runnerId, hasConfigError: false, servers: [] };
-      try {
+      if (params.includeMcp !== false && runnerId !== null) try {
         const raw = await this.bridge.sendValidated('mcp.list', selected === undefined ? {} : { runner_id: selected });
         this.check(fence);
         mcp = projectMcp(raw, runnerId);
@@ -180,6 +183,7 @@ function wireMessage(value) {
   else if (kind === 'tool') {
     const run = source.run == null ? null : object(source.run);
     body = { kind, name: text(source.name), summary: text(source.summary, 200_000, ''), detail: text(source.detail, 2_000_000, ''), is_running: boolean(source.is_running, false), is_error: boolean(source.is_error, false),
+      target_bot_id: source.target_bot_id == null ? null : id(source.target_bot_id),
       run: run === null ? null : { state: text(run.state, 64), command: text(run.command, 200_000), output: nullableText(run.output, 2_000_000), reason: nullableText(run.reason, 200_000), rule: nullableText(run.rule, 200_000) } };
   } else if (kind === 'permission') body = {
     kind, plugin_id: id(source.plugin_id), plugin_name: text(source.plugin_name), tool: text(source.tool), summary: text(source.summary, 200_000), decision: text(source.decision, 64),

@@ -18,8 +18,9 @@ export interface LorcaBridge {
   getStatus(): Promise<BridgeStatus>;
   setWatchingChat?(chatId: string | null): Promise<void>;
   getBotAvatar?(botId: string, expectedAvatarVersion: string): Promise<string | null>;
+  openPairing?(mode: "invite" | "join"): Promise<unknown>;
   settingsAction?(action: SettingsAction): Promise<unknown>;
-  getSettings?(options: { runnerId?: string }): Promise<unknown>;
+  getSettings?(options: { runnerId?: string; includeMcp?: boolean }): Promise<unknown>;
   copyText?(text: string): Promise<void>;
   pickAttachments?(): Promise<PickedAttachment[]>;
   releaseAttachments?(ids: string[]): Promise<void>;

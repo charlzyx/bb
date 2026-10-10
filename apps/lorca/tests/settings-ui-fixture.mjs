@@ -19,8 +19,8 @@ export function installSettingsFixture() {
     updateRequired: false,
     authMode: "token",
     devices: [
-      { id: "runner-one", name: "Synthetic desktop", os: "macos", version: "fixture", online: true, isThisDevice: true, plugins: [] },
-      { id: "runner-two", name: "Synthetic workstation", os: "linux", version: "fixture", online: true, isThisDevice: false, plugins: [] },
+      { id: "runner-one", name: "Synthetic desktop", os: "macos", role: "runner", version: "fixture", online: true, isThisDevice: true, plugins: [] },
+      { id: "runner-two", name: "Synthetic workstation", os: "linux", role: "runner", version: "fixture", online: true, isThisDevice: false, plugins: [] },
     ],
     providers: [{ id: "provider-one", name: "Synthetic Provider One", connected: true }, { id: "provider-two", name: "Synthetic Provider Two", connected: true }],
     bots: [{ id: "bot-one", name: "Synthetic Bot", runnerId: "runner-one", provider: "provider-one", model: "model-one" }],

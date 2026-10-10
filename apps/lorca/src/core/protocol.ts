@@ -29,6 +29,7 @@ export type WireBody =
       detail: string;
       is_running: boolean;
       is_error: boolean;
+      target_bot_id: string | null;
       run: {
         state: string;
         command: string;
@@ -115,6 +116,11 @@ export function string(value: unknown, field: string): string {
 function optionalString(value: unknown, field: string): string | null {
   return value == null ? null : string(value, field);
 }
+function optionalBotId(value: unknown, field: string): string | null {
+  const result = optionalString(value, field);
+  if (result !== null && (!result.trim() || result.length > 256 || /[\0\r\n]/.test(result))) throw new ProtocolError(field);
+  return result;
+}
 function boolean(value: unknown, field: string, fallback?: boolean): boolean {
   if (value === undefined && fallback !== undefined) return fallback;
   if (typeof value !== "boolean") throw new ProtocolError(field);
@@ -197,6 +203,7 @@ export function parseMessage(value: unknown): WireMessage {
         detail: string(b.detail, "tool.detail"),
         is_running: boolean(b.is_running, "tool.is_running"),
         is_error: boolean(b.is_error, "tool.is_error", false),
+        target_bot_id: optionalBotId(b.target_bot_id, "tool.target_bot_id"),
         run: parseRun(b.run),
       };
       break;

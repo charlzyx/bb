@@ -1,14 +1,14 @@
 export const approvalZh = {
-  title: "自动审批",
+  title: "自动审查",
   description: "设置工具级权限，或交给模型判断的情景规则。规则仅作用于后端进入审批流程的操作，只读工具可能直接执行。",
-  unavailableTitle: "自动审批设置暂不可用",
+  unavailableTitle: "自动审查设置暂不可用",
   unavailableDescription:
-    "当前连接未提供可编辑的自动审批设置。请连接支持此功能的本地运行环境后刷新；这里不会推断或更改现有权限。",
+    "当前连接未提供可编辑的自动审查设置。请连接支持此功能的本地运行环境后刷新；这里不会推断或更改现有权限。",
   unknownStateDescription:
-    "运行环境尚未报告自动审批是否开启。请刷新设置，确认当前状态后再修改。",
+    "运行环境尚未报告自动审查是否开启。请刷新设置，确认当前状态后再修改。",
   enabled: "开启",
   disabled: "关闭",
-  enableLabel: "启用自动审批",
+  enableLabel: "启用自动审查",
   enabledDescription:
     "开启后，精确工具的“始终允许”规则会直接放行该工具，不判断备注；未指定工具的情景规则交给模型审核。开启不代表允许所有操作。",
   disabledDescription:
@@ -17,7 +17,7 @@ export const approvalZh = {
   rulesTitle: "审核规则",
   rulesDescription:
     "未指定工具时，自然语言描述交给模型判断。指定精确工具后，处理方式直接作用于整个工具，文字仅为备注，不构成限制条件。新规则默认“始终询问”。",
-  rulesDisabled: "自动审批关闭时，这些规则会保留，但不会自动批准操作。",
+  rulesDisabled: "自动审查关闭时，这些规则会保留，但不会自动批准操作。",
   noRules: "还没有审核规则",
   noRulesDescription: "添加一条具体规则，明确哪些操作需要询问你。",
   addRule: "添加规则",
@@ -30,8 +30,8 @@ export const approvalZh = {
   ask: "始终询问",
   allow: "符合规则时允许",
   allowTool: "始终允许此工具",
-  toolAllowWarning: (tool: string) => `精确工具：${tool}。启用自动审批后，将始终允许此工具；备注不构成限制条件。`,
-  toolAskWarning: (tool: string) => `精确工具：${tool}。启用自动审批后，此工具将始终询问；备注不构成限制条件。`,
+  toolAllowWarning: (tool: string) => `精确工具：${tool}。启用自动审查后，将始终允许此工具；备注不构成限制条件。`,
+  toolAskWarning: (tool: string) => `精确工具：${tool}。启用自动审查后，此工具将始终询问；备注不构成限制条件。`,
   textScope: "未指定精确工具：适用情景交给模型判断。",
   ruleTool: "精确工具 ID（plugin_id/tool，可选）",
   ruleToolPlaceholder: "例如 gmail/send；留空由模型判断情景",
@@ -40,7 +40,7 @@ export const approvalZh = {
   duplicateTools: (tools: string[]) => `以下精确工具重复：${tools.join("、")}。后端按首条匹配处理，不保证“始终询问”优先。请明确删除或调整重复规则后再保存。`,
   review: "查看变更",
   reset: "还原修改",
-  reviewTitle: "确认自动审批变更",
+  reviewTitle: "确认自动审查变更",
   reviewDescription:
     "这次提交会替换整张规则表。请核对下面的最终状态和全部规则；未列出的旧规则将被删除。",
   reviewEnabled:
@@ -52,8 +52,8 @@ export const approvalZh = {
   allTools: "适用情景由模型判断",
   conflict: "服务端配置已更新。你的草稿仍保留，当前不能提交，以免覆盖其他变更。请核对读回配置；需要重新编辑时，先明确放弃草稿并采用当前配置。",
   readbackTitle: "当前读回配置",
-  readbackEnabled: "自动审批：开启",
-  readbackDisabled: "自动审批：关闭",
+  readbackEnabled: "自动审查：开启",
+  readbackDisabled: "自动审查：关闭",
   readbackNoRules: "当前没有规则。",
   adoptCurrent: "放弃草稿并采用当前配置",
   waitingReadback: "当前配置尚未加载。草稿已保留，连接就绪并刷新成功后才能采用读回配置。",

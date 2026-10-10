@@ -55,6 +55,7 @@ class SettingsBridge implements LorcaBridge {
   rpcCalls: string[] = [];
   settingsCalls: { runnerId?: string }[] = [];
   actionCalls: SettingsAction[] = [];
+  openPairing?: LorcaBridge["openPairing"];
   events = new Set<(event: unknown) => void>();
   statuses = new Set<(status: BridgeStatus) => void>();
   bootstrap: () => Promise<unknown> = async () => ({
@@ -367,4 +368,49 @@ test("settings actions need both an identity and a loaded editor", async (t) => 
   assert.equal(controller.getSnapshot().runtimeSettings?.editor, undefined);
   await assert.rejects(controller.actions.onSettingsAction(action));
   assert.equal(bridge.actionCalls.length, 0);
+});
+
+
+test("pairing requires explicit native capabilities and never uses the generic renderer RPC", async t => {
+  const { bridge, controller } = await ready(t);
+  let calls = 0;
+  bridge.openPairing = async () => { ++calls; return { status: "cancelled" }; };
+  await assert.rejects(controller.actions.onOpenPairing!("invite"), /当前不可用/);
+  assert.equal(calls, 0);
+  bridge.inspect = async () => ({ ...inventory(), pairingCapabilities: { invite: true, join: false } });
+  controller.actions.onRefreshSettings(); await tick();
+  await controller.actions.onOpenPairing!("invite");
+  assert.equal(calls, 1);
+  assert.equal(controller.getSnapshot().settingsError, undefined);
+  await assert.rejects(controller.actions.onOpenPairing!("join"), /当前不可用/);
+  assert.equal(calls, 1);
+});
+
+test("unknown pairing results refresh state without replay or claiming success", async t => {
+  const { bridge, controller } = await ready(t);
+  bridge.inspect = async () => ({ ...inventory(), pairingCapabilities: { invite: true, join: false } });
+  const pending = deferred<unknown>(); let calls = 0;
+  bridge.openPairing = async () => { ++calls; return pending.promise; };
+  controller.actions.onRefreshSettings(); await tick();
+  const result = controller.actions.onOpenPairing!("invite");
+  await assert.rejects(controller.actions.onOpenPairing!("invite"), /当前不可用/);
+  pending.resolve({ status: "unknownOutcome", pairing_string: "never-render-pair-secret" });
+  await result;
+  assert.equal(calls, 1);
+  assert.match(controller.getSnapshot().settingsError!, /结果尚不确定/);
+  assert.ok(!JSON.stringify(controller.getSnapshot()).includes("never-render-pair-secret"));
+});
+
+test("late pairing completion after reconnect does not refresh the replacement connection", async t => {
+  const { bridge, controller } = await ready(t);
+  bridge.inspect = async () => ({ ...inventory(), pairingCapabilities: { invite: true, join: false } });
+  const pending = deferred<unknown>();
+  bridge.openPairing = async () => pending.promise;
+  controller.actions.onRefreshSettings(); await tick();
+  const result = controller.actions.onOpenPairing!("invite");
+  bridge.change(2); await tick();
+  const before = bridge.settingsCalls.length;
+  pending.resolve({ status: "completed" }); await result;
+  assert.equal(bridge.settingsCalls.length, before);
+  assert.equal(controller.getSnapshot().settingsApplying, false);
 });

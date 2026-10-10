@@ -11,6 +11,31 @@ import type { LorcaMessage, LorcaShellActions } from "./types";
 
 type ApprovalMessage = Extract<LorcaMessage, { kind: "approval" }>;
 type ToolMessage = Extract<LorcaMessage, { kind: "tool" }>;
+type CrossAgentMessage = Extract<LorcaMessage, { kind: "cross-agent" }>;
+
+function CrossAgentRow({ message }: { message: CrossAgentMessage }) {
+  const bot = (appearance: CrossAgentMessage["from"]) => (
+    <>
+      <Avatar appearance={appearance ?? undefined} />
+      <span>{appearance?.name || "未知智能体"}</span>
+    </>
+  );
+  const label = message.direction === "incoming"
+    ? <>来自 {bot(message.from)}</>
+    : message.direction === "outgoing"
+      ? <>已发消息给 {bot(message.to)}</>
+      : <>{bot(message.from)} <span aria-label="交接给">→</span> {bot(message.to)}</>;
+  const preview = message.text.split(/\r?\n/).find(line => line.trim())?.trim() ?? "";
+  return (
+    <details className="lorca-cross-agent">
+      <summary>
+        <span className="lorca-cross-agent-label">{label}</span>
+        {preview && <span className="lorca-cross-agent-preview">· {preview}</span>}
+      </summary>
+      <div className="lorca-cross-agent-detail">{message.text || "没有更多内容"}</div>
+    </details>
+  );
+}
 
 function CopyMessage({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -174,6 +199,7 @@ export function TranscriptItem({
   actions: LorcaShellActions;
   disabled: boolean;
 }) {
+  if (message.kind === "cross-agent") return <CrossAgentRow message={message} />;
   if (message.kind === "tool") return <ToolCard message={message} />;
   if (message.kind === "approval")
     return (

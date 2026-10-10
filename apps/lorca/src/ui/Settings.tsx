@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { settingsZh } from "../locale/settings.zh-CN";
 import { editorZh } from "../locale/editor.zh-CN";
-import { BotSettingsPanel } from "./settings/BotSettingsPanel";
+import { BotSettingsPanel, ProvidersPanel } from "./settings/BotSettingsPanel";
 import { AutoReviewPanel } from "./settings/AutoReviewPanel";
+import { DevicesPanel, PairingAction } from "./settings/DevicesPanel";
 import { useAutoReviewDraft } from "./settings/auto-review-draft";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
@@ -18,7 +19,6 @@ import { SettingsFrame, type SettingsPage } from "./settings/SettingsFrame";
 import {
   InventoryEmpty,
   McpPanel,
-  RunnersPanel,
 } from "./settings/RuntimePanels";
 import type {
   LorcaConnection,
@@ -154,20 +154,50 @@ export function Settings({
   error?: string | null;
 }) {
   const [selectedBotId, setSelectedBotId] = useState("");
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const selectedDevice = runtime?.devices.find((device) => device.id === selectedDeviceId)
+    ?? runtime?.devices.find((device) => device.isThisDevice)
+    ?? runtime?.devices[0];
+  if (runtime && selectedDeviceId !== null && selectedDevice?.id !== selectedDeviceId) {
+    setSelectedDeviceId(selectedDevice?.id ?? null);
+  }
   const connected = demo || connection.status === "connected";
   const disabled = !connected || loading || applying;
   const autoReviewDraft = useAutoReviewDraft({ editor: runtime?.editor, disabled, onAction: actions.onSettingsAction });
-  const refresh = () =>
-    actions.onRefreshSettings(
-      page === "mcp" ? (runtime?.mcp.runnerId ?? undefined) : undefined,
-    );
+  const refreshDevice = (device: RuntimeSettings["devices"][number] | undefined, nextPage: SettingsPage) => {
+    if (nextPage === "mcp" && device?.role === "runner") actions.onRefreshSettings(device.id);
+    else actions.onRefreshSettings(undefined, { includeMcp: false });
+  };
+  const refresh = () => refreshDevice(selectedDevice, page);
+  const changePage = (nextPage: SettingsPage) => {
+    onPageChange(nextPage);
+    if (nextPage === "mcp" && connected) refreshDevice(selectedDevice, nextPage);
+  };
+  const changeDevice = (id: string) => {
+    setSelectedDeviceId(id);
+    if (page === "mcp" && connected) refreshDevice(runtime?.devices.find((device) => device.id === id), page);
+  };
+  const pairingMode = runtime?.hasIdentity ? "invite" : "join";
+  const deviceControl = (
+    <div className="lorca-settings-device-control">
+      <div className="lorca-settings-select">
+        <select aria-label={settingsZh.viewDevice} title={settingsZh.viewDeviceHelp} value={selectedDevice?.id ?? ""} disabled={!runtime?.devices.length} onChange={(event) => changeDevice(event.target.value)}>
+          {!runtime?.devices.length && <option value="">{settingsZh.selectDevice}</option>}
+          {runtime?.devices.map((device) => <option key={device.id} value={device.id}>{device.name || settingsZh.unnamedDevice}{device.isThisDevice ? ` · ${settingsZh.thisDevice}` : ""}</option>)}
+        </select>
+        <Icon name="ChevronDown" />
+      </div>
+      <PairingAction key={pairingMode} mode={pairingMode} compact onOpenPairing={actions.onOpenPairing} disabled={disabled || demo || !runtime?.pairingCapabilities?.[pairingMode]} />
+    </div>
+  );
   return (
     <SettingsFrame
       open={open}
       onOpenChange={onOpenChange}
       page={page}
-      onPageChange={onPageChange}
+      onPageChange={changePage}
       demo={demo}
+      deviceControl={deviceControl}
     >
       {page !== "preferences" && (
         <div className="lorca-settings-runtime-toolbar" aria-busy={loading}>
@@ -198,6 +228,7 @@ export function Settings({
           </div>
         </div>
       )}
+      {(page === "providers" || page === "approvals") && <p className="lorca-runtime-muted">{settingsZh.accountSettingsScope}</p>}
       {page === "connection" && (
         <>
           <SettingsSection
@@ -319,30 +350,34 @@ export function Settings({
           </div>
         </>
       )}
-      {page === "models" && (runtime ? <BotSettingsPanel key={String(open)} runtime={runtime} disabled={disabled} onAction={actions.onSettingsAction} selectedBotId={selectedBotId} onSelectBot={setSelectedBotId} /> : <InventoryEmpty icon="Info" title={settingsZh.noRuntimeDetails} detail={editorZh.unsupported} />)}
+      {page === "devices" && (
+        <DevicesPanel
+          runtime={runtime}
+          disabled={disabled}
+          demo={demo}
+          onOpenPairing={actions.onOpenPairing}
+          selectedDeviceId={selectedDevice?.id}
+          onSelectDevice={changeDevice}
+        />
+      )}
+      {page === "providers" && (runtime ? <ProvidersPanel runtime={runtime} disabled={disabled} onAction={actions.onSettingsAction} /> : <InventoryEmpty icon="Info" title={settingsZh.noRuntimeDetails} detail={editorZh.unsupported} />)}
+      {page === "models" && (runtime && selectedDevice?.role === "runner" ? <BotSettingsPanel key={`${open}:${selectedDevice.id}`} runtime={runtime} disabled={disabled} onAction={actions.onSettingsAction} selectedBotId={selectedBotId} onSelectBot={setSelectedBotId} deviceId={selectedDevice.id} /> : <InventoryEmpty icon="Info" title={selectedDevice?.role === "device" ? settingsZh.requiresRunner : settingsZh.unknownRunnerRole} detail={settingsZh.chooseRunnerForSettings} />)}
       <div hidden={page !== "approvals"}>
         <AutoReviewPanel draft={autoReviewDraft} />
       </div>
-      {(page === "runners" || page === "mcp") &&
+      {page === "mcp" &&
         (runtime ? (
-          page === "runners" ? (
-            <RunnersPanel runtime={runtime} />
-          ) : (
             <McpPanel
               runtime={runtime}
               loading={loading}
               onRefresh={actions.onRefreshSettings}
               onAction={actions.onSettingsAction}
               disabled={disabled}
+              deviceId={selectedDevice?.id ?? ""}
             />
-          )
         ) : (
           <SettingsSection
-            title={
-              page === "runners"
-                ? settingsZh.runnerInventory
-                : settingsZh.mcpInventory
-            }
+            title={settingsZh.mcpInventory}
             action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}
           >
             <InventoryEmpty

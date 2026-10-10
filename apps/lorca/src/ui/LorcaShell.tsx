@@ -194,7 +194,7 @@ function Sidebar({
         )}
       </nav>
       <footer className="lorca-sidebar-footer">
-        <button className="lorca-workspace" aria-label={zhCN.chat.openConnectionSettings} onClick={onSettings}>
+        <button className="lorca-workspace" aria-label={zhCN.chat.openSettings} onClick={onSettings}>
           <span className="lorca-workspace-icon">
             <Icon name="ComputerTerminal01" />
           </span>
@@ -273,13 +273,13 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
   const [{ theme, persistent: themePersistent }, setAppearance] = useState(
     readAppearancePreference,
   );
-  const [settingsPage, setSettingsPage] = useState<SettingsPage>("connection");
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>("preferences");
   const setTheme = (theme: Appearance) =>
     setAppearance({ theme, persistent: writeAppearancePreference(theme) });
-  const openSettings = (page: SettingsPage = "connection") => {
+  const openSettings = (page: SettingsPage = "preferences") => {
     setSettingsPage(page);
     setSettingsOpen(true);
-    actions.onRefreshSettings();
+    actions.onRefreshSettings(undefined, { includeMcp: false });
   };
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
@@ -506,7 +506,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
             )}
             <button
               className="lorca-header-status"
-              onClick={() => openSettings()}
+              onClick={() => openSettings("connection")}
               aria-label={zhCN.chat.openConnectionSettings}
             >
               <ConnectionLabel state={state} />
@@ -616,7 +616,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
                     ? zhCN.chat.connectingRuntime
                     : zhCN.chat.connectToSend}
                 </span>
-                <button onClick={() => openSettings()}>
+                <button onClick={() => openSettings("connection")}>
                   {zhCN.chat.connectionSettings}
                   <Icon name="ChevronRight" />
                 </button>

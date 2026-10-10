@@ -2,6 +2,16 @@
 
 Verified on 2026-10-10. This is an experimental client, not a packaged release.
 
+## Device pairing, settings scope and sidebar footer follow-up
+
+This follow-up aligns the existing settings controls with the official groups: General, Providers, Automatic review, Plugins, Agents, Devices and Advanced. Agent/plugin/device views share a read-only device selection. Selecting a device does not reassign an agent. Phones and unknown device roles cannot be used as MCP runners; the native inventory supports an explicit device-only read that does not issue `mcp.list`. Provider credentials and automatic-review policy remain account-wide.
+
+The sidebar footer is a shorter overlay with its own backdrop blur, not reduced opacity on its text or icons. Conversation avatars can scroll behind it; bottom padding and scroll-padding preserve access to the final conversation. Reduced transparency keeps an opaque surface. The default user-message avatar uses a pale grayscale derivative of the selected Ghost through a scoped CSS filter; custom agent images and the main Ghost branding remain unchanged.
+
+Device pairing has a separate sandboxed window and narrow native IPC. It supports inviting a device and joining an existing account only from a local service with no identity. Generation and joining require native confirmation of account-key, credential-sync and conditional Runner access. Codes never enter the main chat renderer. The upstream protocol has no second device-approval step. Cancellation is best-effort and cannot revoke already-granted access; uncertain results block repeated pairing for the same daemon/mode in the current process. Restarting does not revoke an earlier invitation or join request. See the [pinned pairing contract](lorca-device-pairing.md).
+
+All verification uses synthetic protocol fixtures. The browser regression checks the footer's actual blurred avatar pixels, reduced-transparency negative case and last-item keyboard access, as well as settings scope and pairing-entry states. The Electron fixture opens the real isolated pairing renderer, checks Linux process sandboxing, refuses a synthetic confirmation before allowing one mock invitation, and verifies that its code never reaches the main renderer. Check results are attached to the exact branch commit; these checks are not a real-account pairing test. Pairing currently uses the full code rather than a generated QR image. A full right-side agent inspector, memory/routine editors and agent appearance editing remain outside this delivery.
+
 ## Scrolling glass and control-surface polish
 
 The sidebar connection/settings entry has an explicitly transparent normal button surface and no separate icon tile. Hover and keyboard focus remain theme-aware and visible. The desktop chat header stays 48 pixels tall; content actually scrolls underneath its theme-derived gradient and backdrop blur. Settings use a sticky header inside their scrolling pane. This is a web-content frosted layer, not native macOS wallpaper transparency or a vibrancy-window claim. Reduced transparency, increased contrast and unsupported backdrop-filter have opaque fallbacks; reduced-motion preferences remain respected.

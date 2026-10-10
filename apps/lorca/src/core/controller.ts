@@ -33,7 +33,7 @@ import type {
 
 import { parseRuntimeSettings } from "./settings";
 
-function messageView(message: WireMessage, authorName?: string, authorAvatar?: LorcaBotAppearance): LorcaMessage {
+function messageView(message: WireMessage, authorName: string | undefined, authorAvatar: LorcaBotAppearance | undefined, botIds: readonly string[], appearance: (id: string) => LorcaBotAppearance | undefined): LorcaMessage {
   const body = message.body;
   switch (body.kind) {
     case "text":
@@ -55,6 +55,15 @@ function messageView(message: WireMessage, authorName?: string, authorAvatar?: L
         })),
       };
     case "tool":
+      if (body.name === "message_bot" && message.state === "complete" && !body.is_running && !body.is_error && body.summary.startsWith("Messaged "))
+        return {
+          kind: "cross-agent",
+          id: message.id,
+          direction: "outgoing",
+          from: authorAvatar ?? null,
+          to: body.target_bot_id ? appearance(body.target_bot_id) ?? null : null,
+          text: body.detail,
+        };
       if (body.run?.state === "asking")
         return {
           kind: "approval",
@@ -114,10 +123,12 @@ function messageView(message: WireMessage, authorName?: string, authorAvatar?: L
       };
     case "handoff":
       return {
-        kind: "notice",
+        kind: "cross-agent",
         id: message.id,
-        text: `${body.from} → ${body.to}: ${body.reason}`,
-        tone: "info",
+        direction: botIds.includes(body.to) && !botIds.includes(body.from) ? "incoming" : "handoff",
+        from: appearance(body.from) ?? null,
+        to: appearance(body.to) ?? null,
+        text: body.reason,
       };
     case "notice":
       return { kind: "notice", id: message.id, text: body.text, tone: "info" };
@@ -175,6 +186,7 @@ interface AvatarEntry {
 export class LorcaController {
   private model: Model = emptyModel();
   private runtimeSettings: RuntimeSettings | null = null;
+  private settingsIncludeMcp: boolean | undefined;
   private settingsLoading = false;
   private settingsError: string | null = null;
   private settingsRequest = 0;
@@ -278,7 +290,12 @@ export class LorcaController {
     };
     const active = this.activeId ? this.model.chats.get(this.activeId) : undefined;
     for (const id of active?.bot_ids ?? []) include(id);
-    for (const message of [...active?.messages ?? []].reverse()) if (!message.queued && message.author.kind !== "you") include(message.author.bot_id);
+    for (const message of [...active?.messages ?? []].reverse()) {
+      if (message.queued || message.author.kind === "you") continue;
+      include(message.author.bot_id);
+      if (message.body.kind === "handoff") { include(message.body.from); include(message.body.to); }
+      else if (message.body.kind === "tool" && message.body.name === "message_bot") include(message.body.target_bot_id);
+    }
     include(this.selectedBot);
     const recentChats = [...this.model.chats.values()].sort((a, b) => (b.messages.at(-1)?.created_at ?? b.created_at) - (a.messages.at(-1)?.created_at ?? a.created_at));
     for (const chat of recentChats) {
@@ -376,7 +393,7 @@ export class LorcaController {
           title:
             c.title ||
             c.bot_ids
-              .map((id) => this.model.bots.get(id)?.name ?? "机器人")
+              .map((id) => this.model.bots.get(id)?.name ?? "智能体")
               .join(", ") ||
             "对话",
           updatedAt: new Date(
@@ -394,7 +411,7 @@ export class LorcaController {
         }))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
       activeConversationId: chat?.id ?? null,
-      messages: messages.filter((m) => !m.queued).map((m) => messageView(m, m.author.bot_id ? this.model.bots.get(m.author.bot_id)?.name : undefined, m.author.kind !== "you" && m.author.bot_id ? this.appearance(m.author.bot_id) : undefined)),
+      messages: messages.filter((m) => !m.queued).map((m) => messageView(m, m.author.bot_id ? this.model.bots.get(m.author.bot_id)?.name : undefined, m.author.kind !== "you" && m.author.bot_id ? this.appearance(m.author.bot_id) : undefined, chat?.bot_ids ?? [], id => this.appearance(id))),
       agents: [...this.model.bots.values()].map((b) => ({
         id: b.id,
         label: b.name,
@@ -626,7 +643,7 @@ export class LorcaController {
         if (!chatId) {
           if (!this.selectedBot)
             throw new Error(
-              "请先在 Lorca 运行环境中创建机器人，再开始对话。",
+              "请先在 Lorca 运行环境中创建智能体，再开始对话。",
             );
           const response = object(
             await this.bridge.request("chats.create", {
@@ -737,9 +754,10 @@ export class LorcaController {
     this.settingsLoading = false;
     this.settingsError = null;
   }
-  private async refreshSettings(runnerId?: string): Promise<void> {
+  private async refreshSettings(runnerId?: string, options?: { includeMcp?: boolean }): Promise<void> {
     const request = ++this.settingsRequest;
     this.settingsRunner = runnerId;
+    this.settingsIncludeMcp = options?.includeMcp;
     const generation = this.generation, accountEpoch = this.accountEpoch;
     this.settingsLoading = true;
     this.settingsError = null;
@@ -748,9 +766,9 @@ export class LorcaController {
     try {
       if (this.status.status !== "connected") throw new Error("请先连接本地服务，再加载运行环境设置。");
       if (!this.bridge.getSettings) throw new Error("查看运行环境需要更新桌面桥接组件。");
-      const settings = parseRuntimeSettings(await this.bridge.getSettings(runnerId ? { runnerId } : {}));
+      const settings = parseRuntimeSettings(await this.bridge.getSettings({ ...(runnerId ? { runnerId } : {}), ...(options?.includeMcp === undefined ? {} : { includeMcp: options.includeMcp }) }));
       if (request !== this.settingsRequest || generation !== this.generation || accountEpoch !== this.accountEpoch) return;
-      this.runtimeSettings = settings;
+      this.runtimeSettings = (this.bridge.openPairing || !settings.pairingCapabilities) ? settings : { ...settings, pairingCapabilities: { invite: false, join: false } };
     } catch (error) {
       if (request === this.settingsRequest) this.settingsError = error instanceof Error ? error.message : "无法加载运行环境设置。";
     } finally {
@@ -758,6 +776,28 @@ export class LorcaController {
         this.settingsLoading = false;
         this.emit();
       }
+    }
+  }
+  private async openPairing(mode: "invite" | "join"): Promise<void> {
+    if (mode !== "invite" && mode !== "join") throw new Error("配对方式无效。");
+    if (this.disposed || this.status.status !== "connected" || this.settingsApplying || this.settingsLoading || !this.bridge.openPairing || !this.runtimeSettings?.pairingCapabilities?.[mode])
+      throw new Error("设备配对当前不可用，请刷新设置并检查本地连接。");
+    const generation = this.generation;
+    this.settingsApplying = true;
+    this.settingsError = null;
+    this.emit();
+    try {
+      const raw = await this.bridge.openPairing(mode);
+      if (this.disposed || generation !== this.generation || this.status.status !== "connected") return;
+      const result = object(raw, "pairing");
+      if (!["completed", "cancelled", "failed", "unknownOutcome"].includes(String(result.status))) throw new Error("配对结果尚不确定，请核对设备列表。");
+      await this.refreshSettings(undefined, { includeMcp: false });
+      if (this.disposed || generation !== this.generation || this.status.status !== "connected") return;
+      if (result.status === "unknownOutcome") this.settingsError = "配对结果尚不确定。关闭窗口不代表撤销已发生的绑定，请在原设备核对；操作不会自动重发。";
+      if (result.status === "failed") this.settingsError = "配对未确认完成，请在原设备核对状态后再决定是否重试。";
+    } finally {
+      this.settingsApplying = false;
+      this.emit();
     }
   }
   private async settingsAction(action: SettingsAction): Promise<SettingsActionResult> {
@@ -768,7 +808,7 @@ export class LorcaController {
     if (action.revision !== this.runtimeSettings.editor.revision)
       throw new Error("设置已变化，请刷新后重新编辑。");
     const generation = this.generation, accountEpoch = this.accountEpoch;
-    const request = this.settingsRequest, runner = this.settingsRunner;
+    const request = this.settingsRequest, runner = this.settingsRunner, includeMcp = this.settingsIncludeMcp;
     const current = () => !this.disposed && generation === this.generation && accountEpoch === this.accountEpoch && this.status.status === "connected";
     this.settingsApplying = true;
     this.settingsError = null;
@@ -780,7 +820,7 @@ export class LorcaController {
       const status = value.status;
       if (status !== "applied" && status !== "cancelled" && status !== "unknownOutcome")
         throw new Error("设置操作结果尚不确定，请刷新核对；操作未被自动重发。");
-      if (status !== "cancelled" && request === this.settingsRequest) await this.refreshSettings(runner);
+      if (status !== "cancelled" && request === this.settingsRequest) await this.refreshSettings(runner, { includeMcp });
       if (!current()) throw new Error("账号或连接已变化，请刷新后核对设置；操作未被自动重发。");
       if (status === "unknownOutcome") this.settingsError = "刚才的设置操作结果尚不确定，请核对当前配置后再决定是否重试；操作未被自动重发。";
       return { status };
@@ -798,8 +838,9 @@ export class LorcaController {
       this.visibleChatId = id !== null && id === this.activeId && this.model.chats.has(id) ? id : null;
       this.syncWatching();
     },
+    onOpenPairing: (mode) => this.openPairing(mode),
     onSettingsAction: (action) => this.settingsAction(action),
-    onRefreshSettings: (runnerId) => { void this.refreshSettings(runnerId); },
+    onRefreshSettings: (runnerId, options) => { void this.refreshSettings(runnerId, options); },
     onSelectConversation: (id) => {
       if (this.model.chats.has(id)) {
         this.navigation++;

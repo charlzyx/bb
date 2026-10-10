@@ -1036,7 +1036,7 @@ test("Chinese controller labels preserve original user text, tool content, and b
     assert.equal(state.agents[0].label, "Original Bot Name");
     assert.equal(state.conversations.find((chat) => chat.id === "chat-demo")?.title, "Original Bot Name");
     assert.equal(state.conversations.find((chat) => chat.id === "unnamed-chat")?.title, "对话");
-    assert.equal(state.conversations.find((chat) => chat.id === "unknown-bot-chat")?.title, "机器人");
+    assert.equal(state.conversations.find((chat) => chat.id === "unknown-bot-chat")?.title, "智能体");
     const user = state.messages.find((item) => item.id === "original-user");
     assert.ok(user?.kind === "message");
     assert.equal(user.text, "Original user text stays in English.");

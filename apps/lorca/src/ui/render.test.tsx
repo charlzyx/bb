@@ -8,8 +8,9 @@ import { DotsMark } from "./DotsMark";
 import { Avatar, ConversationAvatars, safeAvatarImage } from "./Avatar";
 import { LorcaShell } from "./LorcaShell";
 import { Settings, validateEndpoint } from "./Settings";
-import { McpPanel, RunnersPanel } from "./settings/RuntimePanels";
-import { BotSettingsPanel } from "./settings/BotSettingsPanel";
+import { DevicesInventory, McpPanel } from "./settings/RuntimePanels";
+import { BotSettingsPanel, ProvidersPanel } from "./settings/BotSettingsPanel";
+import { DevicesPanel } from "./settings/DevicesPanel";
 import { AutoReviewPanel as AutoReviewView } from "./settings/AutoReviewPanel";
 import { useAutoReviewDraft } from "./settings/auto-review-draft";
 import {
@@ -129,7 +130,9 @@ test("Attachment-only messages show names as text without paths or navigation", 
     ],
   });
   assert.match(html, /&lt;report &amp; notes&gt;.pdf/);
-  assert.doesNotMatch(html, /href=|src=|opaque-1/);
+  const attachment = html.match(/class="lorca-message-attachments">([\s\S]*?)<\/div>/)?.[1];
+  assert.ok(attachment);
+  assert.doesNotMatch(attachment, /href=|src=|opaque-1/);
 });
 
 test("Tool input and output are escaped, with distinct failure status", () => {
@@ -260,6 +263,7 @@ function runtimeFixture(): RuntimeSettings {
         id: "phone",
         name: "Paired phone",
         os: "ios",
+        role: "device",
         version: "fixture-version",
         online: true,
         isThisDevice: true,
@@ -269,6 +273,7 @@ function runtimeFixture(): RuntimeSettings {
         id: "runner",
         name: "Known runner",
         os: "macos",
+        role: "runner",
         version: "fixture-version",
         online: true,
         isThisDevice: false,
@@ -306,17 +311,78 @@ function runtimeFixture(): RuntimeSettings {
   };
 }
 
-test("Runner inventory excludes paired phones and preserves unknown counts/models", () => {
+test("Device inventory includes paired phones and preserves Runner details with unknown counts/models", () => {
   const html = renderToStaticMarkup(
-    <RunnersPanel runtime={runtimeFixture()} />,
+    <DevicesInventory runtime={runtimeFixture()} />,
   );
   assert.match(html, /Known runner/);
-  assert.doesNotMatch(html, /Paired phone/);
-  assert.match(html, /另外 1 台已配对设备不是执行器/);
+  assert.match(html, /Paired phone/);
+  assert.match(html, /设备 · 不运行智能体/);
+  assert.match(html, /Runner · 使用账户的服务商凭据运行智能体/);
+  assert.match(html, /1 个插件 · 1 个智能体/);
   assert.match(html, /未报告工具数量/);
   assert.match(html, /未报告模型/);
-  assert.match(html, /此处不会向模型服务商发送请求或检查凭据/);
+  assert.match(html, /Fixture provider/);
+  assert.match(html, /Fixture bot/);
   assert.doesNotMatch(html, />0 个工具</);
+});
+
+test("Device inventory includes mobile devices and distinguishes Runner roles without exposing identifiers", () => {
+  const runtime = runtimeFixture();
+  runtime.devices[0].id = "private-device-identifier";
+  runtime.devices.push({ id: "unreported-device", name: "Unreported platform", os: "unknown", version: "", online: false, isThisDevice: false, plugins: [] });
+  const html = renderToStaticMarkup(<DevicesPanel runtime={runtime} />);
+  assert.match(html, /Paired phone/);
+  assert.match(html, /设备 · 不运行智能体/);
+  assert.match(html, /Known runner/);
+  assert.match(html, /Runner · 使用账户的服务商凭据运行智能体/);
+  assert.match(html, /设备角色未报告/);
+  assert.match(html, /当前设备/);
+  assert.match(html, /在线状态，不会主动测试连接/);
+  assert.doesNotMatch(html, /private-device-identifier|unreported-device/);
+});
+
+test("Pairing entry needs an explicit matching capability and a native callback", () => {
+  for (const hasIdentity of [true, false]) {
+    for (const capabilities of [undefined, { invite: false, join: false }, { invite: !hasIdentity, join: hasIdentity }, { invite: hasIdentity, join: !hasIdentity }]) {
+      for (const callback of [false, true]) {
+        let calls = 0;
+        const runtime = { ...runtimeFixture(), hasIdentity, pairingCapabilities: capabilities };
+        const html = renderToStaticMarkup(<DevicesPanel runtime={runtime} onOpenPairing={callback ? async () => { calls += 1; } : undefined} />);
+        const available = Boolean(callback && capabilities?.[hasIdentity ? "invite" : "join"]);
+        const label = hasIdentity ? "配对新设备" : "加入已有账号";
+        const button = html.match(new RegExp(`<button[^>]*>${label}</button>`))?.[0];
+        assert.ok(button);
+        assert.equal(button.includes('disabled=""'), !available);
+        assert.equal(html.includes("当前桌面桥接组件或本地服务未提供此配对流程"), !available);
+        assert.equal(calls, 0, "Reading or rendering settings never starts pairing");
+        assert.doesNotMatch(html, /<input|<textarea|<img|已配对成功|配对已完成/);
+      }
+    }
+  }
+});
+
+test("Pairing remains disabled during preview and stale or offline settings states", () => {
+  const runtime = { ...runtimeFixture(), pairingCapabilities: { invite: true, join: true } };
+  for (const props of [{ demo: true }, { disabled: true }]) {
+    const html = renderToStaticMarkup(<DevicesPanel runtime={runtime} onOpenPairing={async () => { throw new Error("Rendering must not start pairing"); }} {...props} />);
+    assert.match(html, /<button[^>]*disabled=""[^>]*>配对新设备<\/button>/);
+    if ("demo" in props) assert.match(html, /模拟预览不生成配对码，也不会绑定设备/);
+  }
+  const empty = renderToStaticMarkup(<DevicesPanel onOpenPairing={async () => {}} />);
+  assert.match(empty, /未报告任何设备/);
+  assert.match(empty, /未报告/);
+  assert.match(empty, /<button[^>]*disabled=""[^>]*>加入已有账号<\/button>/);
+});
+
+test("Pairing copy discloses account access and keeps local connection and Runner assignment separate", () => {
+  const runtime = { ...runtimeFixture(), pairing_string: "synthetic-private-pairing-string", nonce: "synthetic-private-nonce" };
+  const html = renderToStaticMarkup(<DevicesPanel runtime={runtime} />);
+  assert.match(html, /账号访问权，包括聊天及服务商凭据/);
+  assert.match(html, /生成或使用配对码前，需要在安全窗口中明确确认/);
+  assert.match(html, /与 dots 到本地服务的连接认证不同/);
+  assert.match(html, /不会更改智能体分配的 Runner/);
+  assert.doesNotMatch(html, /synthetic-private/);
 });
 
 test("MCP inspection is read-only, excludes phones, and never invents hidden counts", () => {
@@ -325,11 +391,26 @@ test("MCP inspection is read-only, excludes phones, and never invents hidden cou
   const html = renderToStaticMarkup(
     <McpPanel runtime={runtime} loading={false} onRefresh={() => {}} />,
   );
-  assert.match(html, /查看执行器/);
-  assert.match(html, /value="runner" selected=""/);
+  assert.match(html, /“Known runner”报告的插件状态/);
+  assert.doesNotMatch(html, /lorca-inspect-runner/);
   assert.doesNotMatch(html, /Paired phone|value="phone"|>0 个已隐藏</);
-  assert.match(html, /这不会更改任何机器人或聊天的执行器分配/);
+  assert.match(html, /MCP 配置仅作用于这个 Runner/);
   assert.doesNotMatch(html, /type="checkbox"|保存服务器|添加服务器|移除服务器/);
+});
+
+test("Unreported device roles are not inferred from OS in inventory or Runner selectors", () => {
+  const runtime = runtimeFixture();
+  delete runtime.devices[1].role;
+  const inventory = renderToStaticMarkup(<DevicesInventory runtime={runtime} />);
+  assert.match(inventory, /Known runner/);
+  assert.match(inventory, /设备角色未报告/);
+  assert.doesNotMatch(inventory, /Runner · 使用账户的服务商凭据运行智能体/);
+  const mcp = renderToStaticMarkup(<McpPanel runtime={runtime} loading={false} onRefresh={() => {}} />);
+  assert.doesNotMatch(mcp, /<option[^>]*value="runner"/);
+  const editable = editableRuntime();
+  delete editable.devices[1].role;
+  const bot = renderToStaticMarkup(<BotSettingsPanel runtime={editable} disabled={false} onAction={actions.onSettingsAction} />);
+  assert.match(bot, /<option value="runner" disabled="" selected=""/);
 });
 
 test("MCP status is explicitly reported configuration with unknown counts intact", () => {
@@ -499,19 +580,64 @@ function editableRuntime(): RuntimeSettings {
 
 test("Editable bot settings disclose bot-wide scope and keep credentials in native dialogs", () => {
   const html = renderToStaticMarkup(<BotSettingsPanel runtime={editableRuntime()} disabled={false} onAction={actions.onSettingsAction} />);
-  assert.match(html, /影响所有使用该机器人的对话/);
+  assert.match(html, /影响所有使用该智能体的对话/);
   assert.match(html, /不会迁移正在运行的任务、记忆或 MCP 配置/);
   assert.match(html, /Original model/);
   assert.match(html, /分配执行器/);
-  assert.match(html, /独立的安全窗口/);
-  assert.match(html, /新增服务商/);
+  assert.doesNotMatch(html, /新增服务商|断开连接/);
   assert.doesNotMatch(html, /type="password"|textarea|Paired phone/);
+  const providers = renderToStaticMarkup(<ProvidersPanel runtime={editableRuntime()} disabled={false} onAction={actions.onSettingsAction} />);
+  assert.match(providers, /独立的安全窗口/);
+  assert.match(providers, /服务商凭据属于账号，会在已配对设备之间加密同步/);
+  assert.match(providers, /新增服务商/);
+  assert.doesNotMatch(providers, /lorca-edit-bot|lorca-bot-runner|type="password"|textarea/);
+});
+
+test("Settings navigation follows seven official groups and shares a read-only device selector", () => {
+  const html = renderToStaticMarkup(<Settings open onOpenChange={() => {}} page="preferences" onPageChange={() => {}} connection={{ status: "connected", endpoint: "ws://127.0.0.1:4862/ws" }} demo={false} actions={actions} theme="light" onThemeChange={() => {}} themePersistent runtime={runtimeFixture()} />);
+  const navigation = html.match(/<nav[\s\S]*?<\/nav>/)?.[0];
+  assert.ok(navigation);
+  const labels = ["通用", "服务商", "自动审查", "插件", "智能体", "设备", "高级"];
+  let previous = -1;
+  for (const label of labels) {
+    const position = navigation.indexOf(`<span>${label}</span>`);
+    assert.ok(position > previous, label);
+    previous = position;
+  }
+  assert.doesNotMatch(navigation, />执行器<|>Runner（执行器）<|>模型与智能体</);
+  assert.match(html, /<select aria-label="查看设备"/);
+  assert.match(html, /仅切换查看范围，不会迁移智能体/);
+  assert.match(html, /value="phone" selected=""/);
+});
+
+test("A viewed phone never exposes bot assignments or MCP mutation controls", () => {
+  const runtime = editableRuntime();
+  for (const page of ["models", "mcp"] as const) {
+    const html = renderToStaticMarkup(<Settings open onOpenChange={() => {}} page={page} onPageChange={() => {}} connection={{ status: "connected", endpoint: "ws://127.0.0.1:4862/ws" }} demo={false} actions={actions} theme="light" onThemeChange={() => {}} themePersistent runtime={runtime} />);
+    assert.match(html, /此设备不运行智能体/);
+    assert.match(html, /请选择 Runner/);
+    assert.doesNotMatch(html, /lorca-edit-bot|lorca-bot-runner|添加服务器|重新加载配置|Fixture MCP/);
+  }
+  const providers = renderToStaticMarkup(<Settings open onOpenChange={() => {}} page="providers" onPageChange={() => {}} connection={{ status: "connected", endpoint: "ws://127.0.0.1:4862/ws" }} demo={false} actions={actions} theme="light" onThemeChange={() => {}} themePersistent runtime={runtime} />);
+  assert.match(providers, /此页设置属于整个账号，不受查看设备选择影响/);
+  assert.match(providers, /新增服务商/);
+});
+
+test("Bot and device details are filtered by viewing scope without selecting another Runner for a bot", () => {
+  const runtime = editableRuntime();
+  const bot = renderToStaticMarkup(<BotSettingsPanel runtime={runtime} disabled={false} onAction={actions.onSettingsAction} deviceId="empty-runner" />);
+  assert.match(bot, /此 Runner 上没有智能体/);
+  assert.doesNotMatch(bot, /Fixture bot|lorca-bot-runner/);
+  const devices = renderToStaticMarkup(<DevicesInventory runtime={runtime} selectedDeviceId="phone" onSelectDevice={() => {}} />);
+  assert.match(devices, /Paired phone/);
+  assert.match(devices, /Known runner/);
+  assert.doesNotMatch(devices, /lorca-runtime-disclosure/);
 });
 
 test("Missing editor capabilities never create writable model or provider controls", () => {
   const html = renderToStaticMarkup(<BotSettingsPanel runtime={runtimeFixture()} disabled={false} onAction={actions.onSettingsAction} />);
   assert.match(html, /未提供此编辑能力/);
-  assert.doesNotMatch(html, /应用更改|新增服务商|断开连接/);
+  assert.doesNotMatch(html, />应用更改<\/button>|>新增服务商…<\/button>|>断开连接<\/button>/);
 });
 
 test("MCP management exposes scoped actions without raw configuration fields", () => {
@@ -546,7 +672,7 @@ test("Exact tool rules label text as notes and disclose unconditional allow scop
   const html = renderToStaticMarkup(<AutoReviewPanel editor={editor} disabled={false} onAction={actions.onSettingsAction} />);
   assert.match(html, /规则 1 · 备注/);
   assert.match(html, /始终允许此工具/);
-  assert.match(html, /精确工具：messages\/send_external_message。启用自动审批后，将始终允许此工具；备注不构成限制条件。/);
+  assert.match(html, /精确工具：messages\/send_external_message。启用自动审查后，将始终允许此工具；备注不构成限制条件。/);
   assert.match(html, /value="Only if recipient is trusted"/);
   assert.doesNotMatch(html, /<option value="allow" selected="">符合规则时允许/);
   editor.autoReview.rules[0].tool = null;
@@ -618,7 +744,9 @@ test("Avatar rendering accepts only bounded PNG data and maps symbols and accent
   }
   const person = renderToStaticMarkup(<Avatar person appearance={appearance} />);
   assert.match(person, /lorca-avatar-person/);
-  assert.doesNotMatch(person, /<img|data-avatar-bot/);
+  assert.match(person, /data-user-avatar="ghost"/);
+  assert.match(person, /src="\.\/app-icon\/64\.png"/);
+  assert.doesNotMatch(person, /data-avatar-image|data-avatar-bot|data:image\/png/);
 });
 
 test("Conversation avatars use at most two ordered bot identities", () => {
@@ -646,7 +774,7 @@ test("Default and configured symbols use the fallback surface while custom image
   assert.equal(appearance.accent, "pink");
 });
 
-test("Message avatars preserve bot identity and give user messages a person fallback", () => {
+test("Message avatars preserve bot identity and use the bundled Ghost only for user messages", () => {
   const html = renderMessage({ kind: "message", id: "avatar", role: "assistant", authorName: "Named Bot", authorAvatar: { botId: "named-bot", name: "Named Bot", symbolName: "terminal.fill", accent: "green" }, text: "Synthetic response" });
   assert.match(html, /data-avatar-bot="named-bot"/);
   assert.match(html, /data-icon="ComputerTerminal01"/);
@@ -654,7 +782,8 @@ test("Message avatars preserve bot identity and give user messages a person fall
   assert.doesNotMatch(html, /data-app-mark="ghost"|<circle cx="10" cy="10" r="3.5"/);
   const user = renderMessage({ kind: "message", id: "user", role: "user", text: "Synthetic message" });
   assert.match(user, /lorca-avatar-person/);
-  assert.doesNotMatch(user, /<img/);
+  assert.match(user, /<img data-user-avatar="ghost" src="\.\/app-icon\/64\.png"/);
+  assert.doesNotMatch(user, /data-avatar-image|data-app-mark|data-avatar-bot/);
 });
 
 
@@ -675,7 +804,7 @@ test("Composer bot selector shows the selected avatar and retains native labels 
   const enabled = picker(state);
   assert.match(enabled, /data-avatar-bot="selected-bot"/);
   assert.match(enabled, /<img[^>]+data-avatar-image/);
-  assert.match(enabled, /<select aria-label="选择机器人"/);
+  assert.match(enabled, /<select aria-label="选择智能体"/);
   assert.match(enabled, /<option value="selected-bot" selected="">Selected Bot<\/option>/);
   assert.doesNotMatch(enabled, /data-icon="Bot"|<select[^>]+disabled/);
   assert.doesNotMatch(enabled.slice(enabled.indexOf("<select")), /<img|<svg/);

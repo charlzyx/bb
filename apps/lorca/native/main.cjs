@@ -10,6 +10,7 @@ const { APP_NAME, configureApplicationName, configureApplicationBranding } = req
 const { SettingsInventory, sanitizeRendererEvent, sanitizeRendererResult, safeRendererError } = require('./settings.cjs');
 const { SettingsEditor } = require('./settings-editor.cjs');
 const { createSecureSettingsEditor } = require('./secure-settings.cjs');
+const { createPairingFlow } = require('./pairing.cjs');
 
 configureApplicationName(app);
 const distDirectory = path.resolve(__dirname, '../dist');
@@ -23,8 +24,10 @@ const settings = new SettingsInventory(bridge);
 const avatars = new BotAvatars(bridge, nativeImage);
 const watching = new WatchingChat(bridge);
 let pendingRoster = null;
+let pairingCapabilities = { invite: false, join: false };
 let observedGeneration = bridge.getStatus().generation;
 settings.onSnapshot = snapshot => {
+  pairingCapabilities = pairing.capabilities(snapshot);
   avatars.observeSnapshot(snapshot);
   watching.observeSnapshot(snapshot);
   if (pendingRoster) {
@@ -42,6 +45,7 @@ let window = null;
 let applicationIcon;
 let choosing = false;
 const secureSettings = createSecureSettingsEditor({ BrowserWindow, ipcMain, bridge, getParent: () => window, getIcon: () => applicationIcon });
+const pairing = createPairingFlow({ BrowserWindow, ipcMain, dialog, bridge, inventory: settings, getParent: () => window, getIcon: () => applicationIcon });
 settings.editor = new SettingsEditor(bridge, settings, {
   openSecureEditor: secureSettings.edit,
   confirm: async (spec, guard) => {
@@ -103,10 +107,17 @@ ipcMain.handle('lorca:get-settings', async (event, params = {}) => {
   const result = await settings.get(params);
   ensureSender(event);
   settings.check(fence);
-  return result;
+  return { ...result, pairingCapabilities };
+});
+ipcMain.handle('lorca:open-pairing', async (event, mode) => {
+  ensureSender(event);
+  if (settings.editor.busy) throw new Error('请先关闭当前设置流程。');
+  try { return await pairing.open(mode, () => ensureSender(event)); }
+  catch { throw new Error('无法打开设备配对，请检查本地令牌连接并刷新设备列表。'); }
 });
 ipcMain.handle('lorca:settings-action', async (event, action) => {
   ensureSender(event);
+  if (pairing.isActive()) throw new Error('设备配对仍在处理，请先核对其结果。');
   return settings.editor.apply(action, () => ensureSender(event));
 });
 ipcMain.handle('lorca:request', async (event, method, params) => {
@@ -189,5 +200,5 @@ app.whenReady().then(() => {
   createWindow();
 });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
-app.on('before-quit', () => { watching.dispose(); avatars.dispose(); secureSettings.close(); bridge.close(); });
+app.on('before-quit', () => { watching.dispose(); avatars.dispose(); secureSettings.close(); pairing.close(); bridge.close(); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

@@ -22,7 +22,7 @@ node apps/lorca/scripts/focused.mjs desktop
 
 An existing full BB development checkout can use `pnpm exec turbo run build --filter=@bb/lorca` and `pnpm --filter @bb/lorca desktop` when its dependencies are available.
 
-Start and configure your Lorca CLI separately. The desktop connects to `ws://127.0.0.1:4862/ws` and reads the existing `~/.lorca/serve-token` in its main process. It does not create or restore an identity, copy any account, launch a Runner, or change your relay configuration.
+Start and configure your Lorca CLI separately. The desktop connects to `ws://127.0.0.1:4862/ws` and reads the existing `~/.lorca/serve-token` in its main process. Connecting or reconnecting does not initialize an account or launch a Runner. Identity creation/restoration remains in Lorca. The separate, explicitly user-confirmed device-joining flow can persist membership in an existing account through the daemon, including the pairing reply's relay configuration and encrypted account synchronization; it is never an automatic connection step.
 
 For an isolated development CLI:
 
@@ -66,6 +66,8 @@ Read [Protocol and compatibility](../../docs/lorca-protocol.md) for exact RPC ma
 
 Read [Settings and runtime inventory](../../docs/lorca-settings.md) for the pinned-reference capability matrix, native redaction contract, and which preferences are editable. Connection and appearance are local session preferences. Runtime inventory remains a sanitized daemon report, not a health test. The separate [editable settings contract](../../docs/lorca-editable-settings.md) covers bot-wide model/Runner changes, controlled provider/MCP configuration and explicit account-wide approval policy updates. Persistent changes use native confirmation and session-bound revision checks; secrets never enter the ordinary renderer. MCP file writes/reload can also apply unrelated pending on-disk changes and start programs absent from the cached inventory. Native confirmation discloses the whole-file scope; the daemon has no preview/CAS endpoint.
 
+Device invitation/join is a separate native, user-confirmed flow; see the [pairing protocol and safety boundary](../../docs/lorca-device-pairing.md). A live invitation grants account access without a second approval on the inviter. Joining a desktop Runner can also let other account devices arrange work on that computer under Lorca's existing permissions and review rules. Codes stay out of the ordinary renderer. Closing, cancellation or a lost reply does not prove access was revoked; unknown outcomes are not automatically retried. This description is not a claim that real pairing or final desktop CI has been verified.
+
 The pinned daemon has one direct conversation per bot. “开始聊天” opens or creates that DM; supplying a new preferred chat ID does not force a separate DM. Existing history remains. Independent group creation is a different upstream operation and is not offered as a workaround for separate direct sessions.
 
 ## Avatar resources
@@ -90,7 +92,8 @@ The selected Ghost artwork supplies the native app/About/Dock icon, using the ap
 | Native selected-file attachments | Supported via main-process bridge |
 | Existing group transcript and sending | Supported |
 | Create/manage groups or bots | Use Lorca's existing app/CLI |
-| Identity creation, restore, pairing, provider OAuth sign-in | Use Lorca's existing app/CLI |
+| Device invitation and joining an existing account | Explicit native confirmation and isolated code surface; see pairing contract and verification status |
+| Identity creation/restoration, device unpair, account deletion, provider OAuth sign-in | Use Lorca's existing app/CLI |
 | Access-management and OAuth permission cards | Displayed; complete in Lorca |
 | Download/open attachment bytes | Metadata displayed; use Lorca |
 | Interactive terminals/browser sessions | Activity displayed; controls remain in Lorca |

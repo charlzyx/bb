@@ -170,7 +170,7 @@ class SettingsEditor {
     if (action.runnerId && entry.runners.get(action.runnerId) !== hash(runnerConfig(bootstrap.devices.find(value => value.id === action.runnerId)))) throw new Error(STALE);
     let mcp = null;
     if (action.kind.startsWith('mcp.')) {
-      if (entry.runnerId !== action.runnerId || !safe.devices.some(value => value.id === action.runnerId && value.online && ['macos', 'linux', 'windows'].includes(value.os))) throw new Error(UNAVAILABLE);
+      if (entry.runnerId !== action.runnerId || !safe.devices.some(value => value.id === action.runnerId && value.online && value.role === 'runner')) throw new Error(UNAVAILABLE);
       mcp = await this.bridge.sendValidated('mcp.list', { runner_id: action.runnerId }); this.guard(entry, trusted);
       if (object(mcp).error) throw new Error(UNAVAILABLE);
       list(object(mcp).servers, 512).map(mcpConfig);
@@ -202,7 +202,7 @@ class SettingsEditor {
       const thinking = action.thinking ?? bot.thinking ?? '';
       if (thinking && !catalog.find(value => value.id === (model || catalog[0].id))?.levels.includes(thinking)) invalid();
     }
-    if (action.runnerId && !fresh.safe.devices.some(value => value.id === action.runnerId && ['macos', 'linux', 'windows'].includes(value.os))) throw new Error(UNAVAILABLE);
+    if (action.runnerId && !fresh.safe.devices.some(value => value.id === action.runnerId && value.role === 'runner')) throw new Error(UNAVAILABLE);
     return { method: 'bots.update', params: { id: action.botId, ...Object.fromEntries(['provider', 'model', 'thinking'].filter(key => Object.hasOwn(action, key)).map(key => [key, action[key]])), ...(action.runnerId ? { runner_id: action.runnerId } : {}) } };
   }
   async apply(value, trusted = () => {}) {
@@ -216,23 +216,23 @@ class SettingsEditor {
       let mutation, credentialHash = null, detail, target;
       if (action.kind === 'bot.update') {
         const bot = fresh.bootstrap.bots.find(value => value.id === action.botId);
-        mutation = this.botMutation(action, fresh); target = `机器人「${label(bot.name)}」（${bot.id}）`;
+        mutation = this.botMutation(action, fresh); target = `智能体「${label(bot.name)}」（${bot.id}）`;
         const delta = [];
         for (const [key, title] of [['provider', '服务商'], ['model', '模型'], ['thinking', '推理强度']]) if (Object.hasOwn(action, key)) delta.push(`${title}：${JSON.stringify(bot[key] || '默认')} → ${JSON.stringify(action[key] || '默认')}`);
         if (action.runnerId) {
           const describe = id => { const runner = fresh.safe.devices.find(value => value.id === id); return `${JSON.stringify(runner?.name || id)}（${id}，${runner?.online ? '在线' : '离线'}）`; };
           delta.push(`执行器：${describe(bot.runner_id)} → ${describe(action.runnerId)}`);
         }
-        detail = `${delta.join('\n')}\n\n影响所有使用此机器人的私聊、群聊及后续任务，不是仅当前会话。不会迁移已经开始执行的任务。`;
+        detail = `${delta.join('\n')}\n\n影响所有使用此智能体的私聊、群聊及后续任务，不是仅当前会话。不会迁移已经开始执行的任务。`;
       } else if (action.kind === 'autoReview.set') {
         if (policy(fresh.bootstrap.auto_review).status !== 'ready') throw new Error(UNAVAILABLE);
-        mutation = { method: 'auto_review.set', params: { is_enabled: action.isEnabled, rules: action.rules } }; target = '当前账号的自动审批策略';
-        const describeRules = rules => rules.length ? rules.map((value, index) => `${index + 1}. ${value.tool ? (value.behavior === 'allow' ? '工具级始终允许' : '工具级始终询问') : (value.behavior === 'allow' ? '自然语言允许规则' : '自然语言询问规则')}\n规则 ID：${JSON.stringify(value.id ?? '新增')}\n工具：${JSON.stringify(value.tool ?? '未指定，交由模型审核文本')}\n${value.tool ? '此规则精确匹配该工具；下列文字仅为备注，不是限制条件。启用自动审批时，始终允许将直接放行该工具的调用（仍受机器人访问权限限制）。' : '下列自然语言条件由后端模型审核，不是确定性过滤器。'}\n完整${value.tool ? '备注' : '规则文本'}：\n${value.text}`).join('\n\n') : '无规则';
-        detail = `${action.isEnabled ? '将启用模型审核及允许规则，部分操作可能不再逐次询问。' : '将关闭自动审批，Shell 和有副作用的插件操作逐次询问。'}\n规则只作用于后端进入审批流程的操作；只读工具可能直接执行。整份规则列表将替换，未出现在新列表的旧规则会删除。策略会同步到此账号的所有配对设备。\n\n现有规则：\n${describeRules(fresh.bootstrap.auto_review.rules)}\n\n替换后的完整规则：\n${describeRules(action.rules)}`;
+        mutation = { method: 'auto_review.set', params: { is_enabled: action.isEnabled, rules: action.rules } }; target = '当前账号的自动审查策略';
+        const describeRules = rules => rules.length ? rules.map((value, index) => `${index + 1}. ${value.tool ? (value.behavior === 'allow' ? '工具级始终允许' : '工具级始终询问') : (value.behavior === 'allow' ? '自然语言允许规则' : '自然语言询问规则')}\n规则 ID：${JSON.stringify(value.id ?? '新增')}\n工具：${JSON.stringify(value.tool ?? '未指定，交由模型审核文本')}\n${value.tool ? '此规则精确匹配该工具；下列文字仅为备注，不是限制条件。启用自动审查时，始终允许将直接放行该工具的调用（仍受智能体访问权限限制）。' : '下列自然语言条件由后端模型审核，不是确定性过滤器。'}\n完整${value.tool ? '备注' : '规则文本'}：\n${value.text}`).join('\n\n') : '无规则';
+        detail = `${action.isEnabled ? '将启用模型审核及允许规则，部分操作可能不再逐次询问。' : '将关闭自动审查，Shell 和有副作用的插件操作逐次询问。'}\n规则只作用于后端进入审批流程的操作；只读工具可能直接执行。整份规则列表将替换，未出现在新列表的旧规则会删除。策略会同步到此账号的所有配对设备。\n\n现有规则：\n${describeRules(fresh.bootstrap.auto_review.rules)}\n\n替换后的完整规则：\n${describeRules(action.rules)}`;
       } else if (action.kind.startsWith('provider.')) {
         const provider = action.providerId ? fresh.bootstrap.providers.find(value => value.kind === action.providerId) : null;
         target = provider ? `服务商「${label(provider.name ?? provider.kind)}」（${provider.kind}）` : '新的自定义服务商';
-        if (action.kind === 'provider.disconnect') { mutation = { method: 'providers.disconnect', params: { kind: action.providerId } }; detail = '将移除此服务商的账号级连接；自定义服务商会被删除，使用它的机器人或审批功能可能无法继续运行。部分服务商会撤销登录令牌。'; }
+        if (action.kind === 'provider.disconnect') { mutation = { method: 'providers.disconnect', params: { kind: action.providerId } }; detail = '将移除此服务商的账号级连接；自定义服务商会被删除，使用它的智能体或审批功能可能无法继续运行。部分服务商会撤销登录令牌。'; }
         else {
           if ((provider && !configurableProvider(provider)) || typeof this.openSecureEditor !== 'function') throw new Error(UNAVAILABLE);
           let credentials = null;
@@ -254,7 +254,7 @@ class SettingsEditor {
           if (fresh.mcp.servers.some(value => value.name === mutation.params.name && value.name !== action.name)) invalid();
         } else if (action.kind === 'mcp.setEnabled') mutation = { method: 'mcp.set_enabled', params: { name: action.name, enabled: action.enabled } };
         else if (action.kind === 'mcp.reconnect') { mutation = { method: 'mcp.reconnect', params: { name: action.name, fresh: true } }; detail += '\n将断开缓存连接并重新建立，可能重启程序或影响进行中的调用；保留已保存凭据，不会发起新的登录授权。完成后请查看服务报告状态，提交成功不代表连接健康。'; }
-        else if (action.kind === 'mcp.remove') { mutation = { method: 'mcp.remove', params: { name: action.name } }; detail = '将删除此 MCP 服务的配置、插件目录、已保存凭据和关联的自动审批规则。此操作无法由客户端自动恢复。'; }
+        else if (action.kind === 'mcp.remove') { mutation = { method: 'mcp.remove', params: { name: action.name } }; detail = '将删除此 MCP 服务的配置、插件目录、已保存凭据和关联的自动审查规则。此操作无法由客户端自动恢复。'; }
         else mutation = { method: 'mcp.reload', params: {} };
         if (action.kind === 'mcp.setEnabled' && !action.enabled) detail += '\n将停用此服务的已保存配置，不会把地址、环境变量或请求头作为新连接输入；现有配置和凭据不会回显。';
         else if (!['mcp.remove', 'mcp.reload'].includes(action.kind)) {

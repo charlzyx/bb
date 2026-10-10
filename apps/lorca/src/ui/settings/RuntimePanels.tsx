@@ -1,11 +1,9 @@
-import { useState } from "react";
 import { settingsZh } from "../../locale/settings.zh-CN";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { Pill } from "@bb/shared-ui/pill";
 import {
   SettingsBadge,
-  SettingsDetailRow,
   SettingsRow,
   SettingsRowList,
   SettingsSection,
@@ -33,179 +31,48 @@ function ToolsCount({ count }: { count: number | null }) {
   );
 }
 
-export function RunnersPanel({ runtime }: { runtime: RuntimeSettings }) {
-  const runners = runtime.devices.filter((device) =>
-    ["macos", "linux", "windows"].includes(device.os),
-  );
-  const otherDevices = runtime.devices.length - runners.length;
+export function DevicesInventory({ runtime, selectedDeviceId, onSelectDevice }: { runtime: RuntimeSettings; selectedDeviceId?: string; onSelectDevice?: (id: string) => void }) {
   return (
-    <>
-      <SettingsSection
-        title={settingsZh.runners}
-        description={settingsZh.runnerStatusDescription}
-        action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}
-      >
-        {runners.length ? (
-          <SettingsRowList>
-            {runners.map((device) => {
-              const bots = runtime.bots.filter(
-                (bot) => bot.runnerId === device.id,
-              );
-              return (
-                <SettingsRow
-                  key={device.id}
-                  className="lorca-runtime-device-row"
-                >
-                  <div className="lorca-runtime-device">
-                    <div className="lorca-runtime-device-heading">
-                      <span className="lorca-runtime-device-icon">
-                        <Icon name="ComputerTerminal01" />
-                      </span>
-                      <div>
-                        <h3>{device.name || settingsZh.unnamedRunner}</h3>
-                        <p>
-                          {device.os || settingsZh.platformNotReported}
-                          {device.version ? ` · ${device.version}` : ""}
-                        </p>
-                      </div>
-                      {device.isThisDevice && (
-                        <SettingsBadge>{settingsZh.thisDevice}</SettingsBadge>
-                      )}
-                      <span className="lorca-runtime-reported-status">
-                        <span
-                          className={`lorca-status-dot ${device.online ? "lorca-status-connected" : "lorca-status-disconnected"}`}
-                        />
-                        {device.online ? settingsZh.online : settingsZh.offline}
-                      </span>
+    <SettingsSection title={settingsZh.pairedDevices} description={settingsZh.pairedDevicesDescription} action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}>
+      {runtime.devices.length ? (
+        <SettingsRowList>
+          {runtime.devices.map((device) => {
+            const runner = device.role === "runner";
+            const bots = runtime.bots.filter((bot) => bot.runnerId === device.id);
+            return (
+              <SettingsRow key={device.id} className="lorca-runtime-device-row" data-selected={selectedDeviceId === device.id || undefined}>
+                <div className="lorca-runtime-device">
+                  <div className="lorca-runtime-device-heading">
+                    <span className="lorca-runtime-device-icon"><Icon name={device.role === "device" ? "Smartphone" : "ComputerTerminal01"} /></span>
+                    <div>
+                      <h3>{onSelectDevice ? <button className="lorca-device-name" type="button" onClick={() => onSelectDevice(device.id)} aria-pressed={selectedDeviceId === device.id}>{device.name || settingsZh.unnamedDevice}</button> : device.name || settingsZh.unnamedDevice}</h3>
+                      <p>{device.os || settingsZh.platformNotReported}{device.version ? ` · ${device.version}` : ""}</p>
                     </div>
-                    <details className="lorca-runtime-disclosure">
-                      <summary>
-                        <Icon name="ChevronRight" />
-                        <span>
-                          {settingsZh.pluginAndBotCount(
-                            device.plugins.length,
-                            bots.length,
-                          )}
-                        </span>
-                      </summary>
-                      <div className="lorca-runtime-disclosure-body">
-                        <div className="lorca-runtime-id">
-                          <span>{settingsZh.runnerId}</span>
-                          <code>{device.id}</code>
-                        </div>
-                        {device.plugins.length ? (
-                          <div className="lorca-runtime-plugin-list">
-                            {device.plugins.map((plugin) => (
-                              <div key={plugin.id}>
-                                <span>{plugin.name || plugin.id}</span>
-                                <Pill variant="outline">
-                                  {stateLabel(plugin.state)}
-                                </Pill>
-                                <ToolsCount count={plugin.toolCount} />
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="lorca-runtime-muted">
-                            {settingsZh.noRunnerPlugins}
-                          </p>
-                        )}
-                        <p className="lorca-runtime-muted">
-                          {bots.length
-                            ? settingsZh.usedByBots(bots.map((bot) => bot.name))
-                            : settingsZh.noRunnerBots}
-                        </p>
-                      </div>
-                    </details>
-                  </div>
-                </SettingsRow>
-              );
-            })}
-          </SettingsRowList>
-        ) : (
-          <InventoryEmpty
-            icon="ComputerTerminal01"
-            title={settingsZh.noRunners}
-            detail={settingsZh.noRunnersDescription}
-          />
-        )}
-      </SettingsSection>
-      {otherDevices > 0 && (
-        <p className="lorca-runtime-muted">
-          {settingsZh.otherPairedDevices(otherDevices)}
-        </p>
-      )}
-      <SettingsSection
-        title={settingsZh.providers}
-        description={settingsZh.providersDescription}
-        action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}
-      >
-        {runtime.providers.length ? (
-          <SettingsRowList>
-            {runtime.providers.map((provider) => (
-              <SettingsDetailRow
-                key={provider.id}
-                label={provider.name || provider.id}
-              >
-                <span className="lorca-provider-status">
-                  <Icon name={provider.connected ? "CircleCheck" : "Circle"} />
-                  {provider.connected
-                    ? settingsZh.configured
-                    : settingsZh.notConfigured}
-                </span>
-              </SettingsDetailRow>
-            ))}
-          </SettingsRowList>
-        ) : (
-          <InventoryEmpty
-            icon="Bot"
-            title={settingsZh.noProviders}
-            detail={settingsZh.noProvidersDescription}
-          />
-        )}
-      </SettingsSection>
-      <SettingsSection
-        title={settingsZh.botConfiguration}
-        description={settingsZh.botConfigurationDescription}
-        action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}
-      >
-        {runtime.bots.length ? (
-          <SettingsRowList>
-            {runtime.bots.map((bot) => (
-              <SettingsRow key={bot.id}>
-                <div className="lorca-runtime-bot">
-                  <h3>{bot.name || settingsZh.unnamedBot}</h3>
-                  <div>
-                    <span>
-                      <Icon name="ComputerTerminal01" />
-                      {runtime.devices.find(
-                        (device) => device.id === bot.runnerId,
-                      )?.name ||
-                        bot.runnerId ||
-                        settingsZh.runnerNotReported}
+                    {device.isThisDevice && <SettingsBadge>{settingsZh.thisDevice}</SettingsBadge>}
+                    <span className="lorca-runtime-reported-status">
+                      <span className={`lorca-status-dot ${device.online ? "lorca-status-connected" : "lorca-status-disconnected"}`} />
+                      {device.online ? settingsZh.online : settingsZh.offline}
                     </span>
-                    <span>
-                      {runtime.providers.find(
-                        (provider) => provider.id === bot.provider,
-                      )?.name ||
-                        bot.provider ||
-                        settingsZh.providerNotReported}
-                    </span>
-                    <span>{bot.model || settingsZh.modelNotReported}</span>
                   </div>
+                  <p className="lorca-device-role">{runner ? settingsZh.runnerRole : device.role === "device" ? settingsZh.deviceRole : settingsZh.unknownDeviceRole}</p>
+                  {runner && (selectedDeviceId === undefined || selectedDeviceId === device.id) && <details key={device.id} className="lorca-runtime-disclosure" open={selectedDeviceId === device.id}>
+                    <summary><Icon name="ChevronRight" /><span>{settingsZh.pluginAndBotCount(device.plugins.length, bots.length)}</span></summary>
+                    <div className="lorca-runtime-disclosure-body">
+                      {device.plugins.length ? <div className="lorca-runtime-plugin-list">
+                        {device.plugins.map((plugin) => <div key={plugin.id}><span>{plugin.name || plugin.id}</span><Pill variant="outline">{stateLabel(plugin.state)}</Pill><ToolsCount count={plugin.toolCount} /></div>)}
+                      </div> : <p className="lorca-runtime-muted">{settingsZh.noRunnerPlugins}</p>}
+                      {bots.length ? <div className="lorca-runtime-plugin-list">
+                        {bots.map((bot) => <div key={bot.id}><span>{bot.name || settingsZh.unnamedBot}</span><span className="lorca-runtime-muted">{runtime.providers.find((provider) => provider.id === bot.provider)?.name || bot.provider || settingsZh.providerNotReported} · {bot.model || settingsZh.modelNotReported}</span></div>)}
+                      </div> : <p className="lorca-runtime-muted">{settingsZh.noRunnerBots}</p>}
+                    </div>
+                  </details>}
                 </div>
               </SettingsRow>
-            ))}
-          </SettingsRowList>
-        ) : (
-          <InventoryEmpty
-            icon="Bot"
-            title={settingsZh.noBots}
-            detail={settingsZh.noBotsDescription}
-          />
-        )}
-      </SettingsSection>
-    </>
+            );
+          })}
+        </SettingsRowList>
+      ) : <InventoryEmpty icon="ComputerTerminal01" title={settingsZh.noDevices} detail={settingsZh.noDevicesDescription} />}
+    </SettingsSection>
   );
 }
 
@@ -215,60 +82,29 @@ export function McpPanel({
   onRefresh,
   onAction,
   disabled = false,
+  deviceId,
 }: {
   runtime: RuntimeSettings;
   loading: boolean;
   onRefresh: (runnerId?: string) => void;
   onAction?: (action: SettingsAction) => Promise<SettingsActionResult>;
   disabled?: boolean;
+  deviceId?: string;
 }) {
-  const [selectedRunner, setSelectedRunner] = useState<string | null>(null);
-  const runners = runtime.devices.filter((device) =>
-    ["macos", "linux", "windows"].includes(device.os),
-  );
-  const selected = runners.find((device) => device.id === selectedRunner);
-  const reported = runners.find((device) => device.id === runtime.mcp.runnerId);
-  const fallback = runners.find((device) => device.isThisDevice) ?? runners[0];
-  const inspectedRunner = selected?.id ?? reported?.id ?? fallback?.id ?? "";
+  const runners = runtime.devices.filter((device) => device.role === "runner");
+  const fallback = runners.find((device) => device.id === runtime.mcp.runnerId) ?? runners.find((device) => device.isThisDevice) ?? runners[0];
+  const inspectedDevice = deviceId === undefined ? fallback : runtime.devices.find((device) => device.id === deviceId);
+  const inspectedRunner = inspectedDevice?.role === "runner" ? inspectedDevice.id : "";
   const selectedSnapshot = inspectedRunner === (runtime.mcp.runnerId ?? "");
   const editor = runtime.editor;
   const canManage = Boolean(editor?.canManageMcp && onAction && selectedSnapshot && runtime.mcp.status === "ready" && runners.find((device) => device.id === inspectedRunner)?.online);
   const runnerName = runners.find((device) => device.id === inspectedRunner)?.name || inspectedRunner;
   const managementBlocked = disabled || loading || !selectedSnapshot;
+  if (!inspectedRunner) return <InventoryEmpty icon="Info" title={inspectedDevice?.role === "device" ? settingsZh.requiresRunner : settingsZh.unknownRunnerRole} detail={settingsZh.chooseRunnerForSettings} />;
   return (
     <>
-      <SettingsSection
-        title={settingsZh.inspectRunner}
-        description={settingsZh.inspectRunnerDescription}
-      >
-        <label
-          className="lorca-settings-select-label"
-          htmlFor="lorca-inspect-runner"
-        >
-          {settingsZh.runner}
-        </label>
-        <div className="lorca-settings-select">
-          <select
-            id="lorca-inspect-runner"
-            value={inspectedRunner}
-            disabled={loading || !runners.length}
-            onChange={(event) => {
-              setSelectedRunner(event.target.value);
-              onRefresh(event.target.value);
-            }}
-          >
-            <option value="" disabled>
-              {settingsZh.selectRunner}
-            </option>
-            {runners.map((device) => (
-              <option key={device.id} value={device.id}>
-                {device.name || device.id}
-                {device.isThisDevice ? ` · ${settingsZh.thisDevice}` : ""}
-              </option>
-            ))}
-          </select>
-          <Icon name="ChevronDown" />
-        </div>
+      <SettingsSection title={settingsZh.runnerPlugins} description={settingsZh.runnerPluginScope(runnerName)} action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}>
+        {inspectedDevice?.plugins.length ? <SettingsRowList>{inspectedDevice.plugins.map((plugin) => <SettingsRow key={plugin.id}><div className="lorca-plugin-inventory-row"><span>{plugin.name || plugin.id}</span><Pill variant="outline">{stateLabel(plugin.state)}</Pill><ToolsCount count={plugin.toolCount} /></div></SettingsRow>)}</SettingsRowList> : <p className="lorca-runtime-muted">{settingsZh.noRunnerPlugins}</p>}
       </SettingsSection>
       {canManage && editor && onAction && <div className="lorca-admin-buttons">
         <SettingsActionControl action={{ kind: "mcp.configure", revision: editor.revision, runnerId: inspectedRunner }} label={editorZh.addMcp} onAction={onAction} disabled={managementBlocked} />

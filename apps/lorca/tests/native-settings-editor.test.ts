@@ -76,7 +76,7 @@ test('bot changes show exact old and new scope and send only dirty fields once',
   assert.deepEqual(result, { status: 'applied' });
   assert.deepEqual(mutations(ctx.bridge), [{ method: 'bots.update', params: { id: 'bot-one', model: 'new-model', thinking: '', runner_id: 'runner-two' } }]);
   const confirmation = JSON.stringify(ctx.prompts);
-  for (const value of ['Actual Bot', 'bot-one', 'old-model', 'new-model', 'runner-one', 'runner-two', '离线', '所有使用此机器人', '不会迁移']) assert.ok(confirmation.includes(value), value);
+  for (const value of ['Actual Bot', 'bot-one', 'old-model', 'new-model', 'runner-one', 'runner-two', '离线', '所有使用此智能体', '不会迁移']) assert.ok(confirmation.includes(value), value);
   await assert.rejects(ctx.editor.apply({ kind: 'bot.update', revision: ctx.revision, botId: 'bot-one', model: '' }), /刷新/);
   ctx.dispose();
 });
@@ -178,7 +178,7 @@ test('MCP toggles state explicitly, removal warns about credentials and rules, a
   assert.ok(ctx.prompts[0].detail.includes('停用')); assert.equal(mutations(ctx.bridge)[0].params.enabled, false);
   const settings = await ctx.inventory.get({ runnerId: 'runner-one' });
   await ctx.editor.apply({ kind: 'mcp.remove', revision: settings.editor.revision, runnerId: 'runner-one', name: 'server-one' });
-  for (const value of ['删除', '凭据', '自动审批规则', '无法']) assert.ok(ctx.prompts[1].detail.includes(value)); ctx.dispose();
+  for (const value of ['删除', '凭据', '自动审查规则', '无法']) assert.ok(ctx.prompts[1].detail.includes(value)); ctx.dispose();
 });
 
 test('MCP secret editor rejects invalid patches and OAuth expansion without echoing prior values', () => {

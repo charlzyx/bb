@@ -9,7 +9,7 @@ const MAX_PIXELS = 4 * 1024 * 1024;
 const MAX_CACHE_BYTES = 8 * 1024 * 1024;
 const ACCENTS = new Set(['indigo', 'blue', 'teal', 'green', 'orange', 'pink', 'purple', 'red']);
 const MIME = new Set(['image/png', 'image/jpeg', 'image/webp']);
-const CHANGED = '头像所属账号、连接或机器人已变化';
+const CHANGED = '头像所属账号、连接或智能体已变化';
 function dimensions(width, height) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > MAX_DIMENSION || height > MAX_DIMENSION || width * height > MAX_PIXELS) throw new Error('头像尺寸不受支持');
   return { width, height };
@@ -164,7 +164,7 @@ class BotAvatars {
   }
   async get(botId, expectedAvatarVersion, guard = () => {}) {
     guard();
-    if (typeof expectedAvatarVersion !== 'string' || !/^[a-f0-9]{24}$/.test(expectedAvatarVersion) || typeof botId !== 'string' || !botId.trim() || botId.length > 256 || /[\0\r\n]/.test(botId)) throw new Error('机器人头像请求无效');
+    if (typeof expectedAvatarVersion !== 'string' || !/^[a-f0-9]{24}$/.test(expectedAvatarVersion) || typeof botId !== 'string' || !botId.trim() || botId.length > 256 || /[\0\r\n]/.test(botId)) throw new Error('智能体头像请求无效');
     const attachment = this.bots.get(botId);
     if (!attachment || attachment.version !== expectedAvatarVersion) return null;
     const generation = this.bridge.getStatus().generation, epoch = this.epoch;

@@ -43,7 +43,7 @@ function validateRequest(method, input) {
     string(params.id, 'id', 200, true);
     if (params.kind !== undefined && !['dm', 'group'].includes(params.kind)) throw new Error('会话类型无效');
     const ids = strings(params.bot_ids, 'bot_ids');
-    if (!ids.length || new Set(ids).size !== ids.length || (params.kind === 'dm' && ids.length !== 1)) throw new Error('私聊请选择一个机器人；群聊请选择一到六个不同的机器人');
+    if (!ids.length || new Set(ids).size !== ids.length || (params.kind === 'dm' && ids.length !== 1)) throw new Error('私聊请选择一个智能体；群聊请选择一到六个不同的智能体');
     string(params.title, 'title', 300, true); string(params.description, 'description', 20_000, true); string(params.owner_bot_id, 'owner_bot_id', 200, true);
     if (params.owner_bot_id !== undefined && !ids.includes(params.owner_bot_id)) throw new Error('负责人必须是群聊成员');
   } else if (method === 'chats.send') {
@@ -196,12 +196,14 @@ class LorcaBridge extends EventEmitter {
     try { params = validateRequest(method, input); } catch (error) { return Promise.reject(error); }
     return this.sendValidated(method, params);
   }
-  sendValidated(method, params) {
+  sendValidated(method, params, options) {
+    if (options !== undefined && (!options || Object.getPrototypeOf(options) !== Object.prototype || Object.keys(options).length !== 1 || method !== 'pair.accept' || options.timeoutMs !== 610_000)) return Promise.reject(new Error('请求时限无效'));
+    const timeoutMs = options?.timeoutMs ?? this.timeoutMs;
     if (this.status.status !== 'connected' || !this.socket) return Promise.reject(new Error('尚未连接 Lorca，此操作未发送'));
     if (this.pending.size >= 100) return Promise.reject(new Error('待处理的 Lorca 请求过多，此操作未发送'));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { if (!this.pending.delete(id)) return; reject(outcomeError(method, 'Lorca 未及时回复')); }, this.timeoutMs);
+      const timer = setTimeout(() => { if (!this.pending.delete(id)) return; reject(outcomeError(method, 'Lorca 未及时回复')); }, timeoutMs);
       timer.unref?.();
       this.pending.set(id, { resolve, reject, timer, method });
       try {

@@ -59,14 +59,15 @@ async function chooseSettingsPage(page, label) {
     .getByRole("navigation", { name: "设置分类" })
     .getByRole("button", { name: label, exact: true })
     .click();
+  await waitForSettings(page);
 }
 async function waitForSettings(page) {
-  await page.getByRole("textbox", { name: "WebSocket 连接地址" }).waitFor();
+  await page.locator(".lorca-settings-section-content").waitFor();
   await page.waitForFunction(
     () =>
       document
         .querySelector(".lorca-settings-runtime-toolbar")
-        ?.getAttribute("aria-busy") === "false",
+        ?.getAttribute("aria-busy") !== "true",
   );
 }
 async function chooseChat(page, text) {
@@ -75,6 +76,247 @@ async function chooseChat(page, text) {
     .filter({ hasText: text })
     .first()
     .click();
+}
+
+function installPairingBridge({ hasIdentity = true, capabilities, callback = true }) {
+  const calls = [];
+  const pending = [];
+  const requestMethods = [];
+  let reads = 0;
+  const fixture = window.__settingsUiTest;
+  fixture.snapshot.hasIdentity = hasIdentity;
+  if (!hasIdentity) fixture.snapshot.devices = [];
+  if (capabilities) fixture.snapshot.pairingCapabilities = capabilities;
+  else delete fixture.snapshot.pairingCapabilities;
+  const request = window.lorca.request;
+  window.lorca.request = async (method, ...args) => {
+    requestMethods.push(method);
+    const result = await request(method, ...args);
+    return method === "bootstrap" && !hasIdentity ? { ...result, has_identity: false, identity_id: null } : result;
+  };
+  const getSettings = window.lorca.getSettings;
+  window.lorca.getSettings = async (...args) => { reads++; return getSettings(...args); };
+  if (callback) window.lorca.openPairing = async (mode) => {
+    calls.push(mode);
+    return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+  };
+  else delete window.lorca.openPairing;
+  window.__pairingUiTest = {
+    calls, pending, requestMethods,
+    get reads() { return reads; },
+    resolve(status) { pending.shift().resolve({ status }); },
+    reject() { pending.shift().reject(new Error("synthetic-private-native-error")); },
+  };
+}
+
+async function checkDevicePairing() {
+  const open = async (options) => {
+    const page = await browser.newPage({ viewport: { width: 1240, height: 820 }, deviceScaleFactor: 1 });
+    failurePage = page;
+    captureErrors(page);
+    await page.addInitScript({ content: `(${installSettingsFixture.toString()})(); (${installPairingBridge.toString()})(${JSON.stringify(options)});` });
+    await page.goto(base, { waitUntil: "networkidle" });
+    await page.locator(".lorca-header-status").click();
+    await waitForSettings(page);
+    await chooseSettingsPage(page, "设备");
+    return page;
+  };
+  const noSuccessClaim = async (page) => {
+    const text = await page.locator(".lorca-settings-section-content").innerText();
+    assert.doesNotMatch(text, /配对成功|绑定成功|已完成配对|同步完成|synthetic-private-native-error/, "Main settings never infer successful pairing or expose raw native errors");
+    assert.equal(await page.locator('input[name="pairing_string"], input[name="nonce"], [data-pairing-qr]').count(), 0, "Pairing secrets and QR entry stay outside the main renderer");
+    assert.equal(await page.evaluate(() => window.__pairingUiTest.requestMethods.some((method) => method.startsWith("pair."))), false, "The main UI never invokes pairing service methods directly");
+  };
+  for (const options of [
+    { callback: true },
+    { callback: true, capabilities: { invite: false, join: true } },
+    { callback: false, capabilities: { invite: true, join: true } },
+  ]) {
+    const page = await open(options);
+    const button = page.locator(".lorca-settings-section-content").getByRole("button", { name: "配对新设备", exact: true });
+    assert.equal(await button.isDisabled(), true, "Both the native callback and the current mode capability are required");
+    await button.evaluate((element) => element.click());
+    assert.deepEqual(await page.evaluate(() => window.__pairingUiTest.calls), [], "Unsupported pairing cannot be activated, even by a dispatched click");
+    assert.equal(await page.locator(".lorca-runtime-device-row").count(), 2, "Read-only device inventory remains available without pairing support");
+    await noSuccessClaim(page);
+    if (!options.capabilities) await screenshot(page, "desktop-devices-pairing-unavailable");
+    await page.close();
+  }
+  for (const hasIdentity of [true, false]) {
+    const page = await open({ hasIdentity, capabilities: { invite: hasIdentity, join: !hasIdentity }, callback: true });
+    const mode = hasIdentity ? "invite" : "join";
+    const label = hasIdentity ? "配对新设备" : "加入已有账号";
+    const button = page.locator(".lorca-settings-section-content").getByRole("button", { name: label, exact: true });
+    assert.equal(await button.isEnabled(), true);
+    assert.deepEqual(await page.evaluate(() => window.__pairingUiTest.calls), [], "Reading the device page does not start a native flow");
+    await screenshot(page, `desktop-devices-${mode}-ready`);
+    for (const result of ["cancelled", "completed", "unknownOutcome"]) {
+      const before = await page.evaluate(() => ({ reads: window.__pairingUiTest.reads, calls: window.__pairingUiTest.calls.length, devices: window.__settingsUiTest.snapshot.devices.length }));
+      await button.evaluate((element) => { element.click(); element.click(); });
+      await page.waitForFunction(() => document.querySelector(".lorca-settings-section-content .lorca-device-pairing-action")?.getAttribute("aria-busy") === "true");
+      assert.equal(await page.locator(".lorca-settings-section-content .lorca-device-pairing-action button").isDisabled(), true, "One native flow disables duplicate activation");
+      assert.equal(await page.locator(".lorca-device-pairing-compact button").isDisabled(), true, "The shared native flow also disables the header pairing shortcut");
+      assert.deepEqual(await page.evaluate(() => window.__pairingUiTest.calls), Array(before.calls + 1).fill(mode), "A repeated click opens exactly one native flow with the correct mode");
+      await noSuccessClaim(page);
+      if (result === "cancelled") await screenshot(page, `desktop-devices-${mode}-pending`);
+      await page.evaluate((status) => window.__pairingUiTest.resolve(status), result);
+      await page.waitForFunction(() => document.querySelector(".lorca-settings-section-content .lorca-device-pairing-action")?.getAttribute("aria-busy") === "false" && document.querySelector(".lorca-settings-runtime-toolbar")?.getAttribute("aria-busy") === "false");
+      assert.equal(await page.evaluate(() => window.__pairingUiTest.reads), before.reads + 1, "Closing a native flow reads back the device inventory once");
+      assert.equal(await page.locator(".lorca-runtime-device-row").count(), before.devices, "A native result does not fabricate a paired device");
+      assert.equal(await page.evaluate(() => window.__pairingUiTest.calls.length), before.calls + 1, "Cancellation and unknown outcomes are never retried automatically");
+      await noSuccessClaim(page);
+      if (result === "unknownOutcome") await page.getByText("配对结果尚不确定。关闭窗口不代表撤销已发生的绑定，请在原设备核对；操作不会自动重发。", { exact: true }).waitFor();
+      if (result === "completed") await screenshot(page, `desktop-devices-${mode}-readback`);
+    }
+    await button.click();
+    await page.evaluate(() => window.__pairingUiTest.reject());
+    await page.getByText("无法打开配对窗口，请检查本地连接后重试。", { exact: true }).waitFor();
+    await noSuccessClaim(page);
+    await page.getByRole("button", { name: "关闭设置", exact: true }).click();
+    await page.locator(".lorca-header-status").click();
+    await waitForSettings(page);
+    await chooseSettingsPage(page, "设备");
+    assert.equal(await page.evaluate(() => window.__pairingUiTest.calls.length), 4, "Reopening settings never resumes or repeats a dismissed native flow");
+    await page.close();
+  }
+}
+
+function installDeviceScopeFixture() {
+  const fixture = window.__settingsUiTest;
+  fixture.snapshot.devices.push(
+    { id: "scope-phone", name: "Synthetic phone", role: "device", os: "ios", version: "fixture", online: true, isThisDevice: false, plugins: [] },
+    { id: "scope-unknown", name: "Synthetic unknown device", role: "unknown", os: "macos", version: "fixture", online: true, isThisDevice: false, plugins: [] },
+  );
+  fixture.snapshot.bots.push({ id: "bot-two", name: "Synthetic second agent", runnerId: "runner-two", provider: "provider-two", model: "model-two" });
+  fixture.snapshot.editor.bots.push({ id: "bot-two", thinking: "low" });
+  const originalMcp = structuredClone(fixture.snapshot.mcp);
+  const getSettings = window.lorca.getSettings;
+  const reads = [];
+  window.lorca.getSettings = async (options = {}) => {
+    reads.push(structuredClone(options));
+    const result = await getSettings(options);
+    result.mcp = options.includeMcp === false
+      ? { status: "unavailable", runnerId: null, hasConfigError: false, servers: [] }
+      : { ...structuredClone(originalMcp), runnerId: options.runnerId || "runner-one" };
+    return result;
+  };
+  window.__deviceScopeUiTest = { reads, originalBots: structuredClone(fixture.snapshot.bots) };
+}
+
+async function checkSharedDeviceScope() {
+  const page = await browser.newPage({ viewport: { width: 1240, height: 820 }, deviceScaleFactor: 1 });
+  failurePage = page;
+  captureErrors(page);
+  await page.addInitScript({ content: `(${installSettingsFixture.toString()})(); (${installDeviceScopeFixture.toString()})();` });
+  await page.goto(base, { waitUntil: "networkidle" });
+  await page.locator(".lorca-sidebar .lorca-workspace").click();
+  await waitForSettings(page);
+  await page.getByRole("button", { name: "浅色", exact: true }).waitFor();
+  const scope = page.getByRole("combobox", { name: "查看设备", exact: true });
+  await page.waitForFunction(() => document.querySelector('[aria-label="查看设备"]')?.disabled === false);
+  assert.equal(await scope.inputValue(), "runner-one", "Settings opens with the current device selected");
+  assert.equal(await page.getByRole("textbox", { name: "WebSocket 连接地址" }).count(), 0, "The footer opens General, while connection details stay in Advanced");
+  assert.ok(await page.evaluate(() => window.__deviceScopeUiTest.reads.every((options) => options.includeMcp === false)), "Opening settings does not read MCP for an unrelated page");
+  const initialReads = await page.evaluate(() => window.__deviceScopeUiTest.reads.length);
+  await scope.selectOption("runner-two");
+  await chooseSettingsPage(page, "智能体");
+  assert.equal(await page.locator("#lorca-edit-bot").inputValue(), "bot-two");
+  assert.deepEqual(await page.locator("#lorca-edit-bot option").allTextContents(), ["Synthetic second agent"], "Agent inventory follows the shared device scope");
+  await chooseSettingsPage(page, "设备");
+  assert.equal(await scope.inputValue(), "runner-two", "The same scope survives settings navigation");
+  assert.equal(await page.locator('.lorca-runtime-device-row[data-selected="true"] .lorca-device-name').innerText(), "Synthetic workstation");
+  assert.equal(await page.locator(".lorca-runtime-device-row").count(), 4, "Device scope selection never hides the account inventory");
+  assert.equal(await page.evaluate(() => window.__deviceScopeUiTest.reads.length), initialReads, "Switching read-only scope outside Plugins makes no MCP or settings read");
+  await page.getByRole("button", { name: "Synthetic desktop", exact: true }).click();
+  assert.equal(await scope.inputValue(), "runner-one", "Selecting a device card updates the shared header scope");
+  await chooseSettingsPage(page, "插件");
+  await waitForSettings(page);
+  assert.deepEqual(await page.evaluate(() => window.__deviceScopeUiTest.reads.at(-1)), { runnerId: "runner-one" }, "Plugins explicitly reads the selected Runner only");
+  await page.locator(".lorca-mcp-server").waitFor();
+  await scope.selectOption("runner-two");
+  await waitForSettings(page);
+  assert.deepEqual(await page.evaluate(() => window.__deviceScopeUiTest.reads.at(-1)), { runnerId: "runner-two" });
+  await screenshot(page, "desktop-settings-shared-runner-scope");
+  for (const [id, name, empty] of [["scope-phone", "phone", "此设备不运行智能体"], ["scope-unknown", "unknown", "此设备尚未报告 Runner 角色"]]) {
+    const before = await page.evaluate(() => window.__deviceScopeUiTest.reads.length);
+    await scope.selectOption(id);
+    await waitForSettings(page);
+    await page.getByText(empty, { exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate((index) => window.__deviceScopeUiTest.reads.slice(index), before), [{ includeMcp: false }], "Phone or unknown-role scope explicitly skips MCP and never supplies its device ID as a Runner");
+    assert.equal(await page.locator(".lorca-mcp-server").count(), 0);
+    assert.equal(await page.getByRole("button", { name: "添加服务器…", exact: true }).count(), 0);
+    await chooseSettingsPage(page, "智能体");
+    assert.equal(await scope.inputValue(), id);
+    await page.getByText(empty, { exact: true }).waitFor();
+    assert.equal(await page.locator("#lorca-edit-bot").count(), 0);
+    await chooseSettingsPage(page, "服务商");
+    assert.equal(await page.locator(".lorca-admin-provider-row").count(), 2, "Providers remain account-wide even while viewing a phone");
+    await chooseSettingsPage(page, "设备");
+    assert.equal(await page.locator('.lorca-runtime-device-row[data-selected="true"]').count(), 1);
+    assert.equal(await page.evaluate(() => window.__deviceScopeUiTest.reads.length), before + 1, "Navigating account and device pages does not introduce hidden MCP reads");
+    await screenshot(page, `desktop-settings-device-scope-${name}`);
+    await chooseSettingsPage(page, "插件");
+    await waitForSettings(page);
+  }
+  assert.deepEqual(await page.evaluate(() => window.__settingsUiTest.requests), [], "Every device-scope switch is read-only and never sends a settings mutation");
+  assert.deepEqual(await page.evaluate(() => window.__settingsUiTest.snapshot.bots), await page.evaluate(() => window.__deviceScopeUiTest.originalBots), "Changing the viewed device never migrates an agent");
+  await scope.selectOption("runner-one");
+  await waitForSettings(page);
+  await chooseSettingsPage(page, "智能体");
+  assert.equal(await page.locator("#lorca-edit-bot").inputValue(), "bot-one", "Returning to a Runner restores its own agent list");
+  await page.close();
+}
+
+function installCrossAgentFixture() {
+  const request = window.lorca.request;
+  const getAvatar = window.lorca.getBotAvatar;
+  window.lorca.getBotAvatar = async (id, version) => id === "cross-photo" && version === "synthetic-cross-1" ? window.__avatarUiTest.images[1] : getAvatar(id, version);
+  window.lorca.request = async (method, ...args) => {
+    const snapshot = await request(method, ...args);
+    if (method !== "bootstrap") return snapshot;
+    const epoch = Math.floor(Date.now() / 1000);
+    const message = (id, body, author = { kind: "bot", bot_id: "avatar-photo" }) => ({ id, chat_id: "cross-chat", author, body, state: { kind: "complete" }, created_at: epoch });
+    snapshot.bots.push({ id: "cross-photo", name: "合成研究助手", runner_id: "fixture-runner", has_avatar: true, avatar_version: "synthetic-cross-1" });
+    snapshot.chats = [{ id: "cross-chat", kind: "dm", title: "合成跨智能体协作", bot_ids: ["avatar-photo"], created_at: epoch, has_more: false, messages: [
+      message("cross-user", { kind: "text", text: "请和研究助手核对这份合成计划。" }, { kind: "you" }),
+      message("cross-incoming", { kind: "handoff", from: "cross-photo", to: "avatar-photo", reason: "已核对三项合成任务，交给你整理下一步。" }),
+      message("cross-reply", { kind: "text", text: "我收到了研究助手的交接，并整理了下一步。" }),
+      message("cross-outgoing", { kind: "tool", name: "message_bot", target_bot_id: "cross-photo", summary: "Messaged 合成研究助手", detail: "请复核第二项合成任务的时间安排。", is_running: false, is_error: false }),
+      message("cross-failed", { kind: "tool", name: "message_bot", target_bot_id: "cross-photo", summary: "Synthetic failed message", detail: "合成失败示例不会显示已发送。", is_running: false, is_error: true }),
+    ] }];
+    return snapshot;
+  };
+}
+
+async function checkCrossAgentRows() {
+  const page = await browser.newPage({ viewport: { width: 1240, height: 820 }, deviceScaleFactor: 1 });
+  failurePage = page;
+  captureErrors(page);
+  await page.addInitScript({ content: `(${installAvatarFixture.toString()})(); (${installCrossAgentFixture.toString()})();` });
+  await page.goto(base, { waitUntil: "networkidle" });
+  await chooseChat(page, "合成跨智能体协作");
+  const rows = page.locator(".lorca-cross-agent");
+  await rows.nth(1).waitFor();
+  assert.equal(await rows.count(), 2, "Only the incoming handoff and completed message_bot send become cross-agent rows");
+  assert.match(await rows.nth(0).locator("summary").innerText(), /来自.*合成研究助手/);
+  assert.match(await rows.nth(1).locator("summary").innerText(), /已发消息给.*合成研究助手/);
+  assert.equal(await page.locator(".lorca-cross-agent").filter({ hasText: "Synthetic failed message" }).count(), 0, "A failed send never claims outgoing success");
+  for (const row of [rows.nth(0), rows.nth(1)]) {
+    const avatar = row.locator('[data-avatar-bot="cross-photo"] img');
+    await avatar.evaluate((image) => image.decode());
+    assert.equal(await avatar.evaluate((image) => image.src === window.__avatarUiTest.images[1] && getComputedStyle(image).filter === "none" && getComputedStyle(image).opacity === "1"), true, "Known counterpart avatars use their unmodified synthetic PNG");
+  }
+  const ownAvatar = page.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img');
+  await ownAvatar.evaluate((image) => image.decode());
+  assert.equal(await ownAvatar.evaluate((image) => image.src === window.__avatarUiTest.images[0] && getComputedStyle(image).filter === "none"), true);
+  const user = page.locator('.lorca-user-message img[data-user-avatar="ghost"]');
+  await user.evaluate((image) => image.decode());
+  assert.equal(await user.evaluate((image) => new URL(image.src).pathname.endsWith("/app-icon/64.png") && getComputedStyle(image).filter === "grayscale(1) contrast(0.45) brightness(1.65)"), true);
+  await rows.nth(0).locator("summary").click();
+  await rows.nth(0).locator(".lorca-cross-agent-detail").waitFor();
+  await page.locator(".lorca-scroll").evaluate((element) => { element.scrollTop = 0; });
+  await screenshot(page, "desktop-cross-agent-light");
+  await page.close();
 }
 
 async function assertDesktopDensity(page) {
@@ -255,12 +497,12 @@ try {
     "Closing settings discards unsaved endpoint edits and validation errors",
   );
   assert.equal(await desktop.locator(".lorca-field-error").count(), 0);
-  await chooseSettingsPage(desktop, "偏好设置");
+  await chooseSettingsPage(desktop, "通用");
   await desktop.getByRole("button", { name: "深色", exact: true }).click();
   await desktop.getByRole("button", { name: "关闭设置" }).click();
   await screenshot(desktop, "desktop-conversation-dark");
   await desktop.locator(".lorca-header-status").click();
-  await chooseSettingsPage(desktop, "偏好设置");
+  await chooseSettingsPage(desktop, "通用");
   await desktop.getByRole("button", { name: "浅色", exact: true }).click();
   await desktop.getByRole("button", { name: "关闭设置" }).click();
   const preview = desktop
@@ -324,7 +566,7 @@ try {
     );
   });
   await screenshot(mobile, "mobile-settings-light");
-  await chooseSettingsPage(mobile, "偏好设置");
+  await chooseSettingsPage(mobile, "通用");
   await mobile.getByRole("button", { name: "深色", exact: true }).click();
   await mobile.getByRole("button", { name: "关闭设置" }).click();
   await screenshot(mobile, "mobile-conversation-dark");
@@ -338,6 +580,7 @@ try {
   await settingsDesktop.goto(`${base}/?demo=1`, { waitUntil: "networkidle" });
   await settingsDesktop.locator(".lorca-header-status").click();
   await waitForSettings(settingsDesktop);
+  assert.deepEqual(await settingsDesktop.getByRole("navigation", { name: "设置分类" }).getByRole("button").allTextContents(), ["通用", "服务商", "自动审查", "插件", "智能体", "设备", "高级"], "Settings uses the unified device page and current product terminology");
   const settingsAlignment = await settingsDesktop.evaluate(() => ({
     heading: document.querySelector(".lorca-settings-page-header h1").getBoundingClientRect().left,
     content: document.querySelector(".lorca-settings-runtime-toolbar").getBoundingClientRect().left,
@@ -349,7 +592,7 @@ try {
   assert.ok(settingsAlignment.borders.length > 0);
   assert.ok(settingsAlignment.borders.every((border) => border === "0px"), "Desktop settings use tonal groups without card outlines");
   await screenshot(settingsDesktop, "desktop-settings-connection");
-  await chooseSettingsPage(settingsDesktop, "偏好设置");
+  await chooseSettingsPage(settingsDesktop, "通用");
   await screenshot(settingsDesktop, "desktop-settings-preferences");
   await settingsDesktop
     .getByRole("button", { name: "深色", exact: true })
@@ -362,30 +605,28 @@ try {
   );
   await settingsDesktop.locator(".lorca-header-status").click();
   await waitForSettings(settingsDesktop);
-  await chooseSettingsPage(settingsDesktop, "偏好设置");
+  await chooseSettingsPage(settingsDesktop, "通用");
   await screenshot(settingsDesktop, "desktop-settings-preferences-dark");
   await settingsDesktop
     .getByRole("button", { name: "浅色", exact: true })
     .click();
-  await chooseSettingsPage(settingsDesktop, "执行器");
+  await chooseSettingsPage(settingsDesktop, "设备");
   await settingsDesktop
     .getByText("Demo desktop", { exact: true })
     .first()
     .waitFor();
-  await screenshot(settingsDesktop, "desktop-settings-runners");
-  await settingsDesktop
-    .locator(".lorca-runtime-disclosure summary")
-    .first()
-    .click();
+  await screenshot(settingsDesktop, "desktop-settings-devices");
+  const runnerDetails = settingsDesktop.locator(".lorca-runtime-disclosure").first();
+  if (!(await runnerDetails.evaluate((element) => element.open))) await runnerDetails.locator("summary").click();
   await settingsDesktop.getByText("未报告工具数量", { exact: true }).waitFor();
   await screenshot(settingsDesktop, "desktop-settings-runner-details");
-  await chooseSettingsPage(settingsDesktop, "MCP");
+  await chooseSettingsPage(settingsDesktop, "插件");
   await settingsDesktop
-    .getByRole("combobox", { name: "执行器", exact: true })
+    .getByRole("combobox", { name: "查看设备", exact: true })
     .waitFor();
   await screenshot(settingsDesktop, "desktop-settings-mcp");
   await settingsDesktop
-    .getByRole("combobox", { name: "执行器", exact: true })
+    .getByRole("combobox", { name: "查看设备", exact: true })
     .selectOption("runner-second");
   await settingsDesktop.getByText("MCP 清单不可用", { exact: true }).waitFor();
   await screenshot(settingsDesktop, "desktop-settings-mcp-unavailable");
@@ -402,17 +643,18 @@ try {
     await settingsDesktop.locator("#root").getAttribute("aria-hidden"),
     null,
   );
-  await chooseSettingsPage(settingsDesktop, "模型与机器人");
+  await chooseSettingsPage(settingsDesktop, "智能体");
+  await settingsDesktop.getByRole("combobox", { name: "查看设备", exact: true }).selectOption("runner-demo");
   await settingsDesktop.getByRole("combobox", { name: "分配执行器", exact: true }).waitFor();
   await screenshot(settingsDesktop, "desktop-settings-models");
   await settingsDesktop.getByRole("combobox", { name: "分配执行器", exact: true }).selectOption("runner-second");
   await settingsDesktop.getByRole("button", { name: "应用更改", exact: true }).click();
   await screenshot(settingsDesktop, "desktop-settings-models-confirm");
   await settingsDesktop.getByRole("button", { name: "取消", exact: true }).click();
-  await chooseSettingsPage(settingsDesktop, "自动审批");
-  await settingsDesktop.getByRole("switch", { name: "启用自动审批" }).waitFor();
+  await chooseSettingsPage(settingsDesktop, "自动审查");
+  await settingsDesktop.getByRole("switch", { name: "启用自动审查" }).waitFor();
   await screenshot(settingsDesktop, "desktop-settings-auto-review");
-  await settingsDesktop.getByRole("switch", { name: "启用自动审批" }).click();
+  await settingsDesktop.getByRole("switch", { name: "启用自动审查" }).click();
   await settingsDesktop.getByRole("button", { name: "查看变更", exact: true }).click();
   await screenshot(settingsDesktop, "desktop-settings-auto-review-confirm");
   const lastReviewRule = settingsDesktop.locator(".lorca-approval-review-list li").last();
@@ -671,7 +913,7 @@ try {
     "开始聊天",
     "Created chat stays unselected until send succeeds",
   );
-  assert.equal(await controlled.getByRole("combobox", { name: "选择机器人", exact: true }).isDisabled(), true, "Bot selection stays disabled while the first send is pending");
+  assert.equal(await controlled.getByRole("combobox", { name: "选择智能体", exact: true }).isDisabled(), true, "Bot selection stays disabled while the first send is pending");
   await controlled.evaluate(() => window.__lorcaUiTest.rejectSend());
   await controlled
     .getByText("Synthetic send failure", { exact: true })
@@ -809,8 +1051,8 @@ try {
   await settingsInteraction.goto(base, { waitUntil: "networkidle" });
   await settingsInteraction.locator(".lorca-header-status").click();
   await waitForSettings(settingsInteraction);
-  await chooseSettingsPage(settingsInteraction, "模型与机器人");
-  await settingsInteraction.getByRole("combobox", { name: "模型服务商", exact: true }).selectOption("provider-two");
+  await chooseSettingsPage(settingsInteraction, "智能体");
+  await settingsInteraction.getByRole("combobox", { name: "服务商", exact: true }).selectOption("provider-two");
   assert.equal(await settingsInteraction.getByRole("combobox", { name: "模型", exact: true }).inputValue(), "");
   assert.equal(await settingsInteraction.getByRole("combobox", { name: "思考级别", exact: true }).inputValue(), "");
   await settingsInteraction.getByRole("combobox", { name: "分配执行器", exact: true }).selectOption("runner-two");
@@ -825,12 +1067,14 @@ try {
   assert.equal(await settingsInteraction.getByRole("combobox", { name: "分配执行器", exact: true }).isDisabled(), true);
   await settingsInteraction.evaluate(() => window.__settingsUiTest.reject());
   await settingsInteraction.getByText("合成测试：保存失败", { exact: true }).first().waitFor();
-  assert.equal(await settingsInteraction.getByRole("combobox", { name: "模型服务商", exact: true }).inputValue(), "provider-two", "Failed apply preserves form values");
+  assert.equal(await settingsInteraction.getByRole("combobox", { name: "服务商", exact: true }).inputValue(), "provider-two", "Failed apply preserves form values");
   await settingsInteraction.getByRole("button", { name: "应用更改", exact: true }).click();
   await settingsInteraction.getByRole("button", { name: "确认应用", exact: true }).click();
   await settingsInteraction.evaluate(() => window.__settingsUiTest.resolve("applied"));
+  await settingsInteraction.waitForFunction(() => window.__settingsUiTest.snapshot.bots[0].runnerId === "runner-two" && document.querySelector(".lorca-settings-runtime-toolbar")?.getAttribute("aria-busy") === "false");
+  await settingsInteraction.getByRole("combobox", { name: "查看设备", exact: true }).selectOption("runner-two");
   await settingsInteraction.waitForFunction(() => document.querySelector("#lorca-bot-runner")?.value === "runner-two" && !document.querySelector("#lorca-bot-runner")?.matches(":disabled"));
-  await chooseSettingsPage(settingsInteraction, "自动审批");
+  await chooseSettingsPage(settingsInteraction, "自动审查");
   await settingsInteraction.getByRole("button", { name: "添加规则", exact: true }).click();
   const ruleFields = settingsInteraction.locator(".lorca-approval-rule-fields");
   assert.equal(await ruleFields.last().getByRole("combobox").inputValue(), "ask", "New approval rules default to asking");
@@ -839,7 +1083,7 @@ try {
   await ruleFields.last().getByRole("textbox", { name: "精确工具 ID（plugin_id/tool，可选）", exact: true }).fill("messages/send");
   await ruleFields.last().getByRole("combobox").selectOption("allow");
   assert.equal(await ruleFields.last().getByRole("textbox", { name: /备注/ }).inputValue(), "Read only the synthetic fixture", "Choosing a tool relabels text without rewriting it");
-  await ruleFields.last().getByText("精确工具：messages/send。启用自动审批后，将始终允许此工具；备注不构成限制条件。", { exact: true }).waitFor();
+  await ruleFields.last().getByText("精确工具：messages/send。启用自动审查后，将始终允许此工具；备注不构成限制条件。", { exact: true }).waitFor();
   await settingsInteraction.getByRole("alert").filter({ hasText: "后端按首条匹配处理，不保证“始终询问”优先" }).waitFor();
   assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isDisabled(), true, "Duplicate tools block saving until explicitly changed");
   assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), 2, "Duplicate tools do not dispatch any setting action");
@@ -848,11 +1092,11 @@ try {
   const toolReview = settingsInteraction.locator(".lorca-approval-confirmation");
   await toolReview.getByText("始终允许此工具", { exact: true }).waitFor();
   await toolReview.getByText("备注：Read only the synthetic fixture", { exact: true }).waitFor();
-  await toolReview.getByText("精确工具：filesystem/read_complete_identifier。启用自动审批后，将始终允许此工具；备注不构成限制条件。", { exact: true }).waitFor();
+  await toolReview.getByText("精确工具：filesystem/read_complete_identifier。启用自动审查后，将始终允许此工具；备注不构成限制条件。", { exact: true }).waitFor();
   await settingsInteraction.getByRole("button", { name: "返回修改", exact: true }).click();
   await ruleFields.last().getByRole("textbox", { name: "精确工具 ID（plugin_id/tool，可选）", exact: true }).fill("");
   await ruleFields.last().getByRole("combobox").selectOption("ask");
-  await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).click();
+  await settingsInteraction.getByRole("switch", { name: "启用自动审查" }).click();
   assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), 2, "Approval edits do not immediately mutate");
   const refreshApprovalSnapshot = async () => {
     const previousTicket = await settingsInteraction.evaluate(() => window.__settingsUiTest.snapshot.editor.revision);
@@ -866,12 +1110,12 @@ try {
   await settingsInteraction.getByRole("button", { name: "关闭设置", exact: true }).click();
   await settingsInteraction.locator(".lorca-header-status").click();
   await waitForSettings(settingsInteraction);
-  await chooseSettingsPage(settingsInteraction, "自动审批");
+  await chooseSettingsPage(settingsInteraction, "自动审查");
   assert.equal(await ruleFields.count(), 2, "Closing and reopening settings preserves the edited policy");
   assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isEnabled(), true, "Reopening with unchanged policy keeps the draft editable");
   await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).click();
   await refreshApprovalSnapshot();
-  await settingsInteraction.getByRole("region", { name: "确认自动审批变更", exact: true }).waitFor();
+  await settingsInteraction.getByRole("region", { name: "确认自动审查变更", exact: true }).waitFor();
   assert.equal(await settingsInteraction.getByRole("button", { name: "确认并提交", exact: true }).isEnabled(), true, "A renewed ticket preserves scope review and enables explicit submission");
   await settingsInteraction.setViewportSize({ width: 560, height: 820 });
   await settingsInteraction.locator(".lorca-settings-drawer .lorca-approval-confirmation").waitFor();
@@ -882,7 +1126,7 @@ try {
   const reviewedTicket = await settingsInteraction.evaluate(() => window.__settingsUiTest.snapshot.editor.revision);
   await settingsInteraction.getByRole("button", { name: "确认并提交", exact: true }).click();
   await settingsInteraction.waitForFunction(() => window.__settingsUiTest.pending.length === 1);
-  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).isDisabled(), true);
+  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审查" }).isDisabled(), true);
   const approvalAction = await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.at(-1));
   assert.equal(approvalAction.kind, "autoReview.set");
   assert.equal(approvalAction.revision, reviewedTicket, "Explicit submission uses the current ticket after unchanged readbacks");
@@ -892,7 +1136,7 @@ try {
   assert.equal("id" in approvalAction.rules[1], false);
   await settingsInteraction.evaluate(() => window.__settingsUiTest.resolve("cancelled"));
   await settingsInteraction.getByText("已取消提交，草稿仍保留，未确认应用任何变更。", { exact: true }).waitFor();
-  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).getAttribute("aria-checked"), "true");
+  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审查" }).getAttribute("aria-checked"), "true");
   await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).click();
   await settingsInteraction.getByRole("button", { name: "确认并提交", exact: true }).click();
   await settingsInteraction.evaluate(() => { window.__settingsUiTest.holdReadback(); window.__settingsUiTest.resolve("unknownOutcome"); });
@@ -901,8 +1145,8 @@ try {
   await settingsInteraction.evaluate(() => window.__settingsUiTest.releaseReadback());
   await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).waitFor();
   assert.equal(await ruleFields.count(), 2, "Unknown result retains the complete draft rule table after a new revision arrives");
-  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).getAttribute("aria-checked"), "true");
-  await settingsInteraction.getByRole("region", { name: "当前读回配置", exact: true }).getByText("自动审批：关闭", { exact: true }).waitFor();
+  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审查" }).getAttribute("aria-checked"), "true");
+  await settingsInteraction.getByRole("region", { name: "当前读回配置", exact: true }).getByText("自动审查：关闭", { exact: true }).waitFor();
   assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isDisabled(), true, "Unknown outcome is never automatically replayed");
   const afterUnknown = await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length);
   await settingsInteraction.getByRole("button", { name: "刷新", exact: true }).click();
@@ -913,7 +1157,7 @@ try {
   await settingsInteraction.getByRole("button", { name: "关闭设置", exact: true }).click();
   await settingsInteraction.locator(".lorca-header-status").click();
   await waitForSettings(settingsInteraction);
-  await chooseSettingsPage(settingsInteraction, "自动审批");
+  await chooseSettingsPage(settingsInteraction, "自动审查");
   await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).waitFor();
   for (const width of [560, 1240, 560, 1240]) {
     await settingsInteraction.setViewportSize({ width, height: 820 });
@@ -927,7 +1171,7 @@ try {
   await refreshApprovalSnapshot();
   assert.equal(await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).isDisabled(), true, "Refreshing after remount does not clear the unknown-result lock");
   assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), afterUnknown, "Unknown policy is never automatically replayed by reopen, resize or refresh");
-  await chooseSettingsPage(settingsInteraction, "MCP");
+  await chooseSettingsPage(settingsInteraction, "插件");
   await settingsInteraction.getByRole("button", { name: "移除", exact: true }).click();
   await settingsInteraction.getByText(/删除其本地配置、凭据、数据和关联的工具规则/).waitFor();
   const beforeDelete = await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length);
@@ -941,7 +1185,7 @@ try {
   assert.equal(await settingsInteraction.locator('input[type="password"], textarea').count(), 1, "Only the chat composer remains; no secret configuration form exists in the main renderer");
   await settingsInteraction.evaluate(() => window.__settingsUiTest.resolve("cancelled"));
   await settingsInteraction.getByText("已取消，未应用更改。", { exact: true }).waitFor();
-  await chooseSettingsPage(settingsInteraction, "自动审批");
+  await chooseSettingsPage(settingsInteraction, "自动审查");
   await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).waitFor();
   assert.equal(await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).inputValue(), "Read only the synthetic fixture", "Switching settings pages preserves unknown-result draft");
   await settingsInteraction.evaluate(() => window.__settingsUiTest.disconnect());
@@ -951,7 +1195,7 @@ try {
   await settingsInteraction.getByRole("region", { name: "当前读回配置", exact: true }).waitFor();
   await settingsInteraction.getByRole("button", { name: "放弃草稿并采用当前配置", exact: true }).click();
   assert.equal(await ruleFields.count(), 1);
-  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).getAttribute("aria-checked"), "false", "Only explicit adoption discards uncertain policy draft");
+  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审查" }).getAttribute("aria-checked"), "false", "Only explicit adoption discards uncertain policy draft");
   await ruleFields.first().getByRole("textbox", { name: /备注/ }).fill("Private unsaved policy draft");
   await settingsInteraction.evaluate(() => { window.__settingsUiTest.snapshot.editor.autoReview.rules[0].text = "Changed by another client"; });
   const beforeConflict = await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length);
@@ -966,7 +1210,7 @@ try {
   await settingsInteraction.evaluate(() => window.__settingsUiTest.changeIdentity("synthetic-next-identity"));
   await settingsInteraction.locator(".lorca-header-status").click();
   await waitForSettings(settingsInteraction);
-  await chooseSettingsPage(settingsInteraction, "自动审批");
+  await chooseSettingsPage(settingsInteraction, "自动审查");
   assert.equal(await ruleFields.first().getByRole("textbox", { name: /备注/ }).inputValue(), "Changed by another client", "Identity loss and replacement clear private policy drafts");
   assert.equal(await settingsInteraction.getByText("无法确认提交结果。草稿仍保留，请先刷新并核对实际设置，避免重复提交。", { exact: true }).count(), 0);
   const avatars = await browser.newPage({ viewport: { width: 1240, height: 820 } });
@@ -976,7 +1220,7 @@ try {
   avatars.on("request", (request) => { if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== new URL(base).origin) externalAvatarRequests.push(request.url()); });
   await avatars.addInitScript(installAvatarFixture);
   await avatars.goto(base, { waitUntil: "networkidle" });
-  const avatarPicker = avatars.getByRole("combobox", { name: "选择机器人", exact: true });
+  const avatarPicker = avatars.getByRole("combobox", { name: "选择智能体", exact: true });
   assert.equal(await avatarPicker.isEnabled(), true, "Bot selection remains enabled before starting a chat");
   await avatars.locator('.lorca-agent-picker [data-avatar-bot="avatar-photo"] img').waitFor();
   await avatarPicker.selectOption("avatar-symbol");
@@ -994,12 +1238,20 @@ try {
   assert.equal(await avatars.locator('.lorca-brand .lorca-brand-logo img[data-app-mark="ghost"]').count(), 1, "Application Ghost mark remains separate from bot avatars");
   assert.equal(await avatars.locator('.lorca-avatar img[data-app-mark="ghost"]').count(), 0, "Actual bot and user avatars never inherit the application Ghost mark");
   assert.equal(await avatars.locator(".lorca-user-message .lorca-avatar-person").count(), 1);
+  const userGhost = avatars.locator('.lorca-user-message img[data-user-avatar="ghost"]');
+  await userGhost.evaluate((image) => image.decode());
+  const userArtwork = await userGhost.evaluate((image) => ({ source: new URL(image.src).pathname, width: image.naturalWidth, height: image.naturalHeight, filter: getComputedStyle(image).filter, opacity: getComputedStyle(image).opacity }));
+  assert.equal(userArtwork.source.endsWith("/app-icon/64.png"), true, "The user's avatar uses the selected Ghost artwork");
+  assert.equal(userArtwork.width, 64);
+  assert.equal(userArtwork.height, 64);
+  assert.equal(userArtwork.filter, "grayscale(1) contrast(0.45) brightness(1.65)", "Neutral gray treatment is scoped to the user Ghost image");
+  assert.equal(userArtwork.opacity, "1", "User artwork is gray without fading its containing UI");
   assert.equal(await avatars.locator('.lorca-message-author [data-avatar-bot="avatar-photo"] img').count(), 1);
   assert.equal(await avatars.evaluate(() => window.__avatarUiTest.calls.filter((id) => id === "avatar-photo").length), 1, "Sidebar, header and transcript deduplicate avatar reads");
   await screenshot(avatars, "desktop-avatars-light");
   await avatars.locator(".lorca-header-status").click();
   await waitForSettings(avatars);
-  await chooseSettingsPage(avatars, "偏好设置");
+  await chooseSettingsPage(avatars, "通用");
   await avatars.getByRole("button", { name: "深色", exact: true }).click();
   await avatars.getByRole("button", { name: "关闭设置", exact: true }).click();
   await screenshot(avatars, "desktop-avatars-dark");
@@ -1012,7 +1264,7 @@ try {
   await screenshot(avatars, "desktop-avatar-fallbacks-dark");
   await avatars.locator(".lorca-header-status").click();
   await waitForSettings(avatars);
-  await chooseSettingsPage(avatars, "偏好设置");
+  await chooseSettingsPage(avatars, "通用");
   await avatars.getByRole("button", { name: "浅色", exact: true }).click();
   await avatars.getByRole("button", { name: "关闭设置", exact: true }).click();
   await assertNeutralAvatarFallbacks(avatars);
@@ -1085,6 +1337,9 @@ try {
   await avatars.evaluate(() => window.__avatarUiTest.loseIdentity());
   await avatars.waitForFunction(() => document.querySelectorAll("[data-avatar-image]").length === 0);
   assert.deepEqual(externalAvatarRequests, [], "Bot avatars never fetch remote image URLs in the renderer");
+  await checkCrossAgentRows();
+  await checkDevicePairing();
+  await checkSharedDeviceScope();
   await checkVisualSurfaces({ browser, base, screenshot, chooseSettingsPage, waitForSettings, chooseChat, captureErrors, setFailurePage: (page) => { failurePage = page; } });
   assert.deepEqual(
     failures,
@@ -1132,6 +1387,11 @@ try {
           "Neutral default, symbol and missing-cache avatars across light/dark themes",
           "Glass headers sample real scrolled content and reduce to opaque surfaces on request",
           "Footer default, hover and restored keyboard focus have no white icon tile",
+          "Real sidebar avatars scroll behind the blur footer with measured pixels and an opaque reduced-transparency fallback",
+          "Last sidebar conversation remains unobscured, keyboard reachable and activatable",
+          "Device pairing requires both current native capability and callback, opens only one native flow, and never infers pairing completion",
+          "Seven official settings groups share read-only device scope; phone and unknown-role selection skip MCP and never migrate agents",
+          "Incoming handoff and completed outgoing message_bot rows resolve known counterpart avatars without recoloring bot PNGs",
           "Settings description contrast is at least 4.5:1 in light and dark themes",
           "Custom pink PNG source pixels and unfiltered display stay unchanged",
           "No console errors",

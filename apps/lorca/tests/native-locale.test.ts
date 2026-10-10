@@ -134,7 +134,7 @@ test('preload sets only the native layout marker after DOM readiness without add
     });
     assert.deepEqual(dataset, {}); assert.ok(ready); ready();
     assert.deepEqual(dataset, { lorcaPlatform: platform }); assert.ok(api); assert.equal(Object.isFrozen(api), true);
-    assert.deepEqual(Object.keys(api).sort(), ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setWatchingChat', 'settingsAction']);
+    assert.deepEqual(Object.keys(api).sort(), ['connect', 'copyText', 'getBotAvatar', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'openPairing', 'pickAttachments', 'releaseAttachments', 'request', 'sendAttachments', 'setWatchingChat', 'settingsAction']);
   }
 });
 

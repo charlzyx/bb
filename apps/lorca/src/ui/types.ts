@@ -54,6 +54,14 @@ export type LorcaMessage =
       output?: string;
     }
   | {
+      kind: "cross-agent";
+      id: string;
+      direction: "incoming" | "outgoing" | "handoff";
+      from: LorcaBotAppearance | null;
+      to: LorcaBotAppearance | null;
+      text: string;
+    }
+  | {
       kind: "approval";
       id: string;
       title: string;
@@ -101,6 +109,7 @@ export interface SettingsActionResult {
 
 export interface RuntimeSettings {
   editor?: SettingsEditor;
+  pairingCapabilities?: { invite: boolean; join: boolean };
   version: string;
   hasIdentity: boolean;
   relayConnected: boolean;
@@ -110,6 +119,7 @@ export interface RuntimeSettings {
     id: string;
     name: string;
     os: string;
+    role?: "runner" | "device" | "unknown";
     version: string;
     online: boolean;
     isThisDevice: boolean;
@@ -180,7 +190,8 @@ export interface LorcaShellActions {
   onSelectAgent: (id: string) => void;
   onSaveEndpoint: (url: string) => Promise<void>;
   onReconnect: () => void;
-  onRefreshSettings: (runnerId?: string) => void;
+  onRefreshSettings: (runnerId?: string, options?: { includeMcp?: boolean }) => void;
+  onOpenPairing?: (mode: "invite" | "join") => Promise<void>;
   onSettingsAction: (action: SettingsAction) => Promise<SettingsActionResult>;
   onPickAttachments?: () => void;
   onRemoveAttachment?: (id: string) => void;

@@ -7,7 +7,7 @@
 - Upstream still declares [Cargo version **0.1.11**](https://github.com/egoist/lorca/blob/3cc900f521662e9cc039d85a1099767b16ef91a4/Cargo.toml#L14-L15). The previously accepted `b975eb6` has the same package version. These are pinned source revisions, not two officially versioned WebSocket protocols.
 - Review method: public source fetch, source/diff inspection, local synthetic controller regressions. No real daemon, provider/model call, account, credentials, relay registration or user-computer access.
 
-The [detailed wire contract](lorca-protocol.md) retains explicitly labeled `b975eb6` line references. All upstream links in **this** document use `3cc900f`. Existing [editable settings documentation](lorca-editable-settings.md) remains useful for unchanged methods; this audit supplies the latest-source comparison.
+The [detailed wire contract](lorca-protocol.md) retains explicitly labeled `b975eb6` line references. All upstream links in **this** document use `3cc900f`. Existing [editable settings documentation](lorca-editable-settings.md) remains useful for unchanged methods; this audit supplies the comparison at that revision. A subsequent, separately scoped [device-pairing review](lorca-device-pairing.md) uses `64bf5e1`; it does not update the rest of this audit to that newer revision.
 
 ## Findings and bounded priorities
 
@@ -38,7 +38,8 @@ The selected provider/MCP/auto-review request shapes and bot model/Runner patch 
 | Frames | `{id,method,params}` → `{id,result}` or `{id,error:{message}}`; events `{event,data}`; concurrent results can reorder | Pending-ID map, timeout, reconnect generation and no mutation replay. This is not JSON-RPC 2.0 |
 | `hello {}` | Version, identity state, `device_id`, relay state and raw diagnostic fields | Safe subset only; no identity creation |
 | `bootstrap {}` | Snapshot, plus background model/marketplace refresh checks | Safe projection; do not call it a strictly side-effect-free network-free read |
-| `identity.create/restore`, `pair.*`, `identity.forget/delete`, `device.unpair` | Create/restore keys, pair/revoke devices or erase local/account state | Deliberately unsupported; use existing Lorca identity. A reconnect never initializes an account |
+| `pair.start/status/cancel`, `pair.accept/abort` | Invite another device or join an account with a capability code | Unsupported at this audit's baseline. A later bounded native invitation/join implementation is in progress; see the [pairing contract and safety boundary](lorca-device-pairing.md). No completion or test-pass claim is made here |
+| `identity.create/restore`, `identity.forget/delete`, `device.unpair` | Create/restore keys, revoke devices or erase local/account state | Deliberately unsupported; the later pairing work does not add these actions. A reconnect never initializes an account |
 | `config.set {relay_url}` | Replaces/clears relay configuration; returns `{relay_url}` | Unsupported; endpoint selection changes only the local WebSocket destination, not relay config |
 | `sync.account {}` / `sync.wake {}` | Wait for account provider state / wake relay sync | Unsupported; local WS, relay connectivity, identity presence and model/provider availability remain separate facts |
 
@@ -143,7 +144,7 @@ Important constraints:
 
 ## Explicitly outside this chat-client audit's implementation scope
 
-Projects/shared context, IDE/workspace/terminal management, checkpoints, durable-task orchestration, routines/watches/calendar/webhooks, browser takeover, marketplace/workflow/template/playbook editing, identity enrollment/recovery, relay reconfiguration, and full secret/draft management are not automatically required just because upstream provides them. Their metadata/events stay omitted unless a separately reviewed feature needs them. This audit does not authorize those operations or broaden the renderer bridge.
+Projects/shared context, IDE/workspace/terminal management, checkpoints, durable-task orchestration, routines/watches/calendar/webhooks, browser takeover, marketplace/workflow/template/playbook editing, identity creation/recovery, relay reconfiguration, and full secret/draft management are not automatically required just because upstream provides them. Their metadata/events stay omitted unless a separately reviewed feature needs them. The subsequent [device-pairing work](lorca-device-pairing.md) is a separately scoped invitation/join flow, not general identity administration. This audit does not authorize those operations or broaden the renderer bridge.
 
 The immediate acceptance work is accurate existing chat state, safe fallback for additive message kinds, bounded history navigation and foreground read/watch behavior. Full read-only draft rendering, source-link opening, attachment viewing, reply/mention UI and detailed retry/usage presentation are identifiable chat-parity candidates for later explicit scope decisions.
 

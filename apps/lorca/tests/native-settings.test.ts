@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { demoSnapshot } from '../src/core/demo';
 import { parseSnapshot, parseEvent, parseMessage } from '../src/core/protocol';
 const require = createRequire(import.meta.url);
-const { SettingsInventory, validateSettingsParams, sanitizeRendererEvent, sanitizeRendererResult, safeRendererError } = require('../native/settings.cjs');
+const { SettingsInventory, projectSettingsBootstrap, validateSettingsParams, sanitizeRendererEvent, sanitizeRendererResult, safeRendererError } = require('../native/settings.cjs');
 const { validateRequest } = require('../native/bridge.cjs');
 const { runCli } = require('../native/cli.cjs');
 const secret = 'DO_NOT_EXPOSE_SYNTHETIC_SECRET';
@@ -46,7 +46,7 @@ test('settings inventory exposes bounded summaries and never configuration, URLs
   const bridge = new FakeBridge(); const settings = new SettingsInventory(bridge);
   const value = await settings.get({}); settings.dispose();
   assert.equal(JSON.stringify(value).includes(secret), false);
-  assert.deepEqual(value.devices[0], { id: 'runner-one', name: 'Test Runner', os: 'macos', version: 'fixture', online: true, isThisDevice: true, plugins: [{ id: 'plugin-one', name: 'Test plugin', state: 'ready', toolCount: null }] });
+  assert.deepEqual(value.devices[0], { id: 'runner-one', name: 'Test Runner', os: 'macos', role: 'runner', version: 'fixture', online: true, isThisDevice: true, plugins: [{ id: 'plugin-one', name: 'Test plugin', state: 'ready', toolCount: null }] });
   assert.deepEqual(value.providers, [{ id: 'test-provider', name: 'Test Provider', connected: true }]);
   assert.deepEqual(value.bots, [{ id: 'bot-one', name: 'Test Bot', runnerId: 'runner-one', provider: 'test-provider', model: 'test-model' }]);
   assert.deepEqual(value.mcp, { status: 'ready', runnerId: 'runner-one', hasConfigError: true, servers: [{ name: 'test-server', transport: 'http', enabled: true, state: 'error', toolCount: 4, hiddenToolCount: null, hasError: true }] });
@@ -266,4 +266,39 @@ test('outbound draft cards stay explicitly unsupported without exposing unreview
   assert.deepEqual(result.message.body, { kind: 'draft' });
   assert.equal(JSON.stringify(result).includes(secret), false);
   assert.deepEqual(parseMessage(result.message).body, { kind: 'unsupported', originalKind: 'draft' });
+});
+
+
+test('device role follows pinned upstream platform semantics and unknown records fail closed', () => {
+  for (const [os, expected] of [['macos', 'runner'], ['linux', 'runner'], ['windows', 'runner'], ['ios', 'device'], ['ipados', 'device'], ['android', 'device'], ['future-os', 'unknown']]) {
+    const raw = bootstrap(); raw.devices[0]!.os = os!;
+    assert.equal(projectSettingsBootstrap(raw, 'token').devices[0].role, expected);
+  }
+  const raw = bootstrap();
+  Object.assign(raw.devices[0]!, { unknown: true, os: 'macos' });
+  assert.equal(projectSettingsBootstrap(raw, 'token').devices[0].role, 'unknown');
+});
+
+
+test('device-only inventory never queries MCP or treats a phone as a Runner', async () => {
+  const bridge = new FakeBridge();
+  const inventory = new SettingsInventory(bridge);
+  const result = await inventory.get({ includeMcp: false });
+  assert.deepEqual(bridge.calls.map(call => call.method), ['bootstrap']);
+  assert.equal(result.mcp.runnerId, null);
+  assert.equal(result.mcp.status, 'unavailable');
+  await assert.rejects(inventory.get({ runnerId: 'phone', includeMcp: false }));
+  await assert.rejects(inventory.get({ includeMcp: 'false' }));
+  assert.equal(bridge.calls.length, 1);
+  inventory.dispose();
+});
+
+
+test('unknown desktop records cannot be selected as native MCP runners', async () => {
+  const bridge = new FakeBridge();
+  bridge.handler = async () => { const raw = bootstrap(); Object.assign(raw.devices[0]!, { unknown: true }); return raw; };
+  const inventory = new SettingsInventory(bridge);
+  await assert.rejects(inventory.get({ runnerId: 'runner-one' }));
+  assert.deepEqual(bridge.calls.map(call => call.method), ['bootstrap']);
+  inventory.dispose();
 });

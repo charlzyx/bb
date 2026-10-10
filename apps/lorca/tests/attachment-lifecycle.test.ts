@@ -207,6 +207,7 @@ for (const platform of ["darwin", "linux", "win32"]) test(`main keeps native win
       if (name === "./branding.cjs") return { APP_NAME: "dots", configureApplicationName() {}, configureApplicationBranding() {} };
       if (name === "./menu.cjs") return { applicationMenuTemplate: () => [] };
       if (name === "./secure-settings.cjs") return { createSecureSettingsEditor: () => ({ edit() {}, close() {} }) };
+      if (name === "./pairing.cjs") return { createPairingFlow: () => ({ capabilities: () => ({ invite: false, join: false }), isActive: () => false, close() {} }) };
       if (name === "./settings-editor.cjs") return { SettingsEditor: class {} };
       if (name === "./settings.cjs") return { ...require("../native/settings.cjs"), sanitizeRendererResult: (_method: string, value: unknown) => value };
       return require(name);

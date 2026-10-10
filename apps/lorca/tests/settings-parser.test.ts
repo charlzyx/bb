@@ -27,3 +27,13 @@ test('editor parser fails closed for unsupported rule behavior, malformed flags 
     { ...original, providers: Array(1001).fill({ id: 'p', canConfigure: false, canDisconnect: false }) },
   ]) assert.throws(() => parseSettingsEditor(editor), /设置数据格式不兼容/);
 });
+
+
+test('pairing capabilities fail closed and never project invitation secrets', () => {
+  const input = { ...demoRuntimeSettings, pairingCapabilities: { invite: true, join: false, pairing_string: 'secret-pairing-code' } };
+  const result = parseRuntimeSettings(input);
+  assert.deepEqual(result.pairingCapabilities, { invite: true, join: false });
+  assert.ok(!JSON.stringify(result).includes('secret-pairing-code'));
+  assert.throws(() => parseRuntimeSettings({ ...input, pairingCapabilities: { invite: 1, join: false } }));
+  assert.throws(() => parseRuntimeSettings({ ...input, pairingCapabilities: null }));
+});

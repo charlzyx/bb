@@ -1641,9 +1641,36 @@ select:focus-visible {
   font-size: var(--text-sm);
   line-height: 1.6;
 }
-:where(.lorca-settings-desktop) .lorca-settings-page-header > button {
+:where(.lorca-settings-desktop) .lorca-settings-header-controls > button {
   margin-top: 1px;
   color: var(--subtle-foreground);
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-settings-header-controls {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-shrink: 0;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-settings-device-control {
+  width: 180px;
+  min-width: 0;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-settings-device-control select {
+  font-size: var(--text-xs);
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-device-pairing-compact {
+  margin-top: 6px;
+  align-items: flex-end;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-device-pairing-compact button {
+  max-width: 100%;
+}
+:where(.lorca-settings-drawer) .lorca-settings-page-header {
+  flex-wrap: wrap;
+}
+:where(.lorca-settings-drawer) .lorca-settings-header-controls {
+  width: 100%;
+  justify-content: space-between;
 }
 :where(.lorca-settings-desktop) .lorca-settings-scroll {
   min-height: 0;
@@ -1976,6 +2003,37 @@ select:focus-visible {
   color: var(--subtle-foreground);
   font-size: var(--text-xs);
 }
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-device-pairing-action {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-device-role {
+  margin: 8px 0 0 41px;
+  color: var(--subtle-foreground);
+  font-size: var(--text-xs);
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-device-name {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  border-radius: 3px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-device-name:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-plugin-inventory-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
 :where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-provider-status {
   display: flex;
   align-items: center;
@@ -2293,6 +2351,9 @@ select:focus-visible {
   height: 100%;
   object-fit: cover;
 }
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar-person img[data-user-avatar="ghost"] {
+  filter: grayscale(1) contrast(0.45) brightness(1.65);
+}
 :where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar-fallback > svg,
 :where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar-fallback [data-icon-root] {
   width: 15px;
@@ -2306,6 +2367,49 @@ select:focus-visible {
 :where(.lorca-app, .lorca-mobile-sidebar) .lorca-avatar-stack .lorca-avatar + .lorca-avatar {
   margin-left: -10px;
   box-shadow: 0 0 0 2px var(--background);
+}
+:where(.lorca-app) .lorca-cross-agent {
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+:where(.lorca-app) .lorca-cross-agent > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 5px 0;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 5px;
+}
+:where(.lorca-app) .lorca-cross-agent > summary::-webkit-details-marker {
+  display: none;
+}
+:where(.lorca-app) .lorca-cross-agent > summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+:where(.lorca-app) .lorca-cross-agent-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex-shrink: 0;
+  max-width: 70%;
+  overflow-wrap: anywhere;
+}
+:where(.lorca-app) .lorca-cross-agent-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:where(.lorca-app) .lorca-cross-agent-detail {
+  margin: 8px 0 0 31px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
 }
 
 @media (min-width: 768px) {
@@ -2338,9 +2442,49 @@ select:focus-visible {
   :where(.lorca-app) .lorca-chat-item {
     padding: 7px 10px;
   }
+  :where(.lorca-app) .lorca-sidebar-content {
+    position: relative;
+  }
+  :where(.lorca-app) .lorca-chat-list {
+    padding-bottom: 72px;
+    scroll-padding-bottom: 72px;
+  }
+  :where(.lorca-app) .lorca-sidebar-footer {
+    position: absolute;
+    inset: auto 0 0;
+    height: 56px;
+    padding: 8px 12px;
+    z-index: 2;
+    isolation: isolate;
+  }
+  :where(.lorca-app) .lorca-sidebar-footer::before {
+    content: "";
+    position: absolute;
+    inset: -14px 0 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--sidebar) 78%, transparent) 14px, color-mix(in oklab, var(--sidebar) 72%, transparent));
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    mask-image: linear-gradient(to bottom, transparent, var(--foreground) 14px);
+  }
+  :where(.lorca-app) .lorca-workspace {
+    height: 40px;
+    padding: 4px 7px;
+  }
   :where(.lorca-app) .lorca-workspace-icon {
+    width: 28px;
+    height: 28px;
     border: 0;
     background: transparent;
+  }
+  :where(.lorca-app) .lorca-workspace strong {
+    line-height: 1.25;
+  }
+  :where(.lorca-app) .lorca-workspace small {
+    margin-top: 2px;
+    line-height: 1.2;
+    color: var(--foreground);
   }
   :where(.lorca-app) .lorca-header {
     position: absolute;
@@ -2449,7 +2593,7 @@ select:focus-visible {
     border: 0;
   }
   :where(.lorca-settings-desktop) .lorca-settings-scroll {
-    scroll-padding-top: 160px;
+    scroll-padding-top: 224px;
     scroll-padding-bottom: 128px;
   }
   :where(.lorca-app) .lorca-header::before,
@@ -2519,6 +2663,13 @@ select:focus-visible {
   :where(.lorca-settings-desktop) .lorca-auto-review-actions::before {
     display: none;
   }
+  :where(.lorca-app) .lorca-sidebar-footer::before {
+    inset: 0;
+    background: var(--sidebar);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    mask-image: none;
+  }
   :where(.lorca-app) .lorca-header::before,
   :where(.lorca-settings-desktop) .lorca-settings-page-header::before {
     inset: 0;
@@ -2530,6 +2681,11 @@ select:focus-visible {
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :where(.lorca-app) .lorca-sidebar-footer::before {
+    inset: 0;
+    background: var(--sidebar);
+    mask-image: none;
+  }
   :where(.lorca-app) .lorca-header::before,
   :where(.lorca-settings-desktop) .lorca-settings-page-header::before {
     inset: 0;

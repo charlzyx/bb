@@ -23,7 +23,7 @@ const list = (value: unknown): unknown[] => {
 };
 export function parseSettingsEditor(value: unknown): SettingsEditor {
   const v = object(value, "settings.editor"), review = object(v.autoReview, "autoReview");
-  if (review.status !== "ready" && review.status !== "unavailable") throw new Error("设置数据格式不兼容：自动审批状态");
+  if (review.status !== "ready" && review.status !== "unavailable") throw new Error("设置数据格式不兼容：自动审查状态");
   const revision = text(v.revision, "editor.revision");
   if (!revision) throw new Error("设置数据格式不兼容：编辑版本");
   return {
@@ -55,6 +55,7 @@ export function parseRuntimeSettings(value: unknown): RuntimeSettings {
   if (mcp.status !== "ready" && mcp.status !== "unavailable") throw new Error("设置数据格式不兼容：mcp.status");
   return {
     ...(v.editor === undefined ? {} : { editor: parseSettingsEditor(v.editor) }),
+    ...(v.pairingCapabilities === undefined ? {} : { pairingCapabilities: { invite: flag(object(v.pairingCapabilities, "pairingCapabilities").invite, "pairingCapabilities.invite"), join: flag(object(v.pairingCapabilities, "pairingCapabilities").join, "pairingCapabilities.join") } }),
     version: text(v.version, "version"),
     hasIdentity: flag(v.hasIdentity, "hasIdentity"),
     relayConnected: flag(v.relayConnected, "relayConnected"),
@@ -62,7 +63,9 @@ export function parseRuntimeSettings(value: unknown): RuntimeSettings {
     authMode: v.authMode,
     devices: list(v.devices).map((value) => {
       const d = object(value, "devices");
+      if (d.role !== undefined && !["runner", "device", "unknown"].includes(String(d.role))) throw new Error("设置数据格式不兼容：设备角色");
       return {
+        role: d.role === "runner" || d.role === "device" ? d.role : "unknown",
         id: text(d.id, "devices.id"), name: text(d.name, "devices.name"),
         os: text(d.os, "devices.os"), version: text(d.version, "devices.version"),
         online: flag(d.online, "devices.online"), isThisDevice: flag(d.isThisDevice, "devices.isThisDevice"),

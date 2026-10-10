@@ -11,7 +11,7 @@ import {
 } from "@bb/shared-ui/responsive-overlay";
 import { PROJECT_LIST_ACTION_BUTTON_CLASS } from "../../../../app/src/components/sidebar/sidebarRowClasses";
 
-export type SettingsPage = "connection" | "preferences" | "models" | "runners" | "mcp" | "approvals";
+export type SettingsPage = "connection" | "devices" | "preferences" | "providers" | "models" | "mcp" | "approvals";
 
 const pages: {
   id: SettingsPage;
@@ -19,32 +19,13 @@ const pages: {
   icon: string;
   description: string;
 }[] = [
-  {
-    id: "connection",
-    label: settingsZh.connection,
-    icon: "ComputerTerminal01",
-    description: settingsZh.connectionDescription,
-  },
-  {
-    id: "preferences",
-    label: settingsZh.preferences,
-    icon: "SlidersHorizontal",
-    description: settingsZh.preferencesDescription,
-  },
-  { id: "models", label: editorZh.models, icon: "Bot", description: editorZh.modelsDescription },
-  {
-    id: "runners",
-    label: settingsZh.runners,
-    icon: "Workflow",
-    description: settingsZh.runnersDescription,
-  },
-  {
-    id: "mcp",
-    label: settingsZh.mcp,
-    icon: "Toolbox",
-    description: settingsZh.mcpDescription,
-  },
+  { id: "preferences", label: settingsZh.preferences, icon: "SlidersHorizontal", description: settingsZh.preferencesDescription },
+  { id: "providers", label: editorZh.manageProviders, icon: "Globe", description: editorZh.providersDescription },
   { id: "approvals", label: editorZh.autoReview, icon: "ShieldCheck", description: editorZh.autoReviewDescription },
+  { id: "mcp", label: settingsZh.plugins, icon: "Toolbox", description: settingsZh.mcpDescription },
+  { id: "models", label: editorZh.models, icon: "Bot", description: editorZh.modelsDescription },
+  { id: "devices", label: settingsZh.devices, icon: "ComputerTerminal01", description: settingsZh.devicesDescription },
+  { id: "connection", label: settingsZh.advanced, icon: "Settings", description: settingsZh.connectionDescription },
 ];
 
 export function SettingsFrame({
@@ -54,6 +35,7 @@ export function SettingsFrame({
   onPageChange,
   demo,
   children,
+  deviceControl,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -61,6 +43,7 @@ export function SettingsFrame({
   onPageChange: (page: SettingsPage) => void;
   demo: boolean;
   children: ReactNode;
+  deviceControl?: ReactNode;
 }) {
   const compact = useIsCompactViewport();
   const desktopRef = useRef<HTMLDivElement>(null);
@@ -102,6 +85,8 @@ export function SettingsFrame({
         <h1 id="lorca-settings-page-title">{current.label}</h1>
         <p>{current.description}</p>
       </div>
+      <div className="lorca-settings-header-controls">
+      {deviceControl}
       <Button
         variant="ghost"
         size="icon"
@@ -110,6 +95,7 @@ export function SettingsFrame({
       >
         <Icon name="X" />
       </Button>
+      </div>
     </header>
   );
   const notice = demo && (

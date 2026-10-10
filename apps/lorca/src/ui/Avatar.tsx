@@ -42,11 +42,12 @@ function Sparkles() {
   );
 }
 
-function AvatarImage({ source, fallback }: { source: string; fallback: ReactNode }) {
+function AvatarImage({ source, fallback, person = false }: { source: string; fallback: ReactNode; person?: boolean }) {
   const [failed, setFailed] = useState(false);
   return failed ? fallback : (
     <img
-      data-avatar-image=""
+      data-avatar-image={person ? undefined : ""}
+      data-user-avatar={person ? "ghost" : undefined}
       src={source}
       alt=""
       draggable={false}
@@ -61,7 +62,7 @@ export function Avatar({ appearance, person = false, size = "sm" }: {
   person?: boolean;
   size?: "sm" | "md";
 }) {
-  const source = person ? undefined : safeAvatarImage(appearance?.image);
+  const source = person ? `${import.meta.env?.BASE_URL ?? "./"}app-icon/64.png` : safeAvatarImage(appearance?.image);
   const requestedSymbol = appearance?.symbolName ?? "";
   const symbol = person ? "UserRound" : Object.hasOwn(symbols, requestedSymbol) ? symbols[requestedSymbol] : undefined;
   const accent = appearance && accents.has(appearance.accent) ? appearance.accent : "indigo";
@@ -78,7 +79,7 @@ export function Avatar({ appearance, person = false, size = "sm" }: {
       aria-hidden="true"
     >
       {source ? (
-        <AvatarImage key={source} source={source} fallback={fallback} />
+        <AvatarImage key={source} source={source} fallback={fallback} person={person} />
       ) : fallback}
     </span>
   );

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self'; font-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>dots · 设备配对</title>
+  <link rel="stylesheet" href="secure-pairing.css">
+  <script src="secure-pairing.js" defer></script>
+</head>
+<body>
+  <main>
+    <div class="brand"><img src="../public/app-icon/64.png" alt="" width="32" height="32"><span>dots / 设备配对</span></div>
+    <h1 id="title">正在打开配对窗口</h1>
+    <p class="warning">配对会授予账号访问权限，并同步聊天记录和服务商凭据。只有你信任的设备才能持有完整配对码，没有第二次审批。同账号设备还可安排智能体在已配对的执行器上工作、管理执行器功能；文件、工具与程序操作不保证每次都在本机再次询问。</p>
+    <p id="detail" role="status" aria-live="polite"></p>
+    <form id="pairing" autocomplete="off">
+      <section id="join-fields" hidden>
+        <label for="pairing-string">完整配对码</label>
+        <textarea id="pairing-string" name="pairingString" autocomplete="off" spellcheck="false" maxlength="8192"></textarea>
+        <label for="device-name">本机设备名称（可选）</label>
+        <input id="device-name" name="deviceName" autocomplete="off" spellcheck="false" maxlength="128">
+      </section>
+      <section id="invite-code" hidden>
+        <label for="generated-code">一次性配对码</label>
+        <textarea id="generated-code" readonly spellcheck="false" autocomplete="off"></textarea>
+        <p id="remaining"></p>
+        <p class="footnote">请勿分享截图、公开发送或存入云剪贴板。此窗口不自动复制配对码。</p>
+      </section>
+      <p id="device"></p>
+      <p id="error" role="alert"></p>
+      <div class="actions"><button id="close" type="button">关闭</button><button id="submit" type="submit" disabled>继续</button></div>
+    </form>
+    <p class="footnote">关闭后清空窗口输入。生成或加入过程中关闭窗口不代表请求已撤销，也不会解绑已加入的设备。结果未知时先检查设备列表，不要重复提交。</p>
+  </main>
+</body>
+</html>
