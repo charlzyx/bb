@@ -111,6 +111,25 @@ try {
     assert.equal(await inspector.locator('input[type="file"]').count(), 0, "Renderer callbacks cannot browse arbitrary paths");
     assert.equal(await inspector.getByRole("textbox").count(), 2, "Memory content is not loaded into the main renderer");
 
+    const avatarBefore = await page.evaluate(() => window.__inspectorUiTest.profile("inspector-alpha").avatarVersion);
+    await name.fill("头像更新期间未保存草稿");
+    const profileSavesBeforeAvatar = (await calls("agentDetailsAction")).filter(call => call.params.kind === "profile.save").length;
+    await page.evaluate(() => { window.__inspectorUiTest.holdNextBootstrap(); window.__inspectorUiTest.setNextOutcome("applied"); });
+    await inspector.getByRole("button", { name: "修改头像", exact: true }).click();
+    await page.waitForFunction(() => window.__inspectorUiTest.isBootstrapHeld());
+    assert.equal(await name.inputValue(), "头像更新期间未保存草稿", "A same-account refresh cannot remount and erase an unrelated profile draft");
+    assert.equal(await name.isDisabled(), true, "The retained draft is locked while the bootstrap refresh is incomplete");
+    assert.notEqual(await page.evaluate(() => window.__inspectorUiTest.profile("inspector-alpha").avatarVersion), avatarBefore);
+    await page.evaluate(() => window.__inspectorUiTest.releaseBootstrap());
+    await profile.getByText("资料已在其他位置更改。请核对当前配置后再编辑，未覆盖现有配置。", { exact: true }).waitFor();
+    await page.waitForFunction(() => [...document.querySelectorAll('.lorca-inspector-profile button')].some(button => button.textContent === '放弃草稿并采用当前配置' && !button.disabled));
+    assert.equal(await name.inputValue(), "头像更新期间未保存草稿", "The unsaved name survives the completed avatar refresh and exposes the new-version conflict");
+    assert.equal(await name.isDisabled(), true);
+    assert.equal((await calls("agentDetailsAction")).filter(call => call.params.kind === "profile.save").length, profileSavesBeforeAvatar);
+    await profile.getByRole("button", { name: "放弃草稿并采用当前配置", exact: true }).click();
+    await ready("合成未知结果名称");
+    assert.equal(await composer.inputValue(), `合成 ${theme} 正文草稿`);
+
     const firstRoutine = "inspector-alpha-routine-0";
     await openRoutine(firstRoutine);
     await routine(firstRoutine).getByRole("checkbox", { name: "启用例行任务 合成例行任务 1", exact: true }).uncheck();
@@ -186,6 +205,10 @@ try {
     await page.waitForFunction(() => !document.querySelector('.lorca-agent-inspector[data-open="true"]'));
     await selectChat("合成检查器私聊"); await page.getByRole("button", { name: "查看智能体详情", exact: true }).click(); await ready("合成研究助手 · 账号二");
     assert.equal(await page.locator("input, textarea").evaluateAll(elements => elements.some(element => element.value === "账号一未保存草稿")), false);
+    await name.fill("旧端点未保存草稿");
+    await page.evaluate(() => window.__inspectorUiTest.changeEndpoint());
+    await ready("合成研究助手 · 账号二");
+    assert.equal(await page.locator("input, textarea").evaluateAll(elements => elements.some(element => element.value === "旧端点未保存草稿")), false, "An actual endpoint change clears the previous endpoint's draft scope");
     await page.evaluate(() => window.__inspectorUiTest.setCapabilitiesFailure(true));
     await inspector.getByRole("button", { name: "刷新智能体详情", exact: true }).click();
     await inspector.getByText("无法读取例行任务与插件权限，请刷新后重试。", { exact: true }).waitFor();

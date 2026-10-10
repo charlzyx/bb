@@ -1,14 +1,15 @@
 export function installInspectorFixture({ theme = "light" } = {}) {
   localStorage.setItem("bb-lorca.appearance", theme);
   const calls = [], events = new Set(), statuses = new Set(), profileTickets = new Map(), capabilityTickets = new Map();
-  const endpoint = "ws://127.0.0.1:4862/ws";
+  let endpoint = "ws://127.0.0.1:4862/ws";
   let identity = "synthetic-inspector-account-one", generation = 1, connected = true, sequence = 0, nextOutcome = null, capabilitiesFail = false;
-  let profiles, routines, grants, versions, chats;
+  let profiles, routines, grants, versions, chats, pendingBootstrap = null, holdNextBootstrap = false;
   const copy = value => structuredClone(value);
   const devices = [{ id: "runner-mac", name: "合成 Mac Runner", os: "macos", status: "online" }, { id: "runner-linux", name: "合成 Linux Runner", os: "linux", status: "offline" }, { id: "phone-only", name: "合成手机设备", os: "ios", status: "online" }];
   const canvas = document.createElement("canvas"); canvas.width = 32; canvas.height = 32;
   const context = canvas.getContext("2d"); context.fillStyle = "#76888b"; context.fillRect(0, 0, 32, 32); context.fillStyle = "#f4eee4"; context.fillRect(8, 8, 16, 16);
   const avatar = canvas.toDataURL("image/png");
+  const avatarVariants = new Map([["synthetic-inspector-avatar", avatar]]);
   const initialRoutine = (botId, index) => ({ id: `${botId}-routine-${index}`, botId, name: `合成例行任务 ${index + 1}`, prompt: `只处理合成记录 ${index + 1}，不访问真实服务。`, schedule: "0 9 * * 1-5", scheduleText: "工作日 09:00", timezone: "Asia/Shanghai", missedRunPolicy: "coalesce", enabled: true, running: false, state: "on", nextRunAt: 1_900_000_000, lastRunAt: null, lastOutcome: null, pausedReason: null, hasCheck: index === 3, triggerKind: "schedule", editable: index !== 3 });
   function seed() {
     const suffix = identity.endsWith("two") ? " · 账号二" : "";
@@ -28,24 +29,28 @@ export function installInspectorFixture({ theme = "light" } = {}) {
   const record = (method, params = {}) => { current(); calls.push({ method, params: copy(params) }); };
   const ticket = (map, botId) => { const value = `synthetic-ticket-${++sequence}`; map.clear(); map.set(value, { botId, identity, generation }); return value; };
   const consume = (map, revision) => { const value = map.get(revision); if (!value || value.identity !== identity || value.generation !== generation) throw new Error("Synthetic stale ticket"); map.delete(revision); return value.botId; };
-  const outcome = () => { const value = nextOutcome ?? { status: "applied", persist: true }; nextOutcome = null; return value; };
+  const outcome = (fallback = "applied") => { const value = nextOutcome ?? { status: fallback, persist: fallback === "applied" }; nextOutcome = null; return value; };
   const bootstrap = () => ({ version: "synthetic-inspector", has_identity: true, identity_id: identity, relay_connected: false, devices: copy(devices), bots: profiles.map(profile => ({ id: profile.id, name: profile.name, runner_id: profile.runnerId, has_avatar: profile.hasAvatar, avatar_version: profile.avatarVersion, symbol_name: profile.symbolName, accent: profile.accent })), chats: copy(chats), running_turns: [], running_chat_ids: [] });
   window.__inspectorUiTest = {
     calls, avatar,
+    holdNextBootstrap() { if (holdNextBootstrap || pendingBootstrap) throw new Error("Synthetic bootstrap gate is already armed"); holdNextBootstrap = true; },
+    isBootstrapHeld: () => pendingBootstrap !== null,
+    releaseBootstrap() { if (!pendingBootstrap) throw new Error("No synthetic bootstrap is waiting"); const release = pendingBootstrap; pendingBootstrap = null; release(); },
     setNextOutcome(status, persist = status === "applied") { if (!["applied", "cancelled", "unknownOutcome"].includes(status)) throw new Error("Invalid synthetic outcome"); nextOutcome = { status, persist }; },
     setCapabilitiesFailure(value) { capabilitiesFail = value; },
     changeProfile(botId, patch) { Object.assign(profiles.find(profile => profile.id === botId), patch); versions[botId].profile++; },
     changeIdentity(value) { identity = value; profileTickets.clear(); capabilityTickets.clear(); seed(); for (const listener of events) listener({ event: "identity.changed", data: { has_identity: true } }); },
+    changeEndpoint() { endpoint = "ws://127.0.0.1:4863/ws"; generation++; profileTickets.clear(); capabilityTickets.clear(); for (const listener of statuses) listener(status()); },
     setConnected(value) { connected = value; if (value) generation++; profileTickets.clear(); capabilityTickets.clear(); for (const listener of statuses) listener(status()); },
     profile: botId => copy(profiles.find(profile => profile.id === botId)),
   };
   window.lorca = {
     getStatus: async () => status(),
     connect: async () => { throw new Error("Synthetic inspector cannot connect to a service"); },
-    request: async (method, params) => { record(method, params); if (method !== "bootstrap") throw new Error(`Unexpected synthetic wire method: ${method}`); return bootstrap(); },
+    request: async (method, params) => { record(method, params); if (method !== "bootstrap") throw new Error(`Unexpected synthetic wire method: ${method}`); if (holdNextBootstrap) { holdNextBootstrap = false; await new Promise(resolve => { pendingBootstrap = resolve; }); current(); } return bootstrap(); },
     onEvent: listener => { events.add(listener); return () => events.delete(listener); },
     onStatus: listener => { statuses.add(listener); return () => statuses.delete(listener); },
-    getBotAvatar: async (id, version) => id === "inspector-alpha" && version === "synthetic-inspector-avatar" ? avatar : null,
+    getBotAvatar: async (id, version) => profiles.some(profile => profile.id === id && profile.hasAvatar && profile.avatarVersion === version) ? avatarVariants.get(version) ?? null : null,
     closeAgentDetails: async () => { calls.push({ method: "closeAgentDetails", params: {} }); profileTickets.clear(); capabilityTickets.clear(); },
     getAgentDetails: async (params = {}) => {
       record("getAgentDetails", params); const bot = params.botId ? profiles.find(profile => profile.id === params.botId) : null;
@@ -57,7 +62,7 @@ export function installInspectorFixture({ theme = "light" } = {}) {
     getAgentMemorySummary: async params => { record("getAgentMemorySummary", params); if (!profileTickets.has(params.revision)) throw new Error("Stale memory summary"); return { status: "ready", lines: 12, bytes: 1024, maxLines: 200, maxBytes: 24_000, topicCount: 3, logCount: 2, canEdit: true }; },
     openAgentMemory: async params => { record("openAgentMemory", params); const botId = consume(profileTickets, params.revision); return { status: "cancelled", botId }; },
     agentDetailsAction: async action => {
-      record("agentDetailsAction", action); const botId = consume(profileTickets, action.revision), result = outcome();
+      record("agentDetailsAction", action); const botId = consume(profileTickets, action.revision), result = outcome(action.kind.startsWith("avatar.") ? "cancelled" : "applied");
       if (action.kind === "agent.create") {
         if (botId !== null || !devices.some(device => device.id === action.profile.runnerId && ["macos", "linux", "windows"].includes(device.os))) throw new Error("Invalid synthetic Runner");
         const created = "inspector-created", chatId = "inspector-created-dm";
@@ -66,8 +71,16 @@ export function installInspectorFixture({ theme = "light" } = {}) {
       }
       if (!botId) throw new Error("No synthetic selected bot");
       if (action.kind === "profile.save" && result.persist) { Object.assign(profiles.find(profile => profile.id === botId), copy(action.patch)); versions[botId].profile++; }
+      if (action.kind.startsWith("avatar.") && result.persist) {
+        const selected = profiles.find(profile => profile.id === botId); versions[botId].profile++;
+        if (action.kind === "avatar.replace") {
+          const version = `synthetic-inspector-avatar-${versions[botId].profile}`;
+          context.fillStyle = "#b09372"; context.fillRect(0, 0, 32, 32); context.fillStyle = "#f4eee4"; context.fillRect(4, 4, 12, 12);
+          avatarVariants.set(version, canvas.toDataURL("image/png")); Object.assign(selected, { hasAvatar: true, avatarVersion: version });
+        } else Object.assign(selected, { hasAvatar: false, avatarVersion: null });
+      }
       if (!["profile.save", "avatar.replace", "avatar.remove"].includes(action.kind)) throw new Error("Unexpected synthetic profile action");
-      return { status: action.kind.startsWith("avatar.") ? "cancelled" : result.status, botId };
+      return { status: result.status, botId };
     },
     getAgentCapabilities: async params => {
       record("getAgentCapabilities", params); if (capabilitiesFail) throw new Error("Synthetic capabilities unavailable");

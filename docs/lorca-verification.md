@@ -2,6 +2,16 @@
 
 Verified on 2026-10-10. This is an experimental client, not a packaged release.
 
+## Agent inspector and recent/team navigation
+
+The inspector implementation pins upstream `37aa019188f33ec0843dd67785edc50d3eaf2cb6`; see [capabilities and remaining limits](lorca-agent-inspector.md). It adds profile/model/thinking/Runner edits, isolated full-memory editing and avatar review, ordinary scheduled routines, and independent plugin grants. Advanced triggers and check scripts remain accurately labeled read-only configuration. Running a routine reports a request, not completion; scoped roster/job events reconcile state, with manual refresh available.
+
+Commit `f00716048bfbd9ceeab7db7ac82311daea4dd347` passed 693 local tests, types/build, lint, and all four real Chromium suites in [run 38044940912](https://github.com/charlzyx/bb/actions/runs/38044940912). Existing bridge and attachment strict-sandbox Electron suites also passed. The new inspector Electron suite failed when its avatar-submit click was still awaiting input acknowledgement after the intended native window destruction. That failed run is retained; it must not be described as fully green. The following repair validates both the trusted submit/cancel handler and actual window closure before accepting that specific close-during-click outcome.
+
+Independent review also found that a same-account bootstrap refresh could remount the inspector and lose an unsaved profile draft. Its presentation key now follows account epoch and endpoint, while synchronized readiness continues to revoke native tickets and disable writes. A held-bootstrap browser regression covers draft preservation during avatar save, disabled controls while syncing, a changed-version conflict after refresh, explicit adoption, and clearing on endpoint/account changes.
+
+The synthetic artifact from the first run was downloaded and inspected: team navigation, profile light theme, 900-pixel group inspector dark theme, full-width settings, routine editor, plugin grants, native avatar review and full-memory editor. No blocking clipping was seen. These cloud synthetic views do not establish macOS native appearance or successful writes to a user's real service; no such writes were made.
+
 ## Local groups, searchable agent picker and attachment inputs
 
 The local grouping tree supports agents and existing group chats with distinct typed IDs, one classification per entity, one primary agent per group, collapse/search, explicit edits and account-isolated persistence. Group edits do not alter daemon membership or permissions. Reopening the current agent is idempotent and preserves draft attachments. The new-chat picker uses the shared BB Popover with avatars and search; established chats do not show a redundant recipient control.

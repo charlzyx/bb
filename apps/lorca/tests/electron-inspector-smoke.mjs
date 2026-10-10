@@ -58,6 +58,22 @@ async function confirmWith(application, response) {
   await application.evaluate(({ dialog }, response) => { globalThis.inspectorConfirmResponse = response; dialog.showMessageBox = async (_parent, options) => { globalThis.inspectorConfirmations.push(options); return { response: globalThis.inspectorConfirmResponse, checkboxChecked: false }; }; }, response);
 }
 async function settle(pending) { const result = await deadline(pending, 15_000, 'Native operation result'); if (result.error) throw new Error(result.error); return result.value; }
+async function clickClosesWindow(application, page, button, channel, verifyCompletion) {
+  assert.equal(page.isClosed(), false);
+  const handle = await application.browserWindow(page);
+  const senderId = await handle.evaluate(window => window.webContents.id); await handle.dispose();
+  const dispatches = () => application.evaluate(senderId => globalThis.inspectorSecureDispatches.filter(value => value.senderId === senderId), senderId);
+  assert.deepEqual(await dispatches(), []);
+  const closed = page.waitForEvent('close', { timeout: 15_000 }).then(() => ({ closed: true }), error => ({ error }));
+  const clicked = await button.click().then(() => ({}), error => ({ error }));
+  if (clicked.error && !/^locator\.click: Target page, context or browser has been closed\b/.test(clicked.error.message)) throw clicked.error;
+  const closure = await closed;
+  if (closure.error) throw closure.error;
+  assert.equal(closure.closed, true); assert.equal(page.isClosed(), true);
+  await until(async () => (await dispatches()).length > 0, 'Successful trusted secure-window dispatch');
+  assert.deepEqual(await dispatches(), [{ channel, senderId, mainFrame: true }]);
+  return verifyCompletion();
+}
 async function openSecure(application, page, kind) {
   const nextWindow = application.waitForEvent('window', { timeout: 15_000 });
   const pending = page.evaluate(async kind => {
@@ -120,7 +136,7 @@ async function main() {
     Object.assign(env, { HOME: temporary, USERPROFILE: temporary, TMPDIR: temporary, TMP: temporary, TEMP: temporary, XDG_CONFIG_HOME: path.join(temporary, 'config'), XDG_CACHE_HOME: path.join(temporary, 'cache'), LORCA_HOME: home, LORCA_ENDPOINT: `ws://127.0.0.1:${address.port}/ws`, LORCA_ALLOW_LEGACY: '0' });
     const isolatedPaths = Object.fromEntries(['userData', 'sessionData', 'logs', 'crashDumps'].map(name => [name, path.join(temporary, name)]));
     const entry = path.join(temporary, 'inspector-main.cjs');
-    await writeFile(entry, `const { app, ipcMain, dialog } = require('electron');\nconst { mkdirSync } = require('node:fs');\nfor (const [name, directory] of Object.entries(${JSON.stringify(isolatedPaths)})) { mkdirSync(directory, { recursive: true }); app.setPath(name, directory); }\nglobalThis.inspectorHandlers = new Map();\nglobalThis.inspectorConfirmations = [];\ndialog.showMessageBox = async (_parent, options) => { globalThis.inspectorConfirmations.push(options); return { response: 0, checkboxChecked: false }; };\nconst handle = ipcMain.handle.bind(ipcMain);\nipcMain.handle = (channel, handler) => { globalThis.inspectorHandlers.set(channel, handler); return handle(channel, handler); };\ndialog.showOpenDialog = async () => ({ canceled: false, filePaths: [${JSON.stringify(avatarSource)}] });\nrequire(${JSON.stringify(path.join(appDirectory, 'native/main.cjs'))});\n`);
+    await writeFile(entry, `const { app, ipcMain, dialog } = require('electron');\nconst { mkdirSync } = require('node:fs');\nfor (const [name, directory] of Object.entries(${JSON.stringify(isolatedPaths)})) { mkdirSync(directory, { recursive: true }); app.setPath(name, directory); }\nglobalThis.inspectorHandlers = new Map();\nglobalThis.inspectorSecureDispatches = [];\nglobalThis.inspectorConfirmations = [];\ndialog.showMessageBox = async (_parent, options) => { globalThis.inspectorConfirmations.push(options); return { response: 0, checkboxChecked: false }; };\nconst handle = ipcMain.handle.bind(ipcMain);\nipcMain.handle = (channel, handler) => { globalThis.inspectorHandlers.set(channel, handler); if (!['lorca:secure-settings-submit', 'lorca:secure-settings-cancel'].includes(channel)) return handle(channel, handler); return handle(channel, async (event, ...args) => { const source = { channel, senderId: event.sender.id, mainFrame: event.senderFrame === event.sender.mainFrame }; const result = await handler(event, ...args); if ((channel === 'lorca:secure-settings-cancel' && result === null) || (channel === 'lorca:secure-settings-submit' && result?.ok === true)) globalThis.inspectorSecureDispatches.push(source); return result; }); };\ndialog.showOpenDialog = async () => ({ canceled: false, filePaths: [${JSON.stringify(avatarSource)}] });\nrequire(${JSON.stringify(path.join(appDirectory, 'native/main.cjs'))});\n`);
     application = await _electron.launch({ executablePath, args: [entry], cwd: appDirectory, env, chromiumSandbox: true, timeout: 30_000 });
     assert.equal(await application.evaluate(({ app }) => app.commandLine.hasSwitch('no-sandbox')), false);
     assert.deepEqual(await application.evaluate(({ app }) => Object.fromEntries(['userData', 'sessionData', 'logs', 'crashDumps'].map(name => [name, app.getPath(name)]))), isolatedPaths);
@@ -141,24 +157,30 @@ async function main() {
     await assertSourceBoundary(application);
     assert.equal((await page.content()).includes(memoryStart), false);
     await cancelledMemory.secure.screenshot({ path: path.join(screenshotDirectory, 'electron-inspector-memory.png'), fullPage: true });
-    await cancelledMemory.secure.locator('#cancel').click();
-    assert.deepEqual(await settle(cancelledMemory.pending), { status: 'cancelled', botId: 'bot-inspector' });
+    await clickClosesWindow(application, cancelledMemory.secure, cancelledMemory.secure.locator('#cancel'), 'lorca:secure-settings-cancel', async () => {
+      assert.deepEqual(await settle(cancelledMemory.pending), { status: 'cancelled', botId: 'bot-inspector' });
+    });
     assert.equal(fixture.requests.filter(value => value.method === 'bots.memory.write').length, 0);
     assert.equal(await application.evaluate(() => globalThis.inspectorConfirmations.length), 0);
     await confirmWith(application, 1);
     const savedMemory = await openSecure(application, page, 'memory');
     await savedMemory.secure.locator('#memory').fill(editedMemory);
     const reviewWindow = application.waitForEvent('window', { timeout: 15_000 }).then(value => ({ value }), error => ({ error }));
-    await savedMemory.secure.getByRole('button', { name: '复核并保存', exact: true }).click();
-    const reviewOutcome = await reviewWindow; if (reviewOutcome.error) throw reviewOutcome.error;
-    const review = reviewOutcome.value; review.setDefaultTimeout(15_000); await review.locator('#review').waitFor(); await sandbox(application, review, true);
+    const review = await clickClosesWindow(application, savedMemory.secure, savedMemory.secure.getByRole('button', { name: '复核并保存', exact: true }), 'lorca:secure-settings-submit', async () => {
+      const outcome = await reviewWindow; if (outcome.error) throw outcome.error;
+      outcome.value.setDefaultTimeout(15_000); await outcome.value.locator('#review').waitFor();
+      assert.equal(fixture.requests.filter(value => value.method === 'bots.memory.write').length, 0);
+      return outcome.value;
+    });
+    await sandbox(application, review, true);
     const fullReview = await review.locator('#review').inputValue();
     assert.ok(fullReview.length > 500_000); assert.ok(fullReview.includes(initialMemory)); assert.ok(fullReview.includes(editedMemory)); assert.ok(fullReview.includes(editedMemoryEnd));
     assert.equal(await review.locator('#review').getAttribute('maxlength'), null); assert.equal(await review.locator('#review').evaluate(element => element.readOnly), true);
     assert.equal((await page.content()).includes(editedMemoryEnd), false);
     await review.screenshot({ path: path.join(screenshotDirectory, 'electron-inspector-memory-review.png'), fullPage: true });
-    await review.getByRole('button', { name: '已核对全部变更', exact: true }).click();
-    assert.deepEqual(await settle(savedMemory.pending), { status: 'applied', botId: 'bot-inspector' });
+    await clickClosesWindow(application, review, review.getByRole('button', { name: '已核对全部变更', exact: true }), 'lorca:secure-settings-submit', async () => {
+      assert.deepEqual(await settle(savedMemory.pending), { status: 'applied', botId: 'bot-inspector' });
+    });
     const memoryWrites = fixture.requests.filter(value => value.method === 'bots.memory.write');
     assert.equal(memoryWrites.length, 1); assert.deepEqual(memoryWrites[0].params, { bot_id: 'bot-inspector', text: editedMemory, expected_hash: memoryHash(initialMemory) });
     const cancelledAvatar = await openSecure(application, page, 'avatar');
@@ -168,13 +190,16 @@ async function main() {
     assert.equal(Buffer.from(pixels.url.split(',')[1], 'base64').includes(Buffer.from(privateMarker)), false);
     assert.equal((await page.content()).includes(pixels.url), false);
     await cancelledAvatar.secure.screenshot({ path: path.join(screenshotDirectory, 'electron-inspector-avatar.png'), fullPage: true });
-    await cancelledAvatar.secure.locator('#cancel').click();
-    assert.deepEqual(await settle(cancelledAvatar.pending), { status: 'cancelled', botId: 'bot-inspector' }); assert.equal(fixture.uploadedAvatars.length, 0);
+    await clickClosesWindow(application, cancelledAvatar.secure, cancelledAvatar.secure.locator('#cancel'), 'lorca:secure-settings-cancel', async () => {
+      assert.deepEqual(await settle(cancelledAvatar.pending), { status: 'cancelled', botId: 'bot-inspector' });
+    });
+    assert.equal(fixture.uploadedAvatars.length, 0);
     assert.equal(await application.evaluate(() => globalThis.inspectorConfirmations.length), 1);
     const savedAvatar = await openSecure(application, page, 'avatar');
     await savedAvatar.secure.locator('img.avatar-preview').evaluate(image => image.decode());
-    await savedAvatar.secure.getByRole('button', { name: '使用此头像', exact: true }).click();
-    assert.deepEqual(await settle(savedAvatar.pending), { status: 'applied', botId: 'bot-inspector' });
+    await clickClosesWindow(application, savedAvatar.secure, savedAvatar.secure.getByRole('button', { name: '使用此头像', exact: true }), 'lorca:secure-settings-submit', async () => {
+      assert.deepEqual(await settle(savedAvatar.pending), { status: 'applied', botId: 'bot-inspector' });
+    });
     assert.equal(fixture.uploadedAvatars.length, 1); assert.equal(fixture.requests.filter(value => value.method === 'bots.update').length, 1);
     await assert.rejects(access(fixture.uploadedAvatars[0].path), error => error.code === 'ENOENT');
     const avatarResult = await page.evaluate(() => window.lorca.getAgentDetails({ botId: 'bot-inspector' }));

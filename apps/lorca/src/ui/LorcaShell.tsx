@@ -873,7 +873,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
       </main>
       {inspectorOpen && <AgentInspector
         open={inspectorOpen && !settingsOpen}
-        scope={state.localGroupNamespace ?? state.draftScope ?? 0}
+        scope={JSON.stringify([state.draftScope ?? 0, state.connection.endpoint])}
         agentId={inspectorId}
         agents={state.agents.filter(agent => (inspectorDirty && agent.id === inspectorId) || !activeConversation || (activeConversation.botIds ?? activeConversation.avatars?.map(avatar => avatar.botId) ?? []).includes(agent.id))}
         details={inspectorState.details}
