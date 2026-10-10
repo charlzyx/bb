@@ -247,7 +247,8 @@ async function checkDevicePairing() {
     }
     await button.click();
     await page.evaluate(() => window.__pairingUiTest.reject());
-    await page.getByText("无法打开配对窗口，请检查本地连接后重试。", { exact: true }).waitFor();
+    await page.getByText("配对窗口未能打开，请查看设备页的禁用原因。若上次结果未知，请先在官方客户端核对设备。", { exact: true }).waitFor();
+    assert.doesNotMatch(await page.content(), /synthetic-private-native-error/, "Native rejection details never appear anywhere in the rendered document");
     await noSuccessClaim(page);
     await page.getByRole("button", { name: "关闭设置", exact: true }).click();
     await openConnectionSettings(page);
