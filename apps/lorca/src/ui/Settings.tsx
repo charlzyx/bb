@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { settingsZh } from "../locale/settings.zh-CN";
+import { editorZh } from "../locale/editor.zh-CN";
+import { BotSettingsPanel } from "./settings/BotSettingsPanel";
+import { AutoReviewPanel } from "./settings/AutoReviewPanel";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { Input } from "@bb/shared-ui/input";
@@ -131,6 +134,7 @@ export function Settings({
   themePersistent,
   runtime,
   loading = false,
+  applying = false,
   error,
 }: {
   open: boolean;
@@ -145,9 +149,12 @@ export function Settings({
   themePersistent: boolean;
   runtime?: RuntimeSettings;
   loading?: boolean;
+  applying?: boolean;
   error?: string | null;
 }) {
+  const [selectedBotId, setSelectedBotId] = useState("");
   const connected = demo || connection.status === "connected";
+  const disabled = !connected || loading || applying;
   const refresh = () =>
     actions.onRefreshSettings(
       page === "mcp" ? (runtime?.mcp.runnerId ?? undefined) : undefined,
@@ -310,6 +317,8 @@ export function Settings({
           </div>
         </>
       )}
+      {page === "models" && (runtime ? <BotSettingsPanel key={String(open)} runtime={runtime} disabled={disabled} onAction={actions.onSettingsAction} selectedBotId={selectedBotId} onSelectBot={setSelectedBotId} /> : <InventoryEmpty icon="Info" title={settingsZh.noRuntimeDetails} detail={editorZh.unsupported} />)}
+      {page === "approvals" && <AutoReviewPanel key={`${String(open)}:${runtime?.editor?.revision ?? "unavailable"}`} editor={runtime?.editor} disabled={disabled} onAction={actions.onSettingsAction} />}
       {(page === "runners" || page === "mcp") &&
         (runtime ? (
           page === "runners" ? (
@@ -319,6 +328,8 @@ export function Settings({
               runtime={runtime}
               loading={loading}
               onRefresh={actions.onRefreshSettings}
+              onAction={actions.onSettingsAction}
+              disabled={disabled}
             />
           )
         ) : (

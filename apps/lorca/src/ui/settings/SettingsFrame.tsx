@@ -1,5 +1,6 @@
 import { useCallback, useRef, type ReactNode } from "react";
 import { settingsZh } from "../../locale/settings.zh-CN";
+import { editorZh } from "../../locale/editor.zh-CN";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
@@ -10,7 +11,7 @@ import {
 } from "@bb/shared-ui/responsive-overlay";
 import { PROJECT_LIST_ACTION_BUTTON_CLASS } from "../../../../app/src/components/sidebar/sidebarRowClasses";
 
-export type SettingsPage = "connection" | "preferences" | "runners" | "mcp";
+export type SettingsPage = "connection" | "preferences" | "models" | "runners" | "mcp" | "approvals";
 
 const pages: {
   id: SettingsPage;
@@ -30,6 +31,7 @@ const pages: {
     icon: "SlidersHorizontal",
     description: settingsZh.preferencesDescription,
   },
+  { id: "models", label: editorZh.models, icon: "Bot", description: editorZh.modelsDescription },
   {
     id: "runners",
     label: settingsZh.runners,
@@ -42,6 +44,7 @@ const pages: {
     icon: "Toolbox",
     description: settingsZh.mcpDescription,
   },
+  { id: "approvals", label: editorZh.autoReview, icon: "ShieldCheck", description: editorZh.autoReviewDescription },
 ];
 
 export function SettingsFrame({

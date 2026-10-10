@@ -48,7 +48,7 @@ This is **explicit legacy mode** and is visibly labeled in the app. It remains l
 node apps/lorca/scripts/focused.mjs dev
 ```
 
-Open `http://127.0.0.1:5178/?demo=1` for a read-only synthetic preview. It does not read your account, make model calls, or schedule anything. The ordinary browser route displays desktop-connection guidance. A webpage cannot connect directly to the authenticated Lorca CLI: it rejects Origin headers and requires a bearer token that never belongs in a renderer.
+Open `http://127.0.0.1:5178/?demo=1` for a synthetic preview with in-memory settings changes. It does not read your account, make model calls, or schedule anything. The ordinary browser route displays desktop-connection guidance. A webpage cannot connect directly to the authenticated Lorca CLI: it rejects Origin headers and requires a bearer token that never belongs in a renderer.
 
 ## Architecture
 
@@ -64,7 +64,7 @@ The preload exposes a small allowlisted chat API. Identity secrets, provider cre
 
 Read [Protocol and compatibility](../../docs/lorca-protocol.md) for exact RPC mappings, snapshot/event semantics, pinned source versions, and security assumptions.
 
-Read [Settings and runtime inventory](../../docs/lorca-settings.md) for the current/legacy capability matrix, native redaction contract, and which preferences are editable. Connection and appearance are local session preferences; provider, bot, Runner and MCP details are read-only daemon reports, not live credential or execution tests.
+Read [Settings and runtime inventory](../../docs/lorca-settings.md) for the current/legacy capability matrix, native redaction contract, and which preferences are editable. Connection and appearance are local session preferences. Runtime inventory remains a sanitized daemon report, not a health test. The separate [editable settings contract](../../docs/lorca-editable-settings.md) covers bot-wide model/Runner changes, controlled provider/MCP configuration and explicit account-wide approval policy updates. Persistent changes use native confirmation and session-bound revision checks; secrets never enter the ordinary renderer. MCP file writes/reload can also apply unrelated pending on-disk changes and start programs absent from the cached inventory. Native confirmation discloses the whole-file scope; the daemon has no preview/CAS endpoint.
 
 ## Scope
 
@@ -81,15 +81,19 @@ Read [Settings and runtime inventory](../../docs/lorca-settings.md) for the curr
 | Native selected-file attachments | Supported via main-process bridge |
 | Existing group transcript and sending | Supported |
 | Create/manage groups or bots | Use Lorca's existing app/CLI |
-| Identity creation, restore, pairing, provider sign-in | Use Lorca's existing app/CLI |
+| Identity creation, restore, pairing, provider OAuth sign-in | Use Lorca's existing app/CLI |
 | Access-management and OAuth permission cards | Displayed; complete in Lorca |
 | Download/open attachment bytes | Metadata displayed; use Lorca |
 | Interactive terminals/browser sessions | Activity displayed; controls remain in Lorca |
-| Connection, appearance, Runner and MCP settings pages | Session endpoint/theme controls and sanitized read-only inventory |
-| Reviews, tasks, budgets, routines, provider/MCP edits and access management | Remain owned by Lorca; dedicated editors not included |
+| Desktop settings | Session endpoint/theme, sanitized inventory, existing-bot model/Runner edits, controlled provider/MCP editors, explicit auto-review policy |
+| Tasks, budgets, routines, per-bot access grants and MCP OAuth/hide-tool | Dedicated editors not included |
 | Bundled CLI, signed installer, automatic updates | Not packaged in this experimental integration |
 
 The renderer controller is the programmatic surface for the same operations used by UI. The existing Lorca CLI is the command-line surface for account/runtime operations. This integration does not add a second implementation of those operations to BB's server or host daemon.
+
+### Authentication scopes
+
+The dots-to-daemon connection does **not** use OAuth: it uses the existing local serve-token on newer daemons, or explicitly selected unauthenticated loopback legacy mode. Lorca continues to own its existing relay/device identity and encrypted synchronization protocol. References to optional OAuth sign-in in settings apply only to certain model providers or MCP services; they do not replace or alter either Lorca authentication layer.
 
 ## Programmatic and command-line surface
 
@@ -104,6 +108,14 @@ node apps/lorca/scripts/focused.mjs cli chats.messages '{"chat_id":"YOUR_CHAT_ID
 ```
 
 A CLI command performs only the explicitly selected operation. `settings` assembles the same sanitized inventory as the desktop from `bootstrap` and `mcp.list`; it does not reconnect MCP servers or call tools. Native SDK consumers use `SettingsInventory` from `native/settings.cjs`, call `get({runnerId?})` with the same `LorcaBridge`, and dispose the inventory when done. Chat mutation commands can start real work and should be run deliberately; help does not connect. The ordinary BB CLI/server remains unchanged.
+
+### Controlled settings actions
+
+```sh
+node apps/lorca/scripts/focused.mjs cli settings-action '{"kind":"bot.update","botId":"YOUR_BOT_ID","model":"MODEL_ID"}'
+```
+
+This command accepts nonsecret action DTOs only, obtains a fresh native revision internally, shows the exact scope and requires typing `确认` on an interactive terminal. Redirected/non-TTY writes, supplied revision tokens and `--yes` are rejected. `provider.configure` and `mcp.configure` require the desktop's isolated editor; API keys and raw MCP configuration are never accepted as CLI arguments. Start `focused.mjs desktop` and open dots settings for those actions. Native SDK consumers reuse `SettingsEditor(bridge, inventory, {confirm, openSecureEditor})` from `native/settings-editor.cjs`; no confirmation callback means no writes. A cancellation is not success; `unknownOutcome` must be reconciled by a read before considering any manual retry.
 
 ## Verification
 
@@ -123,7 +135,7 @@ These are direct imports from the preserved upstream source:
 - [Sidebar navigation row styling](../app/src/components/sidebar/sidebarRowClasses.ts)
 - [Responsive overlay focus and drawer behavior](../../packages/shared-ui/src/components/ui/responsive-overlay.tsx)
 - [Conversation timeline](../app/src/components/ui/conversation.tsx)
-- [BB logo component](../app/src/components/ui/bb-logo.tsx)
+- dots uses its own four-dot mark; upstream BB logo source and its license remain intact.
 
 The small local Tailwind adapter uses Tailwind's public compiler and scanner APIs to compile that same theme and its utilities, with regression coverage. It avoids the unrelated Babel/source-map dependency branch that blocked the initial full-workspace install.
 

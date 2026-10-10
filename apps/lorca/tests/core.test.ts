@@ -913,7 +913,7 @@ test("offline runtime inspection does not invoke the settings bridge", async () 
     refresh();
     await tick();
     assert.equal(calls, 0);
-    assert.match(controller.getSnapshot().settingsError ?? "", /请先连接 Lorca/);
+    assert.match(controller.getSnapshot().settingsError ?? "", /请先连接本地服务/);
     assert.equal(controller.getSnapshot().settingsLoading, false);
     assert.equal(controller.getSnapshot().runtimeSettings, undefined);
   } finally {

@@ -10,7 +10,9 @@ import {
   SettingsRowList,
   SettingsSection,
 } from "../../../../app/src/components/ui/settings-section";
-import type { RuntimeSettings } from "../types";
+import type { RuntimeSettings, SettingsAction, SettingsActionResult } from "../types";
+import { editorZh } from "../../locale/editor.zh-CN";
+import { SettingsActionControl } from "./SettingsActionControl";
 
 const runtimeStateLabels = new Map(Object.entries(settingsZh.runtimeStates));
 
@@ -211,10 +213,14 @@ export function McpPanel({
   runtime,
   loading,
   onRefresh,
+  onAction,
+  disabled = false,
 }: {
   runtime: RuntimeSettings;
   loading: boolean;
   onRefresh: (runnerId?: string) => void;
+  onAction?: (action: SettingsAction) => Promise<SettingsActionResult>;
+  disabled?: boolean;
 }) {
   const [selectedRunner, setSelectedRunner] = useState<string | null>(null);
   const runners = runtime.devices.filter((device) =>
@@ -225,6 +231,10 @@ export function McpPanel({
   const fallback = runners.find((device) => device.isThisDevice) ?? runners[0];
   const inspectedRunner = selected?.id ?? reported?.id ?? fallback?.id ?? "";
   const selectedSnapshot = inspectedRunner === (runtime.mcp.runnerId ?? "");
+  const editor = runtime.editor;
+  const canManage = Boolean(editor?.canManageMcp && onAction && selectedSnapshot && runtime.mcp.status === "ready" && runners.find((device) => device.id === inspectedRunner)?.online);
+  const runnerName = runners.find((device) => device.id === inspectedRunner)?.name || inspectedRunner;
+  const managementBlocked = disabled || loading || !selectedSnapshot;
   return (
     <>
       <SettingsSection
@@ -260,10 +270,15 @@ export function McpPanel({
           <Icon name="ChevronDown" />
         </div>
       </SettingsSection>
+      {canManage && editor && onAction && <div className="lorca-admin-buttons">
+        <SettingsActionControl action={{ kind: "mcp.configure", revision: editor.revision, runnerId: inspectedRunner }} label={editorZh.addMcp} onAction={onAction} disabled={managementBlocked} />
+        <SettingsActionControl action={{ kind: "mcp.reload", revision: editor.revision, runnerId: inspectedRunner }} label={editorZh.reloadMcp} confirmation={editorZh.reloadMcpScope(runnerName)} onAction={onAction} disabled={managementBlocked} />
+      </div>}
+      {!editor?.canManageMcp && <p className="lorca-admin-unavailable">{editorZh.unsupported}</p>}
       <SettingsSection
         title={settingsZh.mcpServers}
         description={settingsZh.mcpServersDescription}
-        action={<SettingsBadge>{settingsZh.readOnly}</SettingsBadge>}
+        action={!canManage ? <SettingsBadge>{settingsZh.readOnly}</SettingsBadge> : undefined}
       >
         {!selectedSnapshot ? (
           <InventoryEmpty
@@ -338,6 +353,12 @@ export function McpPanel({
                           {settingsZh.serverError}
                         </p>
                       )}
+                      {canManage && editor && onAction && <div className="lorca-admin-buttons lorca-mcp-admin-actions">
+                        <SettingsActionControl action={{ kind: "mcp.configure", revision: editor.revision, runnerId: inspectedRunner, name: server.name }} label={editorZh.configure} onAction={onAction} disabled={managementBlocked} />
+                        <SettingsActionControl action={{ kind: "mcp.setEnabled", revision: editor.revision, runnerId: inspectedRunner, name: server.name, enabled: !server.enabled }} label={server.enabled ? editorZh.disable : editorZh.enable} confirmation={editorZh.mcpScope(runnerName, server.name, server.enabled ? editorZh.disable : editorZh.enable)} onAction={onAction} disabled={managementBlocked} />
+                        <SettingsActionControl action={{ kind: "mcp.reconnect", revision: editor.revision, runnerId: inspectedRunner, name: server.name }} label={editorZh.reconnect} confirmation={editorZh.mcpScope(runnerName, server.name, editorZh.reconnect)} onAction={onAction} disabled={managementBlocked || !server.enabled} />
+                        <SettingsActionControl action={{ kind: "mcp.remove", revision: editor.revision, runnerId: inspectedRunner, name: server.name }} label={editorZh.remove} confirmation={editorZh.removeMcpScope(runnerName, server.name)} onAction={onAction} disabled={managementBlocked} />
+                      </div>}
                     </div>
                   </SettingsRow>
                 ))}
@@ -354,7 +375,7 @@ export function McpPanel({
       </SettingsSection>
       <div className="lorca-settings-boundary-note">
         <Icon name="Info" />
-        <p>{settingsZh.mcpBoundary}</p>
+        <p>{editorZh.mcpBoundary}</p>
       </div>
       {!selectedSnapshot && !loading && (
         <Button

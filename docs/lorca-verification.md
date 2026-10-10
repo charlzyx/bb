@@ -2,6 +2,12 @@
 
 Verified on 2026-10-09. This is an experimental client, not a packaged release.
 
+## Editable settings follow-up
+
+The controlled settings implementation passes 177 local deterministic tests, TypeScript, production build and lint. Coverage includes source-fenced isolated credential windows, secret preservation, stale revision/account/connection failures, exact native confirmation, full-rule policy review, MCP whole-file caveats, readback races, cancellation, TTY-only CLI writes and unknown-outcome no replay. The extended real-browser/Electron smoke scripts are part of the same branch; the previously linked green run below predates these edits, so do not treat it as verification of the new write paths. Current CI results are recorded in the PR checks.
+
+This phase does not use the user's Mac or live service. macOS native confirmation and production-provider compatibility remain to be tested later with the user. Credentials are entered only into a dedicated local sandboxed window with an ephemeral session; no existing key/raw MCP config is returned to the main renderer. Unknown default provider destinations require an explicit URL. MCP file-writing changes may apply unrelated pending on-disk edits, as documented in the editable-settings contract.
+
 ## Passed
 
 - Focused frozen-lock dependency installation, including a fresh offline reinstall
@@ -42,7 +48,7 @@ The single-Linux `.github/workflows/lorca.yml` runs the focused checks, browser 
 
 ## Desktop settings scope
 
-The [settings contract](lorca-settings.md) compares the pinned current and legacy protocols. The UI can connect to a canonical local endpoint and change appearance for the current app session. Runners, provider configuration, bot assignments and MCP inventory are **read-only daemon reports**, not live health checks. API keys/OAuth, grants, automatic approval policy, relay changes, Runner assignment and MCP editing remain outside this UI. Unknown cached tool counts stay unknown.
+The [inventory contract](lorca-settings.md) and [editable settings contract](lorca-editable-settings.md) distinguish daemon reports from explicit writes. Bot model/Runner changes affect every chat using that bot. Provider credentials and MCP configuration use isolated native-controlled input; normal renderer IPC carries only safe summaries and action identifiers. Auto-review updates are account-wide, require full-rule review and never default to blanket allowance. OAuth, per-bot access grants, relay changes and MCP tool hiding remain outside this UI. New write paths are tested only with synthetic data and mock services; no real account configuration was changed during this phase.
 
 ## Remaining runtime limits
 

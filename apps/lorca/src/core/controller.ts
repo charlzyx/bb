@@ -26,6 +26,8 @@ import type {
   LorcaMessage,
   LorcaShellActions,
   RuntimeSettings,
+  SettingsAction,
+  SettingsActionResult,
 } from "../ui/types";
 
 import { parseRuntimeSettings } from "./settings";
@@ -129,6 +131,8 @@ export class LorcaController {
   private settingsLoading = false;
   private settingsError: string | null = null;
   private settingsRequest = 0;
+  private settingsRunner: string | undefined;
+  private settingsApplying = false;
   private status: BridgeStatus = {
     status: "disconnected",
     endpoint: "ws://127.0.0.1:4862/ws",
@@ -184,6 +188,7 @@ export class LorcaController {
       draftScope: this.accountEpoch,
       runtimeSettings: this.runtimeSettings ?? undefined,
       settingsLoading: this.settingsLoading,
+      settingsApplying: this.settingsApplying,
       settingsError: this.settingsError ?? undefined,
       connection: {
         status: this.status.status,
@@ -519,18 +524,20 @@ export class LorcaController {
   private clearSettings(): void {
     this.settingsRequest++;
     this.runtimeSettings = null;
+    this.settingsRunner = undefined;
     this.settingsLoading = false;
     this.settingsError = null;
   }
   private async refreshSettings(runnerId?: string): Promise<void> {
     const request = ++this.settingsRequest;
+    this.settingsRunner = runnerId;
     const generation = this.generation, accountEpoch = this.accountEpoch;
     this.settingsLoading = true;
     this.settingsError = null;
     this.runtimeSettings = null;
     this.emit();
     try {
-      if (this.status.status !== "connected") throw new Error("请先连接 Lorca，再加载运行环境设置。");
+      if (this.status.status !== "connected") throw new Error("请先连接本地服务，再加载运行环境设置。");
       if (!this.bridge.getSettings) throw new Error("查看运行环境需要更新桌面桥接组件。");
       const settings = parseRuntimeSettings(await this.bridge.getSettings(runnerId ? { runnerId } : {}));
       if (request !== this.settingsRequest || generation !== this.generation || accountEpoch !== this.accountEpoch) return;
@@ -544,7 +551,41 @@ export class LorcaController {
       }
     }
   }
+  private async settingsAction(action: SettingsAction): Promise<SettingsActionResult> {
+    this.requireReady();
+    if (this.settingsApplying) throw new Error("另一项设置正在处理，请等待确认完成。");
+    if (this.settingsLoading || !this.bridge.settingsAction || !this.runtimeSettings?.editor)
+      throw new Error("请先刷新设置，或更新桌面桥接组件。");
+    if (action.revision !== this.runtimeSettings.editor.revision)
+      throw new Error("设置已变化，请刷新后重新编辑。");
+    const generation = this.generation, accountEpoch = this.accountEpoch;
+    const request = this.settingsRequest, runner = this.settingsRunner;
+    const current = () => !this.disposed && generation === this.generation && accountEpoch === this.accountEpoch && this.status.status === "connected";
+    this.settingsApplying = true;
+    this.settingsError = null;
+    this.emit();
+    try {
+      const raw = await this.bridge.settingsAction(action);
+      if (!current()) throw new Error("账号或连接已变化，请刷新后核对设置；操作未被自动重发。");
+      const value = object(raw, "settingsAction");
+      const status = value.status;
+      if (status !== "applied" && status !== "cancelled" && status !== "unknownOutcome")
+        throw new Error("设置操作结果尚不确定，请刷新核对；操作未被自动重发。");
+      if (status !== "cancelled" && request === this.settingsRequest) await this.refreshSettings(runner);
+      if (!current()) throw new Error("账号或连接已变化，请刷新后核对设置；操作未被自动重发。");
+      if (status === "unknownOutcome") this.settingsError = "刚才的设置操作结果尚不确定，请核对当前配置后再决定是否重试；操作未被自动重发。";
+      return { status };
+    } catch (error) {
+      if (!current()) throw new Error("账号或连接已变化，请刷新后核对设置；操作未被自动重发。");
+      if (request === this.settingsRequest) this.settingsError = error instanceof Error ? error.message : "设置操作失败，请刷新核对。";
+      throw error;
+    } finally {
+      this.settingsApplying = false;
+      this.emit();
+    }
+  }
   actions: LorcaShellActions = {
+    onSettingsAction: (action) => this.settingsAction(action),
     onRefreshSettings: (runnerId) => { void this.refreshSettings(runnerId); },
     onSelectConversation: (id) => {
       if (this.model.chats.has(id)) {

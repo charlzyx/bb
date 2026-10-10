@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { installSettingsFixture } from "./settings-ui-fixture.mjs";
 
 let playwright;
 try {
@@ -276,6 +277,20 @@ try {
     await settingsDesktop.locator("#root").getAttribute("aria-hidden"),
     null,
   );
+  await chooseSettingsPage(settingsDesktop, "模型与机器人");
+  await settingsDesktop.getByRole("combobox", { name: "分配执行器", exact: true }).waitFor();
+  await screenshot(settingsDesktop, "desktop-settings-models");
+  await settingsDesktop.getByRole("combobox", { name: "分配执行器", exact: true }).selectOption("runner-second");
+  await settingsDesktop.getByRole("button", { name: "应用更改", exact: true }).click();
+  await screenshot(settingsDesktop, "desktop-settings-models-confirm");
+  await settingsDesktop.getByRole("button", { name: "取消", exact: true }).click();
+  await chooseSettingsPage(settingsDesktop, "自动审批");
+  await settingsDesktop.getByRole("switch", { name: "启用自动审批" }).waitFor();
+  await screenshot(settingsDesktop, "desktop-settings-auto-review");
+  await settingsDesktop.getByRole("switch", { name: "启用自动审批" }).click();
+  await settingsDesktop.getByRole("button", { name: "查看变更", exact: true }).click();
+  await screenshot(settingsDesktop, "desktop-settings-auto-review-confirm");
+  await settingsDesktop.getByRole("button", { name: "返回修改", exact: true }).click();
   await settingsDesktop.keyboard.press("Escape");
   assert.equal(
     await settingsDesktop
@@ -599,6 +614,72 @@ try {
     "",
     "Account switch clears drafts across all conversations",
   );
+  const settingsInteraction = await browser.newPage({ viewport: { width: 1240, height: 820 } });
+  failurePage = settingsInteraction;
+  captureErrors(settingsInteraction);
+  await settingsInteraction.addInitScript(installSettingsFixture);
+  await settingsInteraction.goto(base, { waitUntil: "networkidle" });
+  await settingsInteraction.locator(".lorca-header-status").click();
+  await waitForSettings(settingsInteraction);
+  await chooseSettingsPage(settingsInteraction, "模型与机器人");
+  await settingsInteraction.getByRole("combobox", { name: "模型服务商", exact: true }).selectOption("provider-two");
+  assert.equal(await settingsInteraction.getByRole("combobox", { name: "模型", exact: true }).inputValue(), "");
+  assert.equal(await settingsInteraction.getByRole("combobox", { name: "思考级别", exact: true }).inputValue(), "");
+  await settingsInteraction.getByRole("combobox", { name: "分配执行器", exact: true }).selectOption("runner-two");
+  assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), 0, "Editing bot settings is draft-only");
+  await settingsInteraction.getByRole("button", { name: "应用更改", exact: true }).click();
+  await settingsInteraction.getByRole("button", { name: "取消", exact: true }).click();
+  assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), 0, "Cancelling scope review sends nothing");
+  await settingsInteraction.getByRole("button", { name: "应用更改", exact: true }).click();
+  await settingsInteraction.getByRole("button", { name: "确认应用", exact: true }).click();
+  await settingsInteraction.waitForFunction(() => window.__settingsUiTest.pending.length === 1);
+  assert.deepEqual(await settingsInteraction.evaluate(() => { const { revision, ...action } = window.__settingsUiTest.requests[0]; return action; }), { kind: "bot.update", botId: "bot-one", provider: "provider-two", model: "", thinking: "", runnerId: "runner-two" });
+  assert.equal(await settingsInteraction.getByRole("combobox", { name: "分配执行器", exact: true }).isDisabled(), true);
+  await settingsInteraction.evaluate(() => window.__settingsUiTest.reject());
+  await settingsInteraction.getByText("合成测试：保存失败", { exact: true }).first().waitFor();
+  assert.equal(await settingsInteraction.getByRole("combobox", { name: "模型服务商", exact: true }).inputValue(), "provider-two", "Failed apply preserves form values");
+  await settingsInteraction.getByRole("button", { name: "应用更改", exact: true }).click();
+  await settingsInteraction.getByRole("button", { name: "确认应用", exact: true }).click();
+  await settingsInteraction.evaluate(() => window.__settingsUiTest.resolve("applied"));
+  await settingsInteraction.waitForFunction(() => document.querySelector("#lorca-bot-runner")?.value === "runner-two" && !document.querySelector("#lorca-bot-runner")?.matches(":disabled"));
+  await chooseSettingsPage(settingsInteraction, "自动审批");
+  await settingsInteraction.getByRole("button", { name: "添加规则", exact: true }).click();
+  const ruleFields = settingsInteraction.locator(".lorca-approval-rule-fields");
+  assert.equal(await ruleFields.last().getByRole("combobox").inputValue(), "ask", "New approval rules default to asking");
+  await ruleFields.last().getByRole("textbox", { name: /适用情景/ }).fill("Read only the synthetic fixture");
+  await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).click();
+  assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), 2, "Approval edits do not immediately mutate");
+  await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).click();
+  await settingsInteraction.getByRole("button", { name: "确认并提交", exact: true }).click();
+  await settingsInteraction.waitForFunction(() => window.__settingsUiTest.pending.length === 1);
+  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).isDisabled(), true);
+  const approvalAction = await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.at(-1));
+  assert.equal(approvalAction.kind, "autoReview.set");
+  assert.equal(approvalAction.isEnabled, true);
+  assert.equal(approvalAction.rules[0].id, "existing-rule");
+  assert.equal(approvalAction.rules[1].behavior, "ask");
+  assert.equal("id" in approvalAction.rules[1], false);
+  await settingsInteraction.evaluate(() => window.__settingsUiTest.resolve("cancelled"));
+  await settingsInteraction.getByText("已取消提交，草稿仍保留，未确认应用任何变更。", { exact: true }).waitFor();
+  assert.equal(await settingsInteraction.getByRole("switch", { name: "启用自动审批" }).getAttribute("aria-checked"), "true");
+  await settingsInteraction.getByRole("button", { name: "查看变更", exact: true }).click();
+  await settingsInteraction.getByRole("button", { name: "确认并提交", exact: true }).click();
+  await settingsInteraction.evaluate(() => window.__settingsUiTest.resolve("unknownOutcome"));
+  await settingsInteraction.getByRole("alert").filter({ hasText: /结果|确认|核对/ }).first().waitFor();
+  await chooseSettingsPage(settingsInteraction, "MCP");
+  await settingsInteraction.getByRole("button", { name: "移除", exact: true }).click();
+  await settingsInteraction.getByText(/删除其本地配置、凭据、数据和关联的工具规则/).waitFor();
+  const beforeDelete = await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length);
+  await settingsInteraction.getByRole("button", { name: "取消", exact: true }).click();
+  assert.equal(await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.length), beforeDelete, "Cancel leaves destructive MCP action undispatched");
+  await settingsInteraction.getByRole("button", { name: "配置…", exact: true }).click();
+  await settingsInteraction.waitForFunction(() => window.__settingsUiTest.pending.length === 1);
+  const secureAction = await settingsInteraction.evaluate(() => window.__settingsUiTest.requests.at(-1));
+  assert.deepEqual(Object.keys(secureAction).sort(), ["kind", "name", "revision", "runnerId"]);
+  assert.equal(secureAction.kind, "mcp.configure");
+  assert.equal(await settingsInteraction.locator('input[type="password"], textarea').count(), 1, "Only the chat composer remains; no secret configuration form exists in the main renderer");
+  await settingsInteraction.evaluate(() => window.__settingsUiTest.resolve("cancelled"));
+  await settingsInteraction.getByText("已取消，未应用更改。", { exact: true }).waitFor();
   assert.deepEqual(
     failures,
     [],

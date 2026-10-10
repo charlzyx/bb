@@ -1,3 +1,4 @@
+import type { SettingsAction } from "../ui/types";
 export interface BridgeStatus {
   status: "disconnected" | "connecting" | "connected" | "error";
   endpoint: string;
@@ -15,6 +16,7 @@ export interface LorcaBridge {
   onEvent(callback: (event: unknown) => void): () => void;
   onStatus(callback: (status: BridgeStatus) => void): () => void;
   getStatus(): Promise<BridgeStatus>;
+  settingsAction?(action: SettingsAction): Promise<unknown>;
   getSettings?(options: { runnerId?: string }): Promise<unknown>;
   copyText?(text: string): Promise<void>;
   pickAttachments?(): Promise<PickedAttachment[]>;

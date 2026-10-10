@@ -1,8 +1,8 @@
-import type { RuntimeSettings } from "../ui/types";
+import type { RuntimeSettings, SettingsEditor } from "../ui/types";
 import { object } from "./protocol";
 
-const text = (value: unknown, field: string): string => {
-  if (typeof value !== "string" || value.length > 500)
+const text = (value: unknown, field: string, maximum = 500): string => {
+  if (typeof value !== "string" || value.length > maximum)
     throw new Error(`设置数据格式不兼容：${field}`);
   return value;
 };
@@ -21,12 +21,40 @@ const list = (value: unknown): unknown[] => {
     throw new Error("设置数据格式不兼容：列表");
   return value;
 };
+export function parseSettingsEditor(value: unknown): SettingsEditor {
+  const v = object(value, "settings.editor"), review = object(v.autoReview, "autoReview");
+  if (review.status !== "ready" && review.status !== "unavailable") throw new Error("设置数据格式不兼容：自动审批状态");
+  const revision = text(v.revision, "editor.revision");
+  if (!revision) throw new Error("设置数据格式不兼容：编辑版本");
+  return {
+    revision,
+    canUpdateBots: flag(v.canUpdateBots, "editor.canUpdateBots"),
+    canAddProvider: flag(v.canAddProvider, "editor.canAddProvider"),
+    canManageMcp: flag(v.canManageMcp, "editor.canManageMcp"),
+    models: list(v.models).map(value => {
+      const m = object(value, "editor.models");
+      return { provider: text(m.provider, "models.provider"), id: text(m.id, "models.id"), name: text(m.name, "models.name"), levels: list(m.levels).map(level => text(level, "models.levels")) };
+    }),
+    bots: list(v.bots).map(value => { const b = object(value, "editor.bots"); return { id: text(b.id, "bots.id"), thinking: b.thinking === null ? null : text(b.thinking, "bots.thinking") }; }),
+    providers: list(v.providers).map(value => { const p = object(value, "editor.providers"); return { id: text(p.id, "providers.id"), canConfigure: flag(p.canConfigure, "providers.canConfigure"), canDisconnect: flag(p.canDisconnect, "providers.canDisconnect") }; }),
+    autoReview: {
+      status: review.status,
+      isEnabled: review.isEnabled === null ? null : flag(review.isEnabled, "autoReview.isEnabled"),
+      rules: list(review.rules).map(value => {
+        const r = object(value, "autoReview.rules");
+        if (r.behavior !== "allow" && r.behavior !== "ask") throw new Error("设置数据格式不兼容：审批规则行为");
+        return { id: text(r.id, "rules.id"), text: text(r.text, "rules.text", 20_000), behavior: r.behavior, tool: r.tool === null ? null : text(r.tool, "rules.tool") };
+      }),
+    },
+  };
+}
 export function parseRuntimeSettings(value: unknown): RuntimeSettings {
   const v = object(value, "settings");
   const mcp = object(v.mcp, "mcp");
   if (v.authMode !== "token" && v.authMode !== "legacy") throw new Error("设置数据格式不兼容：authMode");
   if (mcp.status !== "ready" && mcp.status !== "unavailable") throw new Error("设置数据格式不兼容：mcp.status");
   return {
+    ...(v.editor === undefined ? {} : { editor: parseSettingsEditor(v.editor) }),
     version: text(v.version, "version"),
     hasIdentity: flag(v.hasIdentity, "hasIdentity"),
     relayConnected: flag(v.relayConnected, "relayConnected"),

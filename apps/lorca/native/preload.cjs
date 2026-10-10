@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('lorca', Object.freeze({
   copyText: text => invoke('lorca:copy-text', text),
   getStatus: () => invoke('lorca:status'),
   getSettings: (params = {}) => invoke('lorca:get-settings', params),
+  settingsAction: action => invoke('lorca:settings-action', action),
   onEvent: listener => subscribe('lorca:event', listener),
   onStatus: listener => subscribe('lorca:status-update', listener),
   pickAttachments: () => invoke('lorca:pick-attachments'),

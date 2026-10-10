@@ -6,6 +6,8 @@ const { AttachmentSelections } = require('./attachments.cjs');
 const { applicationMenuTemplate } = require('./menu.cjs');
 const { APP_NAME, configureApplicationName, configureApplicationBranding } = require('./branding.cjs');
 const { SettingsInventory, sanitizeRendererEvent, sanitizeRendererResult, safeRendererError } = require('./settings.cjs');
+const { SettingsEditor } = require('./settings-editor.cjs');
+const { createSecureSettingsEditor } = require('./secure-settings.cjs');
 
 configureApplicationName(app);
 const distDirectory = path.resolve(__dirname, '../dist');
@@ -19,6 +21,23 @@ const settings = new SettingsInventory(bridge);
 let window = null;
 let applicationIcon;
 let choosing = false;
+const secureSettings = createSecureSettingsEditor({ BrowserWindow, ipcMain, bridge, getParent: () => window, getIcon: () => applicationIcon });
+settings.editor = new SettingsEditor(bridge, settings, {
+  openSecureEditor: secureSettings.edit,
+  confirm: async (spec, guard) => {
+    guard();
+    const needsReview = spec.detail.length > 2500;
+    if (needsReview) {
+      const reviewed = await secureSettings.edit({ title: '复核设置变更', description: spec.message, review: true, fields: [{ key: 'review', label: '完整变更范围', type: 'review', value: spec.detail }] }, guard, input => {
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 0) throw new Error('复核参数无效');
+        return true;
+      });
+      guard(); if (reviewed !== true) return false;
+    }
+    const result = await dialog.showMessageBox(window, { type: 'warning', title: spec.title, message: spec.message, detail: needsReview ? '完整变更已在隔离复核窗口展示。应用后将修改该账号或执行器的配置；不会自动重发失败的操作。' : spec.detail, buttons: ['取消', '应用变更'], defaultId: 0, cancelId: 0, noLink: true });
+    guard(); return result.response === 1;
+  },
+});
 function ensureSender(event) {
   if (!window || window.isDestroyed() || !isTrustedSender(event, window.webContents, trustedURL)) throw new Error('Lorca 请求来源不可信');
 }
@@ -49,6 +68,10 @@ ipcMain.handle('lorca:get-settings', async (event, params = {}) => {
   ensureSender(event);
   settings.check(fence);
   return result;
+});
+ipcMain.handle('lorca:settings-action', async (event, action) => {
+  ensureSender(event);
+  return settings.editor.apply(action, () => ensureSender(event));
 });
 ipcMain.handle('lorca:request', async (event, method, params) => {
   ensureSender(event);
@@ -124,5 +147,5 @@ app.whenReady().then(() => {
   createWindow();
 });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
-app.on('before-quit', () => bridge.close());
+app.on('before-quit', () => { secureSettings.close(); bridge.close(); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

@@ -6,7 +6,7 @@ const WebSocket = require('ws');
 
 const RPC_METHODS = Object.freeze(['hello', 'bootstrap', 'chats.create', 'chats.send', 'chats.stop', 'chats.send_now', 'chats.messages', 'chats.search', 'chats.permission']);
 const RENDERER_EVENTS = new Set(['snapshot', 'roster.changed', 'identity.changed', 'relay.status', 'job.started', 'job.finished', 'message.added', 'message.updated', 'message.removed', 'chat.removed']);
-const READ_METHODS = new Set(['hello', 'bootstrap', 'chats.messages', 'chats.search']);
+const READ_METHODS = new Set(['hello', 'bootstrap', 'chats.messages', 'chats.search', 'mcp.list', 'mcp.get', 'providers.api_key']);
 const MAX_TEXT = 200_000;
 
 function object(value, label) {

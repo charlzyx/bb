@@ -58,7 +58,38 @@ export type LorcaMessage =
       tone: "info" | "error";
     };
 
+export interface SettingsEditor {
+  revision: string;
+  models: { provider: string; id: string; name: string; levels: string[] }[];
+  bots: { id: string; thinking: string | null }[];
+  providers: { id: string; canConfigure: boolean; canDisconnect: boolean }[];
+  canUpdateBots: boolean;
+  canAddProvider: boolean;
+  canManageMcp: boolean;
+  autoReview: {
+    status: "ready" | "unavailable";
+    isEnabled: boolean | null;
+    rules: { id: string; text: string; behavior: "allow" | "ask"; tool: string | null }[];
+  };
+}
+
+export type SettingsAction = { revision: string } & (
+  | { kind: "bot.update"; botId: string; provider?: string; model?: string; thinking?: string; runnerId?: string }
+  | { kind: "provider.configure"; providerId?: string }
+  | { kind: "provider.disconnect"; providerId: string }
+  | { kind: "mcp.configure"; runnerId: string; name?: string }
+  | { kind: "mcp.setEnabled"; runnerId: string; name: string; enabled: boolean }
+  | { kind: "mcp.remove" | "mcp.reconnect"; runnerId: string; name: string }
+  | { kind: "mcp.reload"; runnerId: string }
+  | { kind: "autoReview.set"; isEnabled: boolean; rules: { id?: string; text: string; behavior: "allow" | "ask"; tool?: string }[] }
+);
+
+export interface SettingsActionResult {
+  status: "applied" | "cancelled" | "unknownOutcome";
+}
+
 export interface RuntimeSettings {
+  editor?: SettingsEditor;
   version: string;
   hasIdentity: boolean;
   relayConnected: boolean;
@@ -121,6 +152,7 @@ export interface LorcaShellState {
   attachmentsEnabled?: boolean;
   runtimeSettings?: RuntimeSettings;
   settingsLoading?: boolean;
+  settingsApplying?: boolean;
   settingsError?: string | null;
 }
 
@@ -137,6 +169,7 @@ export interface LorcaShellActions {
   onSaveEndpoint: (url: string) => Promise<void>;
   onReconnect: () => void;
   onRefreshSettings: (runnerId?: string) => void;
+  onSettingsAction: (action: SettingsAction) => Promise<SettingsActionResult>;
   onPickAttachments?: () => void;
   onRemoveAttachment?: (id: string) => void;
   onApproval: (id: string, decision: "allow" | "always" | "deny") => void;

@@ -2097,3 +2097,135 @@ select:focus-visible {
     flex-wrap: wrap;
   }
 }
+
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-form {
+  margin-top: 22px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-form fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 18px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-grid .lorca-settings-select,
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule-fields .lorca-settings-select {
+  width: 100%;
+  max-width: none;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-buttons {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-action {
+  min-width: 0;
+  max-width: 100%;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-confirmation,
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-confirmation {
+  padding: 14px;
+  border: 1px solid var(--border-seam);
+  border-radius: 8px;
+  background: var(--surface-attention);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-confirmation .lorca-admin-buttons {
+  margin-top: 12px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-result,
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-unavailable {
+  margin-top: 12px;
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-provider-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-provider-row > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-provider-row strong {
+  font-weight: 500;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-mcp-admin-actions {
+  margin: 14px 0 0 41px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-auto-review-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule {
+  align-items: flex-start;
+  gap: 12px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule > button {
+  margin-top: 20px;
+  flex-shrink: 0;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule-fields {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule-fields > label:first-child {
+  grid-column: 1 / -1;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule-fields input,
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule-fields .lorca-settings-select {
+  margin-top: 8px;
+  font-family: var(--font-sans);
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-confirmation > p {
+  margin-top: 9px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-confirmation h3 {
+  font-weight: 550;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-review-list {
+  margin: 14px 0;
+  padding-left: 24px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-review-list li + li {
+  margin-top: 14px;
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-review-list span {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-auto-review-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding: 14px 0 20px;
+  border-top: 1px solid var(--border-seam);
+  background: var(--background);
+}
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-auto-review-actions .lorca-settings-form-actions {
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+@media (max-width: 720px) {
+  :where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-admin-grid,
+  :where(.lorca-settings-desktop, .lorca-settings-drawer) .lorca-approval-rule-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -37,7 +37,9 @@ const snapshot = {
     messages: [message('msg-fixture', { kind: 'bot', bot_id: 'bot-smoke' }, 'Synthetic Electron smoke fixture. No account or model is connected.', 0)] }],
   running_turns: [], running_chat_ids: [],
   devices: [{ id: 'runner-smoke', name: 'Synthetic Runner', os: 'linux', version: 'fixture', status: 'online', is_this_device: true, plugins: [{ id: 'plugin-smoke', name: 'Synthetic Plugin', state: 'ready', detail: secretMarker }] }],
-  routines: [], providers: [{ kind: 'fixture-provider', name: 'Synthetic Provider', is_connected: true, detail: secretMarker, base_url: secretMarker }], models: [],
+  routines: [], providers: [{ kind: 'fixture-provider', name: 'Synthetic Provider', is_connected: true, detail: secretMarker, base_url: secretMarker }, { kind: 'deepseek', name: 'Synthetic key provider', is_connected: true, detail: secretMarker }],
+  models: [{ provider: 'fixture-provider', id: 'fixture-model', name: 'Synthetic model', levels: [] }],
+  auto_review: { is_enabled: false, rules: [] },
 };
 
 async function main() {
@@ -82,6 +84,13 @@ async function main() {
             event('relay.status', { connected: false, update_required: false, url: secretMarker, error: secretMarker });
             event('provider.auth', { kind: 'fixture-provider', url: secretMarker });
           }
+          else if (request.method === 'providers.api_key' && request.params.kind === 'deepseek') reply({ api_key: secretMarker, base_url: 'https://synthetic.example.invalid/v1' });
+          else if (request.method === 'providers.connect_deepseek') reply({ providers: snapshot.providers });
+          else if (request.method === 'bots.update') {
+            const bot = snapshot.bots.find(bot => bot.id === request.params.id);
+            if (!bot) throw new Error('Unexpected synthetic bot');
+            Object.assign(bot, request.params); reply({ bot });
+          }
           else if (request.method === 'chats.search') socket.send(JSON.stringify({ id: request.id, error: { message: secretMarker } }));
           else if (request.method === 'chats.messages') reply({ messages: snapshot.chats[0].messages, has_more: false });
           else if (request.method === 'chats.send' && request.params.chat_id === 'chat-smoke' && request.params.text === 'Synthetic smoke message') {
@@ -119,7 +128,7 @@ async function main() {
     assert.equal(renderer.processType, 'undefined'); assert.equal(renderer.requireType, 'undefined');
     assert.equal(renderer.status.status, 'connected'); assert.equal(renderer.status.authMode, 'token');
     assert.equal(JSON.stringify(renderer).includes(token), false); assert.equal(JSON.stringify(renderer).includes(home), false);
-    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'pickAttachments', 'request', 'sendAttachments']);
+    assert.deepEqual(renderer.keys, ['connect', 'copyText', 'getSettings', 'getStatus', 'onEvent', 'onStatus', 'pickAttachments', 'request', 'sendAttachments', 'settingsAction']);
     const inventory = await page.evaluate(async () => {
       const events = [];
       const unsubscribe = window.lorca.onEvent(event => events.push(event));
@@ -176,7 +185,62 @@ async function main() {
       assert.equal((await page.content()).includes(secretMarker), false);
       await page.screenshot({ path: destination.replace(/\.png$/i, '') + '-settings.png', fullPage: true });
     }
-    process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, menusLocalized: true, dotsBranding: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
+    await application.evaluate(({ dialog }) => {
+      globalThis.dotsConfirmations = [];
+      dialog.showMessageBox = async (_parent, options) => { globalThis.dotsConfirmations.push(options); return { response: 0, checkboxChecked: false }; };
+    });
+    const cancelResult = await page.evaluate(async () => {
+      const settings = await window.lorca.getSettings({});
+      return window.lorca.settingsAction({ kind: 'bot.update', revision: settings.editor.revision, botId: 'bot-smoke', model: '' });
+    });
+    assert.deepEqual(cancelResult, { status: 'cancelled' });
+    assert.equal(requests.filter(request => request.method === 'bots.update').length, 0);
+    await application.evaluate(({ dialog }) => {
+      dialog.showMessageBox = async (_parent, options) => { globalThis.dotsConfirmations.push(options); return { response: 1, checkboxChecked: false }; };
+    });
+    const applyResult = await page.evaluate(async () => {
+      const settings = await window.lorca.getSettings({});
+      return window.lorca.settingsAction({ kind: 'bot.update', revision: settings.editor.revision, botId: 'bot-smoke', model: '' });
+    });
+    assert.deepEqual(applyResult, { status: 'applied' });
+    assert.equal(requests.filter(request => request.method === 'bots.update').length, 1);
+    const secureWindow = application.waitForEvent('window');
+    const configure = page.evaluate(async () => {
+      const settings = await window.lorca.getSettings({});
+      return window.lorca.settingsAction({ kind: 'provider.configure', revision: settings.editor.revision, providerId: 'deepseek' });
+    });
+    const securePage = await secureWindow;
+    securePage.setDefaultTimeout(15_000);
+    await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).waitFor();
+    assert.equal(await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).inputValue(), '');
+    const secureState = await securePage.evaluate(async () => ({
+      processType: typeof window.process, requireType: typeof window.require, mainBridge: typeof window.lorca,
+      keys: Object.keys(window.dotsSecureSettings).sort(), spec: await window.dotsSecureSettings.initialize(),
+    }));
+    assert.equal(secureState.processType, 'undefined'); assert.equal(secureState.requireType, 'undefined'); assert.equal(secureState.mainBridge, 'undefined');
+    assert.deepEqual(secureState.keys, ['cancel', 'initialize', 'submit']);
+    assert.equal(JSON.stringify(secureState).includes(secretMarker), false);
+    const securePreferences = await application.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/secure-editor.html'));
+      const prefs = window.webContents.getLastWebPreferences();
+      return { contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration, sandbox: prefs.sandbox, devTools: prefs.devTools };
+    });
+    assert.deepEqual(securePreferences, { contextIsolation: true, nodeIntegration: false, sandbox: true, devTools: false });
+    if (process.env.LORCA_SMOKE_SCREENSHOT) await securePage.screenshot({ path: path.resolve(process.env.LORCA_SMOKE_SCREENSHOT).replace(/\.png$/i, '') + '-secure-settings.png', fullPage: true });
+    await securePage.getByLabel('HTTPS 连接地址（留空保留原值）', { exact: true }).fill('https://synthetic.example.invalid/v1');
+    await securePage.getByLabel('API 密钥（留空保留原值）', { exact: true }).fill('SYNTHETIC_REPLACEMENT_KEY');
+    await securePage.getByRole('button', { name: '继续', exact: true }).click();
+    assert.deepEqual(await configure, { status: 'applied' });
+    const configured = requests.filter(request => request.method === 'providers.connect_deepseek');
+    assert.equal(configured.length, 1); assert.equal(configured[0].params.api_key, 'SYNTHETIC_REPLACEMENT_KEY');
+    assert.equal(configured[0].params.base_url, 'https://synthetic.example.invalid/v1');
+    const confirmations = await application.evaluate(() => globalThis.dotsConfirmations);
+    assert.ok(confirmations.some(value => value.detail.includes('synthetic.example.invalid')));
+    assert.equal(JSON.stringify(confirmations).includes(secretMarker), false);
+    assert.equal(JSON.stringify(confirmations).includes('SYNTHETIC_REPLACEMENT_KEY'), false);
+    assert.equal((await page.content()).includes('SYNTHETIC_REPLACEMENT_KEY'), false);
+    assert.deepEqual(failures, []);
+    process.stdout.write(`${JSON.stringify({ ok: true, authenticated: true, rendererIsolated: true, settingsSanitized: true, secureSettingsIsolated: true, nativeSettingsConfirmed: true, menusLocalized: true, dotsBranding: true, syntheticSends: 1, sandboxEnabled: true })}\n`);
   } finally {
     let shutdownFailure;
     if (application) {

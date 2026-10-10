@@ -1,8 +1,10 @@
 # Lorca settings and runtime inventory
 
-This iteration provides editable **local endpoint and light/dark appearance**, plus read-only daemon, provider, bot, Runner, plugin and MCP inventory. Provider/model configuration, Runner assignment, access policy and MCP editing remain in Lorca's existing app or CLI. A provider marked connected means Lorca reports stored configuration; it is not a live credential or model test. A bot's model is its reported selection, not proof that the provider can currently run it.
+This document describes the sanitized inventory contract. Editable bot/model/Runner settings, controlled provider/MCP configuration, and account-wide auto-review policy now use a separate native transaction surface; see [editable settings](lorca-editable-settings.md). A provider marked connected remains a daemon report, not a live credential or model test. Configuration writes require explicit review and native confirmation.
 
 Endpoint and appearance changes belong to this BB interface. They do not update Lorca's account configuration. The endpoint is kept in the native process for this session; appearance is kept across renderer reloads in the current ephemeral Electron session. Neither promises persistence after app restart. `LORCA_HOME` and legacy authentication mode are launch-time settings. Neither can be changed through renderer RPCs.
+
+Authentication terminology: local dots→Lorca uses serve-token or explicit legacy loopback, never OAuth. Existing Lorca relay/device identity is unchanged. Optional provider/MCP OAuth is a separate service-specific login, not a new Lorca connection method.
 
 ## Source baseline and compatibility
 
@@ -116,16 +118,16 @@ Plugin variable secrecy depends on manifest classification; an incorrectly class
 
 Display metadata remains untrusted text, never HTML, executable configuration or an instruction to open a URL. Deliberately authored chat content is distinct from credential/configuration metadata; this boundary does not claim to remove secrets a user typed into their own messages.
 
-## Deferred writes
+## Separate controlled writes and remaining exclusions
 
-The protocol supports persistent profile changes with `bots.update {id,...patch}` returning `{bot}`. Name/provider accept nonempty strings; description is trimmed and can clear; `model:""` and `thinking:""` restore provider defaults. Current Lorca also accepts `permissions`; both versions accept `runner_id` and `workdir`. These writes publish the roster and affect later turns. They are intentionally not exposed by this iteration. [Current api.rs:261–289](https://github.com/egoist/lorca/blob/2e360b0611a4ddd845090b2c5802a0af421f5855/crates/cli/src/api.rs#L261-L289), [fork api.rs:237–261](https://github.com/charlzyx/lorca/blob/72478382674be5d3a06e0a365c7eb089d3e62db5/crates/cli/src/api.rs#L237-L261).
+The protocol supports persistent profile changes with `bots.update {id,...patch}` returning `{bot}`. Name/provider accept nonempty strings; description is trimmed and can clear; `model:""` and `thinking:""` restore provider defaults. Current Lorca also accepts `permissions`; both versions accept `runner_id` and `workdir`. These writes publish the roster and affect later turns. The controlled editor exposes provider/model/thinking and Runner patches only; identity, working-directory and access-management changes remain excluded. [Current api.rs:261–289](https://github.com/egoist/lorca/blob/2e360b0611a4ddd845090b2c5802a0af421f5855/crates/cli/src/api.rs#L261-L289), [fork api.rs:237–261](https://github.com/charlzyx/lorca/blob/72478382674be5d3a06e0a365c7eb089d3e62db5/crates/cli/src/api.rs#L237-L261).
 
 Other deferred operations include:
 
-- API-key entry/retrieval, provider connection/disconnection and OAuth sign-in. `providers.api_key` deliberately returns a credential.
-- MCP install/save/remove/enable/hide-tool, plugin variables and sign-in/out. Even `mcp.reload` applies disk edits and can connect changed servers; `mcp.reconnect` starts connection work. Neither is a read-only Refresh.
-- Access grants, auto-review rules and model/provider selection for review. The old fork supports only auto-review enabled/rules, not the newer provider/models fields.
-- Runner reassignment, working directories, device pairing/unpairing, service installation/start/stop and automatic updates. They change execution location, access or running software.
+- Provider OAuth sign-in remains excluded. API-key/custom-provider configuration uses an isolated native-controlled editor; `providers.api_key` stays main-process-only and existing credentials are never echoed.
+- MCP hide-tool and OAuth sign-in/out remain excluded. Save/remove/enable/reconnect/reload are explicit native-confirmed operations, never a read-only Refresh.
+- Access grants and model/provider selection for automatic review remain excluded. Both pinned versions support the enabled/rules editor; newer provider/models fields are not sent.
+- Working directories, device pairing/unpairing, service installation/start/stop and automatic updates. They change execution location, access or running software.
 - Relay editing: `config.set {relay_url:string|null}` returns `{relay_url}` and changes the synchronization destination. `LORCA_RELAY_URL` overrides the saved value. This is different from choosing this interface's local socket endpoint.
 - Device rename: `device.rename {name}` returns `{name}` and renames this device only, not an arbitrary Runner by ID.
 

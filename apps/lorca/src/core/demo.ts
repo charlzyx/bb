@@ -1,3 +1,4 @@
+import type { RuntimeSettings } from "../ui/types";
 import type { BridgeStatus, LorcaBridge } from "./bridge";
 import { appZh } from "../locale/app.zh-CN";
 
@@ -141,7 +142,14 @@ export const activitySnapshot = {
   ],
   running_chat_ids: ["chat-demo-activity"],
 };
-export const demoRuntimeSettings = {
+export const demoRuntimeSettings: RuntimeSettings = {
+  editor: {
+    revision: "synthetic-revision-1", canUpdateBots: true, canAddProvider: true, canManageMcp: true,
+    models: [{ provider: "demo-provider", id: "synthetic-model", name: "示例模型", levels: ["low", "high"] }, { provider: "demo-provider", id: "synthetic-model-fast", name: "示例快速模型", levels: [] }],
+    bots: [{ id: "bot-demo", thinking: null }],
+    providers: [{ id: "demo-provider", canConfigure: true, canDisconnect: true }, { id: "demo-unconfigured", canConfigure: true, canDisconnect: false }],
+    autoReview: { status: "ready", isEnabled: false, rules: [{ id: "synthetic-rule", text: "修改文件前先询问", behavior: "ask", tool: null }] },
+  },
   version: "synthetic-preview", hasIdentity: true, relayConnected: false,
   updateRequired: false, authMode: "token",
   devices: [
@@ -160,6 +168,8 @@ export const demoRuntimeSettings = {
   },
 };
 export function createDemoBridge(): LorcaBridge {
+  const inventory = structuredClone(demoRuntimeSettings);
+  let revision = 1;
   let status: BridgeStatus = {
     status: "disconnected",
     endpoint: "ws://127.0.0.1:4862/ws",
@@ -170,11 +180,37 @@ export function createDemoBridge(): LorcaBridge {
   return {
     getStatus: async () => status,
     getSettings: async ({ runnerId }) => {
-      const settings = structuredClone(demoRuntimeSettings);
+      const settings = structuredClone(inventory);
       if (runnerId && runnerId !== "runner-demo") {
         settings.mcp = { status: "unavailable", runnerId, hasConfigError: false, servers: [] };
+        if (settings.editor) settings.editor.canManageMcp = false;
       }
       return settings;
+    },
+    settingsAction: async action => {
+      const editor = inventory.editor!;
+      if (action.revision !== editor.revision) throw new Error("示例设置已变化，请刷新后重试。");
+      if (action.kind === "provider.configure" || action.kind === "mcp.configure") throw new Error("此处为合成演示；安全配置窗口仅在 dots 桌面应用中可用。");
+      if (action.kind === "bot.update") {
+        const bot = inventory.bots.find(bot => bot.id === action.botId);
+        if (!bot) throw new Error("示例机器人不存在。");
+        if (action.provider !== undefined) bot.provider = action.provider;
+        if (action.model !== undefined) bot.model = action.model || null;
+        if (action.runnerId !== undefined) bot.runnerId = action.runnerId;
+        if (action.thinking !== undefined) editor.bots.find(bot => bot.id === action.botId)!.thinking = action.thinking || null;
+      } else if (action.kind === "provider.disconnect") {
+        const provider = inventory.providers.find(provider => provider.id === action.providerId);
+        if (provider) provider.connected = false;
+      } else if (action.kind === "autoReview.set") {
+        editor.autoReview = { status: "ready", isEnabled: action.isEnabled, rules: action.rules.map((rule, index) => ({ ...rule, id: rule.id ?? `synthetic-rule-${index}`, tool: rule.tool ?? null })) };
+      } else if (action.kind === "mcp.remove") {
+        inventory.mcp.servers = inventory.mcp.servers.filter(server => server.name !== action.name);
+      } else if (action.kind === "mcp.setEnabled") {
+        const server = inventory.mcp.servers.find(server => server.name === action.name);
+        if (server) { server.enabled = action.enabled; server.state = action.enabled ? "ready" : "disabled"; }
+      }
+      editor.revision = `synthetic-revision-${++revision}`;
+      return { status: "applied" };
     },
     connect: async () => {
       status = {

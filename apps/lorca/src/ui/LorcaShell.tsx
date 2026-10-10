@@ -822,6 +822,7 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
         themePersistent={themePersistent}
         runtime={state.runtimeSettings}
         loading={state.settingsLoading}
+        applying={state.settingsApplying}
         error={state.settingsError}
       />
     </div>

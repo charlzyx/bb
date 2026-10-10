@@ -140,16 +140,20 @@ class SettingsInventory {
       const selected = params.runnerId;
       if (selected !== undefined && !settings.devices.some(device => device.id === selected && ['macos', 'linux', 'windows'].includes(device.os))) invalid();
       const runnerId = selected ?? settings.devices.find(device => device.isThisDevice && ['macos', 'linux', 'windows'].includes(device.os))?.id ?? null;
+      let rawMcp = null;
       let mcp = { status: 'unavailable', runnerId, hasConfigError: false, servers: [] };
       try {
         const raw = await this.bridge.sendValidated('mcp.list', selected === undefined ? {} : { runner_id: selected });
         this.check(fence);
         mcp = projectMcp(raw, runnerId);
+        rawMcp = raw;
       } catch {
         this.check(fence);
       }
       this.check(fence);
-      return bounded({ ...settings, mcp });
+      let editor;
+      if (this.editor) { try { editor = this.editor.snapshot(bootstrap, rawMcp, runnerId, fence); } catch {} }
+      return bounded({ ...settings, mcp, ...(editor ? { editor } : {}) });
     } catch (error) {
       if (error instanceof Error && error.message === CHANGED_ERROR) throw error;
       throw new Error(SETTINGS_ERROR);

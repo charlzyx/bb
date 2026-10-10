@@ -7,6 +7,8 @@ import { TranscriptItem } from "./Transcript";
 import { LorcaShell } from "./LorcaShell";
 import { Settings, validateEndpoint } from "./Settings";
 import { McpPanel, RunnersPanel } from "./settings/RuntimePanels";
+import { BotSettingsPanel } from "./settings/BotSettingsPanel";
+import { AutoReviewPanel } from "./settings/AutoReviewPanel";
 import {
   APPEARANCE_STORAGE_KEY,
   readAppearancePreference,
@@ -25,6 +27,7 @@ const actions: LorcaShellActions = {
   async onSaveEndpoint() {},
   onReconnect() {},
   onRefreshSettings() {},
+  async onSettingsAction() { return { status: "cancelled" }; },
   onApproval() {},
 };
 
@@ -465,4 +468,85 @@ test("dots branding and Chinese chrome preserve original conversation and bot na
   });
   assert.match(fallback, /aria-label="dots 的回复"/);
   assert.match(fallback, /<span>dots<\/span>/);
+});
+
+
+function editableRuntime(): RuntimeSettings {
+  const runtime = runtimeFixture();
+  runtime.editor = {
+    revision: "fixture-revision",
+    models: [{ provider: "provider", id: "model", name: "Original model", levels: ["low", "high"] }],
+    bots: [{ id: "bot", thinking: null }],
+    providers: [{ id: "provider", canConfigure: true, canDisconnect: true }],
+    canUpdateBots: true,
+    canAddProvider: true,
+    canManageMcp: true,
+    autoReview: { status: "ready", isEnabled: false, rules: [{ id: "rule", text: "Original rule", behavior: "ask", tool: "filesystem.read" }] },
+  };
+  return runtime;
+}
+
+test("Editable bot settings disclose bot-wide scope and keep credentials in native dialogs", () => {
+  const html = renderToStaticMarkup(<BotSettingsPanel runtime={editableRuntime()} disabled={false} onAction={actions.onSettingsAction} />);
+  assert.match(html, /影响所有使用该机器人的对话/);
+  assert.match(html, /不会迁移正在运行的任务、记忆或 MCP 配置/);
+  assert.match(html, /Original model/);
+  assert.match(html, /分配执行器/);
+  assert.match(html, /独立的安全窗口/);
+  assert.match(html, /新增服务商/);
+  assert.doesNotMatch(html, /type="password"|textarea|Paired phone/);
+});
+
+test("Missing editor capabilities never create writable model or provider controls", () => {
+  const html = renderToStaticMarkup(<BotSettingsPanel runtime={runtimeFixture()} disabled={false} onAction={actions.onSettingsAction} />);
+  assert.match(html, /未提供此编辑能力/);
+  assert.doesNotMatch(html, /应用更改|新增服务商|断开连接/);
+});
+
+test("MCP management exposes scoped actions without raw configuration fields", () => {
+  const html = renderToStaticMarkup(<McpPanel runtime={editableRuntime()} loading={false} onRefresh={() => {}} onAction={actions.onSettingsAction} />);
+  assert.match(html, /添加服务器/);
+  assert.match(html, /重新连接/);
+  assert.match(html, /移除/);
+  assert.match(html, /独立安全窗口/);
+  assert.doesNotMatch(html, /textarea|type="password"|Authorization|clientSecret/);
+  const runtime = editableRuntime();
+  runtime.mcp.runnerId = null;
+  const stale = renderToStaticMarkup(<McpPanel runtime={runtime} loading={false} onRefresh={() => {}} onAction={actions.onSettingsAction} />);
+  assert.doesNotMatch(stale, /添加服务器|>移除</);
+});
+
+test("Auto-review starts strict and preserves exact ask and allow wire values", () => {
+  const html = renderToStaticMarkup(<AutoReviewPanel editor={editableRuntime().editor} disabled={false} onAction={actions.onSettingsAction} />);
+  assert.match(html, /aria-checked="false"/);
+  assert.match(html, /每次工具调用都会询问你/);
+  assert.match(html, /value="ask" selected=""/);
+  assert.match(html, /value="allow"/);
+  assert.match(html, /Original rule/);
+  assert.match(html, /filesystem.read/);
+  assert.match(html, /查看变更/);
+  assert.doesNotMatch(html, /value="deny"|value="always"/);
+});
+
+test("Unsupported or unreported auto-review state has no mutation controls", () => {
+  const editor = editableRuntime().editor;
+  assert.ok(editor);
+  for (const state of [undefined, { ...editor, autoReview: { ...editor.autoReview, status: "unavailable" as const } }, { ...editor, autoReview: { ...editor.autoReview, isEnabled: null } }]) {
+    const html = renderToStaticMarkup(<AutoReviewPanel editor={state} disabled={false} onAction={actions.onSettingsAction} />);
+    assert.doesNotMatch(html, /role="switch"|添加规则|确认并提交/);
+  }
+});
+
+
+test("Connection copy separates local authentication, device identity and service sign-in", () => {
+  for (const authMode of ["token", "legacy"] as const) {
+    const runtime = runtimeFixture();
+    runtime.authMode = authMode;
+    const html = renderToStaticMarkup(<Settings open onOpenChange={() => {}} page="connection" onPageChange={() => {}} connection={{ status: "connected", endpoint: "ws://127.0.0.1:4862/ws" }} demo={false} actions={actions} theme="light" onThemeChange={() => {}} themePersistent runtime={runtime} />);
+    assert.match(html, /本地连接验证/);
+    assert.match(html, /后端设备身份/);
+    assert.match(html, /设备身份与中继通信沿用后端原有协议/);
+    assert.match(html, /可选登录属于各自服务的授权，不替代前两者/);
+    assert.match(html, authMode === "token" ? /服务令牌（serve-token）/ : /显式兼容模式（无令牌验证）/);
+  }
 });
