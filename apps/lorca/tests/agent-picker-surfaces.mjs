@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { expectRestoredFocus } from "./focus-restoration.mjs";
 
 function installAgentPickerFixture({ theme }) {
   localStorage.setItem("bb-lorca.appearance", theme);
@@ -149,7 +150,7 @@ export async function checkAgentPickerSurfaces({ browser, base, screenshot = asy
       await search.press("Enter");
       await panel.waitFor({ state: "hidden" });
       assert.equal(await picker.getAttribute("data-selected-agent"), "picker-bot-17");
-      await focused(picker);
+      await expectRestoredFocus(picker);
 
       await picker.click();
       assert.equal(await search.inputValue(), "", "Every explicit open starts with an unfiltered roster");
@@ -161,7 +162,7 @@ export async function checkAgentPickerSurfaces({ browser, base, screenshot = asy
       assert.equal(await picker.getAttribute("data-selected-agent"), "picker-bot-17");
       await page.keyboard.press("Escape");
       await panel.waitFor({ state: "hidden" });
-      await focused(picker);
+      await expectRestoredFocus(picker);
       await picker.click();
       await page.getByRole("textbox", { name: "给 dots 发消息", exact: true }).click();
       await panel.waitFor({ state: "hidden" });
@@ -189,7 +190,7 @@ export async function checkAgentPickerSurfaces({ browser, base, screenshot = asy
       await page.keyboard.press("Enter");
       await panel.waitFor({ state: "hidden" });
       assert.equal(await picker.getAttribute("data-selected-agent"), "picker-bot-00");
-      await focused(picker);
+      await expectRestoredFocus(picker);
       await page.setViewportSize({ width: 1240, height: 820 });
 
       await picker.click();
@@ -217,7 +218,7 @@ export async function checkAgentPickerSurfaces({ browser, base, screenshot = asy
       await screenshot(page, `desktop-agent-picker-${theme}`);
       await page.keyboard.press("Escape");
       await panel.waitFor({ state: "hidden" });
-      await focused(picker);
+      await expectRestoredFocus(picker);
       assert.equal(await page.evaluate(() => window.__agentPickerTest.requests.some((request) => request.method !== "bootstrap")), false, "Searching and selecting an agent never creates a chat, sends a message or changes daemon configuration");
     } catch (error) {
       await screenshot(page, `agent-picker-failure-${theme}`).catch(() => undefined);

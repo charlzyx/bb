@@ -7,6 +7,7 @@ import { checkVisualSurfaces } from "./visual-surfaces.mjs";
 import { checkSettingsLayoutSurfaces } from "./settings-layout-surfaces.mjs";
 import { checkSidebarViewSurfaces } from "./sidebar-view-surfaces.mjs";
 import { checkLayoutToolsSurfaces } from "./layout-tools-surfaces.mjs";
+import { expectRestoredFocus } from "./focus-restoration.mjs";
 
 let playwright;
 try {
@@ -1330,7 +1331,7 @@ try {
   assert.equal(await avatarPicker.evaluate((element) => element.tagName), "BUTTON", "Agent picker has an accessible popover trigger");
   await avatarPicker.click();
   await avatars.getByRole("searchbox", { name: "搜索智能体", exact: true }).press("Escape");
-  await avatars.waitForFunction(() => document.activeElement === document.querySelector(".lorca-agent-picker"), null, { timeout: 1000 });
+  await expectRestoredFocus(avatarPicker);
   assert.equal(await avatarPicker.evaluate(element => document.activeElement === element), true, "Escape returns focus to the picker");
   await chooseChat(avatars, "合成头像 · 单聊");
   assert.equal(await avatarPicker.count(), 0, "Existing-chat composers do not repeat the agent picker");

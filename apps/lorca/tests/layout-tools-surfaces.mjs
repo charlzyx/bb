@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { installLayoutToolsFixture } from "./layout-tools-ui-fixture.mjs";
+import { expectRestoredFocus } from "./focus-restoration.mjs";
 
 async function settle(page) {
   await page.evaluate(() => document.fonts.ready);
@@ -146,7 +147,7 @@ async function checkWidthAndStatus({ browser, base, screenshot, chooseChat, capt
     await popover.waitFor();
     await page.keyboard.press("Escape");
     await popover.waitFor({ state: "hidden" });
-    await page.waitForFunction(() => document.querySelector(".lorca-header-status") === document.activeElement);
+    await expectRestoredFocus(trigger);
     for (const key of ["Tab", "Shift+Tab"]) {
       await trigger.press("Space");
       await popover.waitFor();
@@ -156,7 +157,7 @@ async function checkWidthAndStatus({ browser, base, screenshot, chooseChat, capt
       assert.equal(await popover.getByRole("button", { name: "连接设置", exact: true }).evaluate((element) => element === document.activeElement), true, "The single-action Popover loops Tab and Shift+Tab through its ordinary button");
       await page.keyboard.press("Escape");
       await popover.waitFor({ state: "hidden" });
-      await page.waitForFunction(() => document.querySelector(".lorca-header-status") === document.activeElement);
+      await expectRestoredFocus(trigger);
     }
     await trigger.press("Space");
     await popover.waitFor();

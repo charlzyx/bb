@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { installGroupFixture } from "./group-ui-fixture.mjs";
 import { checkAgentPickerSurfaces } from "./agent-picker-surfaces.mjs";
+import { expectRestoredFocus } from "./focus-restoration.mjs";
 
 let playwright;
 try {
@@ -85,7 +86,7 @@ try {
     await popup.getByRole("textbox", { name: "分组名称", exact: true }).fill("Esc 放弃的分组");
     await page.keyboard.press("Escape");
     await popup.waitFor({ state: "hidden" });
-    await page.waitForFunction(() => document.activeElement === document.querySelector("[data-group-create]"), null, { timeout: 1000 });
+    await expectRestoredFocus(create);
     assert.equal(await create.evaluate((element) => document.activeElement === element), true, "Escape returns keyboard focus to the create trigger");
     assert.equal(await tree.locator("[data-agent-group]").count(), 0);
     await makeGroup("日常工作");
@@ -245,6 +246,7 @@ try {
     await page.setViewportSize({ width: 1240, height: 820 });
     await page.keyboard.press("Escape");
     await destination.waitFor({ state: "hidden" });
+    await expectRestoredFocus(selector);
     assert.equal(await selector.evaluate(element => document.activeElement === element), true, "Closing the category picker returns focus to its own trigger");
     await popup.getByRole("button", { name: "取消", exact: true }).click();
     await popup.waitFor({ state: "hidden" });
