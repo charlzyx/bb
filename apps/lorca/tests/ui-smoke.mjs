@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { installSettingsFixture } from "./settings-ui-fixture.mjs";
 import { installAvatarFixture } from "./avatar-ui-fixture.mjs";
+import { checkVisualSurfaces } from "./visual-surfaces.mjs";
 
 let playwright;
 try {
@@ -427,7 +428,7 @@ try {
       const isRule = element.matches(".lorca-approval-review-list li");
       const points = [[bounds.left + 2, bounds.top + 2], [bounds.right - 2, bounds.top + 2], [bounds.left + 2, bounds.bottom - 2], [bounds.right - 2, bounds.bottom - 2], [(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2]];
       return {
-        complete: bounds.width > 0 && bounds.height > 0 && bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= Math.max(0, scroll.top) && bounds.bottom <= Math.min(innerHeight, scroll.bottom, isRule ? footer.top : innerHeight),
+        complete: bounds.width > 0 && bounds.height > 0 && bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= Math.max(0, scroll.top, document.querySelector(".lorca-settings-page-header").getBoundingClientRect().bottom) && bounds.bottom <= Math.min(innerHeight, scroll.bottom, isRule ? footer.top - 18 : innerHeight),
         unobscured: points.every(([x, y]) => element.contains(document.elementFromPoint(x, y))),
       };
     });
@@ -1084,6 +1085,7 @@ try {
   await avatars.evaluate(() => window.__avatarUiTest.loseIdentity());
   await avatars.waitForFunction(() => document.querySelectorAll("[data-avatar-image]").length === 0);
   assert.deepEqual(externalAvatarRequests, [], "Bot avatars never fetch remote image URLs in the renderer");
+  await checkVisualSurfaces({ browser, base, screenshot, chooseSettingsPage, waitForSettings, chooseChat, captureErrors, setFailurePage: (page) => { failurePage = page; } });
   assert.deepEqual(
     failures,
     [],
@@ -1128,6 +1130,9 @@ try {
           "Composer avatar follows keyboard selection and preserves disabled states",
           "Avatar replacement, identity clearing and no renderer remote-image fetches",
           "Neutral default, symbol and missing-cache avatars across light/dark themes",
+          "Glass headers sample real scrolled content and reduce to opaque surfaces on request",
+          "Footer default, hover and restored keyboard focus have no white icon tile",
+          "Settings description contrast is at least 4.5:1 in light and dark themes",
           "Custom pink PNG source pixels and unfiltered display stay unchanged",
           "No console errors",
         ],

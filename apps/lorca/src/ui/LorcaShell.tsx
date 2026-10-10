@@ -194,7 +194,7 @@ function Sidebar({
         )}
       </nav>
       <footer className="lorca-sidebar-footer">
-        <button className="lorca-workspace" onClick={onSettings}>
+        <button className="lorca-workspace" aria-label={zhCN.chat.openConnectionSettings} onClick={onSettings}>
           <span className="lorca-workspace-icon">
             <Icon name="ComputerTerminal01" />
           </span>
@@ -514,12 +514,6 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
             </button>
           </div>
         </header>
-        {state.demo && (
-          <div className="lorca-demo-banner">
-            <span>{zhCN.chat.demoPreview}</span>
-            <span>{zhCN.chat.demoDisconnected}</span>
-          </div>
-        )}
         <div
           className="lorca-scroll"
           ref={scrollRef}
@@ -531,6 +525,12 @@ function LorcaShellSession({ state, actions }: LorcaShellProps) {
             setShowLatest(!followLatest.current && state.messages.length > 0);
           }}
         >
+          {state.demo && (
+            <div className="lorca-demo-banner">
+              <span>{zhCN.chat.demoPreview}</span>
+              <span>{zhCN.chat.demoDisconnected}</span>
+            </div>
+          )}
           {state.loading && !state.messages.length ? (
             <div className="lorca-loading" role="status">
               <Icon name="Loading" />

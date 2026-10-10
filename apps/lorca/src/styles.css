@@ -258,6 +258,7 @@ select:focus-visible {
   border-top: 1px solid var(--border-seam);
 }
 :where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace {
+  appearance: none;
   width: 100%;
   display: flex;
   align-items: center;
@@ -265,9 +266,21 @@ select:focus-visible {
   text-align: left;
   padding: 7px;
   border-radius: 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--foreground);
 }
 :where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace:hover {
   background: var(--state-hover);
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace:focus-visible {
+  background: var(--state-hover);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+:where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace:focus:not(:focus-visible) {
+  outline: none;
 }
 :where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace > [data-icon-root] {
   margin-left: auto;
@@ -280,9 +293,8 @@ select:focus-visible {
   place-items: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--border-seam);
-  border-radius: 8px;
-  background: var(--background);
+  border: 0;
+  background: transparent;
   color: var(--muted-foreground);
 }
 :where(.lorca-app, .lorca-mobile-sidebar) .lorca-workspace strong {
@@ -416,11 +428,16 @@ select:focus-visible {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
+:where(.lorca-app) .lorca-scroll:has(> .lorca-empty-state) {
+  display: flex;
+  flex-direction: column;
+}
 :where(.lorca-app) .lorca-empty-state {
   width: 100%;
   max-width: 660px;
   margin: 0 auto;
-  min-height: 100%;
+  flex: 1 0 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2323,9 +2340,13 @@ select:focus-visible {
   }
   :where(.lorca-app) .lorca-workspace-icon {
     border: 0;
-    background: var(--state-hover);
+    background: transparent;
   }
   :where(.lorca-app) .lorca-header {
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: 5;
+    isolation: isolate;
     height: 48px;
     min-height: 48px;
     padding: 0 max(20px, calc((100% - var(--lorca-reading-width)) / 2));
@@ -2333,12 +2354,16 @@ select:focus-visible {
   :where(.lorca-app) .lorca-header-title {
     gap: 10px;
   }
+  :where(.lorca-app) .lorca-header-status {
+    color: var(--muted-foreground);
+  }
   :where(.lorca-app) .lorca-demo-banner {
     padding: 5px 18px;
     background: transparent;
   }
   :where(.lorca-app) .lorca-scroll {
-    padding: 0 20px;
+    padding: 48px 20px 0;
+    scroll-padding-top: 64px;
   }
   :where(.lorca-app) .lorca-transcript {
     width: 100%;
@@ -2413,11 +2438,31 @@ select:focus-visible {
     border: 0;
   }
   :where(.lorca-settings-desktop) .lorca-settings-page-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    isolation: isolate;
     width: 100%;
     max-width: 840px;
     margin: 0 auto;
     padding: 20px 32px 16px;
     border: 0;
+  }
+  :where(.lorca-settings-desktop) .lorca-settings-scroll {
+    scroll-padding-top: 160px;
+    scroll-padding-bottom: 128px;
+  }
+  :where(.lorca-app) .lorca-header::before,
+  :where(.lorca-settings-desktop) .lorca-settings-page-header::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 -16px;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(to bottom, color-mix(in oklab, var(--canvas) 94%, transparent), color-mix(in oklab, var(--canvas) 90%, transparent) calc(100% - 16px), transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    mask-image: linear-gradient(to bottom, var(--foreground) calc(100% - 16px), transparent);
   }
   :where(.lorca-settings-desktop) .lorca-settings-page-header h1 {
     margin: 4px 0 6px;
@@ -2447,6 +2492,49 @@ select:focus-visible {
   :where(.lorca-settings-desktop) .lorca-connection-explanation,
   :where(.lorca-settings-desktop) .lorca-auto-review-actions {
     border: 0;
+  }
+  :where(.lorca-settings-desktop) .lorca-admin-form :is(input, select):not(:focus-visible):not([aria-invalid="true"]) {
+    border-color: var(--border-seam);
+  }
+  :where(.lorca-settings-desktop) .lorca-auto-review-actions {
+    margin-top: 4px;
+    padding: 12px 0 16px;
+  }
+  :where(.lorca-settings-desktop) .lorca-auto-review-actions::before {
+    content: "";
+    position: absolute;
+    inset: -18px 0 auto;
+    height: 18px;
+    pointer-events: none;
+    background: linear-gradient(to top, var(--background), transparent);
+  }
+}
+
+:where(.lorca-settings-desktop, .lorca-settings-drawer) .text-subtle-foreground\/75 {
+  color: var(--subtle-foreground);
+}
+
+@media (min-width: 768px) and (prefers-reduced-transparency: reduce),
+  (min-width: 768px) and (prefers-contrast: more) {
+  :where(.lorca-settings-desktop) .lorca-auto-review-actions::before {
+    display: none;
+  }
+  :where(.lorca-app) .lorca-header::before,
+  :where(.lorca-settings-desktop) .lorca-settings-page-header::before {
+    inset: 0;
+    background: var(--canvas);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    mask-image: none;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :where(.lorca-app) .lorca-header::before,
+  :where(.lorca-settings-desktop) .lorca-settings-page-header::before {
+    inset: 0;
+    background: var(--canvas);
+    mask-image: none;
   }
 }
 

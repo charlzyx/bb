@@ -2,6 +2,12 @@
 
 Verified on 2026-10-10. This is an experimental client, not a packaged release.
 
+## Scrolling glass and control-surface polish
+
+The sidebar connection/settings entry has an explicitly transparent normal button surface and no separate icon tile. Hover and keyboard focus remain theme-aware and visible. The desktop chat header stays 48 pixels tall; content actually scrolls underneath its theme-derived gradient and backdrop blur. Settings use a sticky header inside their scrolling pane. This is a web-content frosted layer, not native macOS wallpaper transparency or a vibrancy-window claim. Reduced transparency, increased contrast and unsupported backdrop-filter have opaque fallbacks; reduced-motion preferences remain respected.
+
+Small settings descriptions use full-contrast theme tokens instead of the shared component's faded 75% text. Form outlines and approval-action separation are softened without removing focus, error or confirmation cues. Only the dots surface is changed; upstream shared components, account configuration, Ghost artwork and custom avatar images remain unchanged. The new browser smoke captures light/dark settings tabs, real long-page scrolling, the frosted/opaque states, footer interaction states and representative errors. The existing isolated Electron fixture continues to capture the native secure editor. Native system-select popup pixels and actual macOS material appearance still require the separate Mac check; browser screenshots do not establish those results.
+
 ## Desktop density and current protocol follow-up
 
 The desktop uses a single compact 48-pixel web header and lighter, borderless content surfaces. On macOS the main window uses Electron `hiddenInset`, retains native traffic lights, and reserves their area; header whitespace is draggable while interactive controls are `no-drag`. Other platforms retain their native system window controls. The isolated secure editor keeps its native title bar and security configuration. The selected Ghost artwork is unchanged.

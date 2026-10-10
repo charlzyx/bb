@@ -162,8 +162,8 @@ export function SettingsFrame({
         </footer>
       </aside>
       <div className="lorca-settings-desktop-main">
-        {heading}
         <div className="lorca-settings-scroll">
+          {heading}
           <div className="lorca-settings-reading-width">
             {notice}
             <div className="lorca-settings-section-content">{children}</div>
