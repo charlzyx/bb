@@ -26,6 +26,8 @@ const browser = await playwright.chromium.launch({
   headless: true,
   executablePath,
   chromiumSandbox: true,
+  // Required by CDP Browser.getBrowserCommandLine; this does not weaken sandboxing.
+  args: ["--enable-automation"],
 });
 const failures = [];
 let failurePage;
